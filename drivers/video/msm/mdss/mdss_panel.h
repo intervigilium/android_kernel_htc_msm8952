@@ -461,6 +461,8 @@ struct mdss_mdp_pp_tear_check {
 	u32 refx100;
 };
 
+struct mdss_livedisplay_ctx;
+
 struct mdss_panel_info {
 	u32 xres;
 	u32 yres;
@@ -557,6 +559,8 @@ struct mdss_panel_info {
 	bool blk_pending_display_on;
 	u32 mdss_lab_voltage;
 	u32 mdss_ibb_voltage;
+
+	struct mdss_livedisplay_ctx *livedisplay;
 };
 
 struct mdss_panel_data {

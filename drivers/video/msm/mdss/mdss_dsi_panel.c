@@ -27,6 +27,8 @@
 #include "mdss_htc_util.h"
 #include "mdss_dba_utils.h"
 
+#include "mdss_livedisplay.h"
+
 #define DT_CMD_HDR 6
 #define MIN_REFRESH_RATE 48
 #define DEFAULT_MDP_TRANSFER_TIME 14000
@@ -580,6 +582,12 @@ static int mdss_dsi_set_col_page_addr(struct mdss_panel_data *pdata,
 		}
 	}
 
+#ifdef CONFIG_YULONG_COLOR
+	color_enhancement_impl_apply();
+#endif
+
+	mdss_livedisplay_update(ctrl, MODE_UPDATE_ALL);
+
 end:
 	return 0;
 }
@@ -862,7 +870,7 @@ static void mdss_dsi_parse_trigger(struct device_node *np, char *trigger,
 }
 
 
-static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
+int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)
 {
 	const char *data;
@@ -1693,6 +1701,8 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 
 	pinfo->blk_pending_display_on = of_property_read_bool(np,
 				"htc,blk_pending_display_on");
+
+	mdss_livedisplay_parse_dt(np, pinfo);
 
 	return 0;
 }
