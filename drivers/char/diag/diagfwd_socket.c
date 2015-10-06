@@ -901,7 +901,7 @@ static int diag_socket_read(void *ctxt, unsigned char *buf, int buf_len)
 	if (atomic_read(&info->diag_state) == 0) {
 		DIAGSOCKET_ERR("%s closing read thread. diag state is closed\n",
 			 info->name);
-		diag_ws_release();
+		diagfwd_channel_read_done(info->fwd_ctxt, buf, 0);
 		return 0;
 	}
 
