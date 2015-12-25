@@ -1162,10 +1162,6 @@ exit:
 	}
 	if (mbhc->mbhc_cb->set_cap_mode)
 		mbhc->mbhc_cb->set_cap_mode(codec, micbias1, micbias2);
-
-	if (mbhc->mbhc_cb->hph_pull_down_ctrl)
-		mbhc->mbhc_cb->hph_pull_down_ctrl(codec, true);
-
 	mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	pr_debug("%s: leave\n", __func__);
 }
@@ -1181,10 +1177,6 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
-
-	if (mbhc->mbhc_cb->hph_pull_down_ctrl)
-		mbhc->mbhc_cb->hph_pull_down_ctrl(codec, false);
-
 	if (mbhc->mbhc_cb->micbias_enable_status)
 		micbias1 = mbhc->mbhc_cb->micbias_enable_status(mbhc,
 								MIC_BIAS_1);
@@ -1275,8 +1267,6 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			 */
 			mbhc->mbhc_cb->micb_internal(codec, 1, true);
 
-		/* Remove micbias pulldown */
-		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 0);
 		/* Apply trim if needed on the device */
 		if (mbhc->mbhc_cb->trim_btn_reg)
 			mbhc->mbhc_cb->trim_btn_reg(codec);
@@ -1310,8 +1300,6 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			if (mbhc->mbhc_cb->micb_internal)
 				mbhc->mbhc_cb->micb_internal(codec, 1, false);
 
-			/* Pulldown micbias */
-			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 1);
 			mbhc->mbhc_cb->irq_control(codec,
 					mbhc->intr_ids->mbhc_hs_rem_intr,
 					false);

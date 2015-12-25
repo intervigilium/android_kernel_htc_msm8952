@@ -31,6 +31,7 @@ obj-$(CONFIG_MSM_RPM_SMD) += rpm-smd-debug.o
 endif
 obj-$(CONFIG_MSM_RPM_RBCPR_STATS_V2_LOG) += rpm_rbcpr_stats_v2.o
 obj-$(CONFIG_MSM_RPM_STATS_LOG) += rpm_stats.o rpm_master_stat.o
+obj-y += rpm_stats_ver.o
 obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
 obj-$(CONFIG_QCOM_NPA_DUMP) += npa-dump.o
 obj-$(CONFIG_MSM_JTAG) += jtag-fuse.o jtag.o
@@ -90,5 +91,6 @@ obj-$(CONFIG_MSM_RTB) += msm_rtb-hotplug.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
 obj-$(CONFIG_MSM_PACMAN)        += msm_pacman.o
 obj-$(CONFIG_MSM_TEST_PACMAN)        += msm_test_pacman.o
+obj-$(CONFIG_MSM_ONTARIO)        += ontario.o
 obj-$(CONFIG_TRACER_PKT) += tracer_pkt.o
 obj-$(CONFIG_MSM_VSENS) += vsens.o

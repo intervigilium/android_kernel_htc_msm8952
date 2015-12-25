@@ -209,7 +209,6 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
-	qcom,esd-check-enabled;
 };
 
 &pmx_mdss {
@@ -247,10 +246,6 @@
 
 &pmi8950_fg {
 	qcom,battery-data = <&qrd_batterydata>;
-	qcom,cold-bat-decidegc = <(-100)>;
-	qcom,cool-bat-decidegc = <(-100)>;
-	qcom,hot-bat-decidegc = <550>;
-	qcom,warm-bat-decidegc = <550>;
 };
 
 &labibb {

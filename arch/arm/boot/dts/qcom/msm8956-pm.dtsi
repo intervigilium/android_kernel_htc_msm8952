@@ -98,7 +98,6 @@
 				qcom,time-overhead = <1158>;
 				qcom,min-child-idx = <3>;
 				qcom,notify-rpm;
-				qcom,is-reset;
 			};
 
 			qcom,pm-cluster@0{
@@ -153,7 +152,6 @@
 					qcom,energy-overhead = <479220>;
 					qcom,time-overhead = <779>;
 					qcom,min-child-idx = <1>;
-					qcom,is-reset;
 				};
 
 				qcom,pm-cpu {
@@ -181,7 +179,7 @@
 						qcom,energy-overhead = <199236>;
 						qcom,time-overhead = <330>;
 						qcom,use-broadcast-timer;
-						qcom,is-reset;
+						qcom,cpu-is-reset;
 					};
 				};
 			};
@@ -238,7 +236,6 @@
 					qcom,energy-overhead = <777359>;
 					qcom,time-overhead = <1256>;
 					qcom,min-child-idx = <2>;
-					qcom,is-reset;
 				};
 
 				qcom,pm-cpu {
@@ -277,7 +274,7 @@
 						qcom,energy-overhead = <194277>;
 						qcom,time-overhead = <302>;
 						qcom,use-broadcast-timer;
-						qcom,is-reset;
+						qcom,cpu-is-reset;
 					};
 				};
 			};

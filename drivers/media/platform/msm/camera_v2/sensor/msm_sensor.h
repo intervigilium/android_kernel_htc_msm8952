@@ -61,6 +61,10 @@ struct msm_sensor_fn_t {
 	int (*sensor_power_down) (struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
 	int (*sensor_match_id) (struct msm_sensor_ctrl_t *);
+	
+	int (*sensor_i2c_read_fuseid)(struct sensorb_cfg_data *cdata, struct msm_sensor_ctrl_t *s_ctrl);
+	int (*sensor_i2c_read_fuseid32)(struct sensorb_cfg_data32 *cdata, struct msm_sensor_ctrl_t *s_ctrl);
+	
 };
 
 struct msm_sensor_ctrl_t {
@@ -93,6 +97,8 @@ struct msm_sensor_ctrl_t {
 
 int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp);
 
+int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp);
+
 int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);
 
 int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl);
@@ -111,6 +117,8 @@ int msm_sensor_i2c_probe(struct i2c_client *client,
 int msm_sensor_free_sensor_data(struct msm_sensor_ctrl_t *s_ctrl);
 
 int32_t msm_sensor_init_default_params(struct msm_sensor_ctrl_t *s_ctrl);
+
+uint32_t msm_sensor_get_boardinfo(struct device_node *of_node);
 
 int32_t msm_sensor_get_dt_gpio_req_tbl(struct device_node *of_node,
 	struct msm_camera_gpio_conf *gconf, uint16_t *gpio_array,

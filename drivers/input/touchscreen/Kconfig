@@ -12,6 +12,7 @@ menuconfig INPUT_TOUCHSCREEN
 if INPUT_TOUCHSCREEN
 
 source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
+source "drivers/input/touchscreen/synaptics_dsx_htc/Kconfig"
 
 config TOUCHSCREEN_88PM860X
 	tristate "Marvell 88PM860x touchscreen"
@@ -1039,6 +1040,14 @@ config TOUCHSCREEN_GT9XX
           If unsure, say N.
 
 source "drivers/input/touchscreen/gt9xx/Kconfig"
+
+config TOUCHSCREEN_TOUCH_FW_UPDATE
+        tristate "Touchscreen firmware update"
+        default y
+        help
+          Say Y here to support touch firmware update
+
+          If unsure, say N.
 
 config TOUCHSCREEN_BU21150
 	tristate "JDI AFE BU21150"

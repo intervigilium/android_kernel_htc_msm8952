@@ -12,3 +12,10 @@ obj-$(CONFIG_OV2685) += ov2685.o
 obj-$(CONFIG_OV2685_SCV3B4035) += ov2685_scv3b4035.o
 obj-$(CONFIG_OV5645) += ov7695.o
 obj-$(CONFIG_GC0310) += gc0310.o
+obj-$(CONFIG_IMX214_HTC) += imx214_htc.o lc898123_htc.o
+obj-$(CONFIG_OV4688_HTC) += ov4688_htc.o
+
+#HTC_CAMERA+
+obj-y += htc_awb_cal.o
+#HTC_CAMERA-
+

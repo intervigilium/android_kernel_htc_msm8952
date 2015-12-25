@@ -15,22 +15,15 @@
 #include <linux/thermal.h>
 #include <sound/soc.h>
 
-struct wsa_temp_register {
-	u8 d1_msb;
-	u8 d1_lsb;
-	u8 d2_msb;
-	u8 d2_lsb;
-	u8 dmeas_msb;
-	u8 dmeas_lsb;
-};
-typedef int32_t (*wsa_temp_register_read)(struct snd_soc_codec *codec,
-					struct wsa_temp_register *wsa_temp_reg);
+typedef int32_t (*wsa_rsrc_acquire)(struct snd_soc_codec *codec, bool enable);
+
 struct wsa881x_tz_priv {
 	struct thermal_zone_device *tz_dev;
 	struct snd_soc_codec *codec;
-	struct wsa_temp_register *wsa_temp_reg;
+	int dig_base;
+	int ana_base;
 	char name[80];
-	wsa_temp_register_read wsa_temp_reg_read;
+	wsa_rsrc_acquire wsa_resource_acquire;
 };
 
 int wsa881x_init_thermal(struct wsa881x_tz_priv *tz_pdata);

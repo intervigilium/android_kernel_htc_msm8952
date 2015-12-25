@@ -679,6 +679,11 @@ config KERNEL_TEXT_MPU_PROT
 	  all masters; Write access is only permited to the
 	  secure world.
 
+config MSM_ONTARIO
+	bool "MSM Ontario SenseID clock driver"
+	help
+	  Enables clock and bus for SPI bus communication to SenseID ASIC
+
 config TRACER_PKT
 	bool "Tracer Packet"
 	help

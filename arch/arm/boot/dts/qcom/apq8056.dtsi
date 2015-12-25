@@ -18,13 +18,3 @@
 	compatible = "qcom,apq8056";
 	qcom,msm-id = <274 0>;
 };
-
-&soc {
-        qcom,rmnet-ipa {
-                status = "disabled";
-        };
-};
-
-&ipa_hw {
-        status = "disabled";
-};

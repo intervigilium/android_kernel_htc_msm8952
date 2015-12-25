@@ -226,10 +226,6 @@ static void socket_data_ready(struct sock *sk_ptr, int bytes)
 	spin_unlock_irqrestore(&info->lock, flags);
 	diag_ws_on_notify();
 
-	/*
-	 * Initialize read buffers for the servers. The servers must read data
-	 * first to get the address of its clients.
-	 */
 	if (!atomic_read(&info->opened) && info->port_type == PORT_TYPE_SERVER)
 		diagfwd_buffers_init(info->fwd_ctxt);
 
@@ -266,7 +262,7 @@ static void socket_flow_cntl(struct sock *sk_ptr)
 
 	atomic_inc(&info->flow_cnt);
 	DIAG_LOG(DIAG_DEBUG_PERIPHERALS, "%s flow controlled\n", info->name);
-	pr_debug("diag: In %s, channel %s flow controlled\n",
+	DIAGFWD_DBUG("diag: In %s, channel %s flow controlled\n",
 		 __func__, info->name);
 }
 
@@ -321,13 +317,13 @@ static void __socket_open_channel(struct diag_socket_info *info)
 		return;
 
 	if (!info->inited) {
-		pr_debug("diag: In %s, socket %s is not initialized\n",
+		DIAGFWD_DBUG("diag: In %s, socket %s is not initialized\n",
 			 __func__, info->name);
 		return;
 	}
 
 	if (atomic_read(&info->opened)) {
-		pr_debug("diag: In %s, socket %s already opened\n",
+		DIAGFWD_DBUG("diag: In %s, socket %s already opened\n",
 			 __func__, info->name);
 		return;
 	}
@@ -411,7 +407,7 @@ static void socket_init_work_fn(struct work_struct *work)
 		return;
 
 	if (!info->inited) {
-		pr_debug("diag: In %s, socket %s is not initialized\n",
+		DIAGFWD_DBUG("diag: In %s, socket %s is not initialized\n",
 			 __func__, info->name);
 		return;
 	}
@@ -438,12 +434,18 @@ static void __socket_close_channel(struct diag_socket_info *info)
 	if (!atomic_read(&info->opened))
 		return;
 
+	if (!cntl_socket)
+		return;
+
+	wake_up(&cntl_socket->read_wait_q);
+	wake_up(&info->read_wait_q);
+
 	memset(&info->remote_addr, 0, sizeof(struct sockaddr_msm_ipc));
 	diagfwd_channel_close(info->fwd_ctxt);
 
 	atomic_set(&info->opened, 0);
 
-	/* Don't close the server. Server should always remain open */
+	
 	if (info->port_type != PORT_TYPE_SERVER) {
 		write_lock_bh(&info->hdl->sk->sk_callback_lock);
 		info->hdl->sk->sk_user_data = NULL;
@@ -587,7 +589,7 @@ static void cntl_socket_read_work_fn(struct work_struct *work)
 		ret = kernel_recvmsg(cntl_socket->hdl, &read_msg, &iov, 1,
 				     sizeof(msg), MSG_DONTWAIT);
 		if (ret < 0) {
-			pr_debug("diag: In %s, Error recving data %d\n",
+			DIAGFWD_DBUG("diag: In %s, Error recving data %d\n",
 				 __func__, ret);
 			break;
 		}
@@ -870,10 +872,6 @@ static int diag_socket_read(void *ctxt, unsigned char *buf, int buf_len)
 	wait_event(info->read_wait_q, (info->data_ready > 0) || (!info->hdl) ||
 		   (atomic_read(&info->diag_state) == 0));
 
-	/*
-	 * There is no need to continue reading over peripheral in this case.
-	 * Release the wake source hold earlier.
-	 */
 	if (atomic_read(&info->diag_state) == 0) {
 		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
 			 "%s closing read thread. diag state is closed\n",
@@ -916,11 +914,6 @@ static int diag_socket_read(void *ctxt, unsigned char *buf, int buf_len)
 
 		if (!atomic_read(&info->opened) &&
 		    info->port_type == PORT_TYPE_SERVER) {
-			/*
-			 * This is the first packet from the client. Copy its
-			 * address to the connection object. Consider this
-			 * channel open for communication.
-			 */
 			memcpy(&info->remote_addr, &src_addr, sizeof(src_addr));
 			if (info->ins_id == INST_ID_DCI)
 				atomic_set(&info->opened, 1);
@@ -986,10 +979,6 @@ static int diag_socket_write(void *ctxt, unsigned char *buf, int len)
 	write_len = kernel_sendmsg(info->hdl, &write_msg, &iov, 1, len);
 	if (write_len < 0) {
 		err = write_len;
-		/*
-		 * -EAGAIN means that the number of packets in flight is at
-		 * max capactity and the peripheral hasn't read the data.
-		 */
 		if (err != -EAGAIN) {
 			pr_err_ratelimited("diag: In %s, error sending data, err: %d, ch: %s\n",
 					   __func__, err, info->name);

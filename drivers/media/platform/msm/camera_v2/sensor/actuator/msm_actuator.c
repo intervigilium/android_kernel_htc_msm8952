@@ -91,8 +91,6 @@ static void msm_actuator_parse_i2c_params(struct msm_actuator_ctrl_t *a_ctrl,
 	struct msm_camera_i2c_reg_array *i2c_tbl = a_ctrl->i2c_reg_tbl;
 	CDBG("Enter\n");
 	for (i = 0; i < size; i++) {
-		/* check that the index into i2c_tbl cannot grow larger that
-		the allocated size of i2c_tbl */
 		if ((a_ctrl->total_steps + 1) < (a_ctrl->i2c_tbl_index)) {
 			break;
 		}
@@ -422,7 +420,7 @@ static void msm_actuator_write_focus(
 	damping_code_step = damping_params->damping_step;
 	wait_time = damping_params->damping_delay;
 
-	/* Write code based on damping_code_step in a loop */
+	
 	for (next_lens_pos =
 		curr_lens_pos + (sign_direction * damping_code_step);
 		(sign_direction * next_lens_pos) <=
@@ -458,7 +456,7 @@ static int msm_actuator_bivcm_write_focus(
 	damping_code_step = damping_params->damping_step;
 	wait_time = damping_params->damping_delay;
 
-	/* Write code based on damping_code_step in a loop */
+	
 	for (next_lens_pos =
 		curr_lens_pos + (sign_direction * damping_code_step);
 		(sign_direction * next_lens_pos) <=
@@ -581,7 +579,7 @@ static int32_t msm_actuator_move_focus(
 		a_ctrl->region_size, move_params->ringing_params);
 		return -EFAULT;
 	}
-	/* Allocate memory for damping parameters of all regions */
+	
 	ringing_params_kernel = kmalloc(
 		sizeof(struct damping_params_t)*(a_ctrl->region_size),
 		GFP_KERNEL);
@@ -593,7 +591,7 @@ static int32_t msm_actuator_move_focus(
 		&(move_params->ringing_params[0]),
 		(sizeof(struct damping_params_t))*(a_ctrl->region_size))) {
 		pr_err("copy_from_user failed\n");
-		/* Free the allocated memory for damping parameters */
+		
 		kfree(ringing_params_kernel);
 		return -EFAULT;
 	}
@@ -636,7 +634,7 @@ static int32_t msm_actuator_move_focus(
 		}
 		a_ctrl->curr_step_pos = target_step_pos;
 	}
-	/* Free the memory allocated for damping parameters */
+	
 	kfree(ringing_params_kernel);
 
 	move_params->curr_lens_pos = curr_lens_pos;
@@ -696,7 +694,7 @@ static int32_t msm_actuator_bivcm_move_focus(
 		a_ctrl->region_size, move_params->ringing_params);
 		return -EFAULT;
 	}
-	/* Allocate memory for damping parameters of all regions */
+	
 	ringing_params_kernel = kmalloc(
 		sizeof(struct damping_params_t)*(a_ctrl->region_size),
 		GFP_KERNEL);
@@ -708,7 +706,7 @@ static int32_t msm_actuator_bivcm_move_focus(
 		&(move_params->ringing_params[0]),
 		(sizeof(struct damping_params_t))*(a_ctrl->region_size))) {
 		pr_err("copy_from_user failed\n");
-		/* Free the allocated memory for damping parameters */
+		
 		kfree(ringing_params_kernel);
 		return -ENOMEM;
 	}
@@ -754,7 +752,7 @@ static int32_t msm_actuator_bivcm_move_focus(
 		}
 		a_ctrl->curr_step_pos = target_step_pos;
 	}
-	/* Free the memory allocated for damping parameters */
+	
 	kfree(ringing_params_kernel);
 
 	move_params->curr_lens_pos = curr_lens_pos;
@@ -786,7 +784,7 @@ static int32_t msm_actuator_park_lens(struct msm_actuator_ctrl_t *a_ctrl)
 
 	next_lens_pos = a_ctrl->step_position_table[a_ctrl->curr_step_pos];
 	while (next_lens_pos) {
-		/* conditions which help to reduce park lens time */
+		
 		if (next_lens_pos > (a_ctrl->park_lens.max_step *
 			PARK_LENS_LONG_STEP)) {
 			next_lens_pos = next_lens_pos -
@@ -825,7 +823,7 @@ static int32_t msm_actuator_park_lens(struct msm_actuator_ctrl_t *a_ctrl)
 			return rc;
 		}
 		a_ctrl->i2c_tbl_index = 0;
-		/* Use typical damping time delay to avoid tick sound */
+		
 		usleep_range(10000, 12000);
 	}
 
@@ -865,7 +863,7 @@ static int32_t msm_actuator_bivcm_init_step_table(
 		set_info->af_tuning_params.total_steps);
 		return -EFAULT;
 	}
-	/* Fill step position table */
+	
 	a_ctrl->step_position_table =
 		kmalloc(sizeof(uint16_t) *
 		(set_info->af_tuning_params.total_steps + 1), GFP_KERNEL);
@@ -942,7 +940,7 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 		set_info->af_tuning_params.total_steps);
 		return -EFAULT;
 	}
-	/* Fill step position table */
+	
 	a_ctrl->step_position_table =
 		kzalloc(sizeof(uint16_t) *
 		(set_info->af_tuning_params.total_steps + 1), GFP_KERNEL);
@@ -1308,7 +1306,7 @@ static int32_t msm_actuator_set_param(struct msm_actuator_ctrl_t *a_ctrl,
 		}
 	}
 
-	/* Park lens data */
+	
 	a_ctrl->park_lens = set_info->actuator_params.park_lens;
 	a_ctrl->initial_code = set_info->af_tuning_params.initial_code;
 	if (a_ctrl->func_tbl->actuator_init_step_table)
@@ -1433,7 +1431,7 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
 	.i2c_write_table_w_microdelay =
-		msm_camera_cci_i2c_write_table_w_microdelay,
+		msm_camera_cci_i2c_write_table_w_microdelay_htc,
 	.i2c_util = msm_sensor_cci_i2c_util,
 	.i2c_poll =  msm_camera_cci_i2c_poll,
 };
@@ -1455,7 +1453,7 @@ static int msm_actuator_close(struct v4l2_subdev *sd,
 	struct msm_actuator_ctrl_t *a_ctrl =  v4l2_get_subdevdata(sd);
 	CDBG("Enter\n");
 	if (!a_ctrl || !a_ctrl->i2c_client.i2c_func_tbl) {
-		/* check to make sure that init happens before release */
+		
 		pr_err("failed\n");
 		return -EINVAL;
 	}
@@ -1751,18 +1749,18 @@ static int32_t msm_actuator_i2c_probe(struct i2c_client *client,
 	act_ctrl_t->i2c_client.client = client;
 	act_ctrl_t->curr_step_pos = 0,
 	act_ctrl_t->curr_region_index = 0,
-	/* Set device type as I2C */
+	
 	act_ctrl_t->act_device_type = MSM_CAMERA_I2C_DEVICE;
 	act_ctrl_t->i2c_client.i2c_func_tbl = &msm_sensor_qup_func_tbl;
 	act_ctrl_t->act_v4l2_subdev_ops = &msm_actuator_subdev_ops;
 	act_ctrl_t->actuator_mutex = &msm_actuator_mutex;
 	act_ctrl_t->cam_name = act_ctrl_t->subdev_id;
 	CDBG("act_ctrl_t->cam_name: %d", act_ctrl_t->cam_name);
-	/* Assign name for sub device */
+	
 	snprintf(act_ctrl_t->msm_sd.sd.name, sizeof(act_ctrl_t->msm_sd.sd.name),
 		"%s", act_ctrl_t->i2c_driver->driver.name);
 
-	/* Initialize sub device */
+	
 	v4l2_i2c_subdev_init(&act_ctrl_t->msm_sd.sd,
 		act_ctrl_t->i2c_client.client,
 		act_ctrl_t->act_v4l2_subdev_ops);
@@ -1846,9 +1844,9 @@ static int32_t msm_actuator_platform_probe(struct platform_device *pdev)
 	msm_actuator_t->actuator_mutex = &msm_actuator_mutex;
 	msm_actuator_t->cam_name = pdev->id;
 
-	/* Set platform device handle */
+	
 	msm_actuator_t->pdev = pdev;
-	/* Set device type as platform device */
+	
 	msm_actuator_t->act_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 	msm_actuator_t->i2c_client.i2c_func_tbl = &msm_sensor_cci_func_tbl;
 	msm_actuator_t->i2c_client.cci_client = kzalloc(sizeof(

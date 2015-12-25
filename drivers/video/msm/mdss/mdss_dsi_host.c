@@ -51,10 +51,8 @@ struct mdss_hw mdss_dsi1_hw = {
 
 #define DSI_BTA_EVENT_TIMEOUT (HZ / 10)
 
-/* Mutex common for both the controllers */
 static struct mutex dsi_mtx;
 
-/* event */
 struct dsi_event_q {
 	struct mdss_dsi_ctrl_pdata *ctrl;
 	u32 arg;
@@ -92,7 +90,7 @@ void mdss_dsi_ctrl_init(struct device *ctrl_dev,
 
 	ctrl->panel_mode = ctrl->panel_data.panel_info.mipi.mode;
 
-	ctrl_list[ctrl->ndx] = ctrl;	/* keep it */
+	ctrl_list[ctrl->ndx] = ctrl;	
 
 	if (ctrl->mdss_util->register_irq(ctrl->dsi_hw))
 		pr_err("%s: mdss_register_irq failed.\n", __func__);
@@ -130,7 +128,7 @@ static void mdss_dsi_set_reg(struct mdss_dsi_ctrl_pdata *ctrl, int off,
 	u32 data;
 
 	off &= ~0x03;
-	val &= mask;    /* set bits indicated at mask only */
+	val &= mask;    
 	data = MIPI_INP(ctrl->ctrl_base + off);
 	data &= ~mask;
 	data |= val;
@@ -143,7 +141,7 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl, int enable)
 {
 	MDSS_XLOG(ctrl->ndx, enable, ctrl->mdp_busy, current->pid);
 	if (enable == 0) {
-		/* need wait before disable */
+		
 		mutex_lock(&ctrl->cmd_mutex);
 		if (mdss_dsi_cmd_mdp_busy(ctrl))
 			pr_warn("%s: wait for mdp to be idle timedout\n",
@@ -159,17 +157,13 @@ void mdss_dsi_pll_relock(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int i, cnt;
 
-	/*
-	 * todo: this code does not work very well with dual
-	 * dsi use cases. Need to fix this eventually.
-	 */
 	cnt = ctrl->link_clk_cnt;
 
-	/* disable dsi clk */
+	
 	for (i = 0; i < cnt; i++)
 		mdss_dsi_clk_ctrl(ctrl, DSI_LINK_CLKS, 0);
 
-	/* enable dsi clk */
+	
 	for (i = 0; i < cnt; i++)
 		mdss_dsi_clk_ctrl(ctrl, DSI_LINK_CLKS, 1);
 }
@@ -212,10 +206,6 @@ void mdss_dsi_disable_irq(struct mdss_dsi_ctrl_pdata *ctrl, u32 term)
 	spin_unlock_irqrestore(&ctrl->irq_lock, flags);
 }
 
-/*
- * mdss_dsi_disale_irq_nosync() should be called
- * from interrupt context
- */
 void mdss_dsi_disable_irq_nosync(struct mdss_dsi_ctrl_pdata *ctrl, u32 term)
 {
 	spin_lock(&ctrl->irq_lock);
@@ -238,11 +228,11 @@ void mdss_dsi_video_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl)
 	int i;
 
 	MIPI_OUTP((ctrl->ctrl_base) + 0x015c, 0x021);
-	MIPI_OUTP((ctrl->ctrl_base) + 0x0164, 0xff0000); /* red */
+	MIPI_OUTP((ctrl->ctrl_base) + 0x0164, 0xff0000); 
 	i = 0;
 	while (i++ < 50) {
 		MIPI_OUTP((ctrl->ctrl_base) + 0x0180, 0x1);
-		/* Add sleep to get ~50 fps frame rate*/
+		
 		msleep(20);
 	}
 	MIPI_OUTP((ctrl->ctrl_base) + 0x015c, 0x0);
@@ -253,11 +243,11 @@ void mdss_dsi_cmd_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl)
 	int i;
 
 	MIPI_OUTP((ctrl->ctrl_base) + 0x015c, 0x201);
-	MIPI_OUTP((ctrl->ctrl_base) + 0x016c, 0xff0000); /* red */
+	MIPI_OUTP((ctrl->ctrl_base) + 0x016c, 0xff0000); 
 	i = 0;
 	while (i++ < 50) {
 		MIPI_OUTP((ctrl->ctrl_base) + 0x0184, 0x1);
-		/* Add sleep to get ~50 fps frame rate*/
+		
 		msleep(20);
 	}
 	MIPI_OUTP((ctrl->ctrl_base) + 0x015c, 0x0);
@@ -310,7 +300,7 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 		if (pinfo->bllp_power_stop)
 			data |= BIT(12);
 		data |= ((pinfo->traffic_mode & 0x03) << 8);
-		data |= ((pinfo->dst_format & 0x03) << 4); /* 2 bits */
+		data |= ((pinfo->dst_format & 0x03) << 4); 
 		data |= (pinfo->vc & 0x03);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0010, data);
 
@@ -333,10 +323,10 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 			data |= BIT(8);
 		if (pinfo->r_sel)
 			data |= BIT(4);
-		data |= (pinfo->dst_format & 0x0f);	/* 4 bits */
+		data |= (pinfo->dst_format & 0x0f);	
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0040, data);
 
-		/* DSI_COMMAND_MODE_MDP_DCS_CMD_CTRL */
+		
 		data = pinfo->wr_mem_continue & 0x0ff;
 		data <<= 8;
 		data |= (pinfo->wr_mem_start & 0x0ff);
@@ -346,7 +336,7 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 	} else
 		pr_err("%s: Unknown DSI mode=%d\n", __func__, pinfo->mode);
 
-	dsi_ctrl = BIT(8) | BIT(2);	/* clock enable & cmd mode */
+	dsi_ctrl = BIT(8) | BIT(2);	
 	intr_ctrl = 0;
 	intr_ctrl = (DSI_INTR_CMD_DMA_DONE_MASK | DSI_INTR_CMD_MDP_DONE_MASK);
 
@@ -367,20 +357,20 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 	data = 0;
 	if (pinfo->te_sel)
 		data |= BIT(31);
-	data |= pinfo->mdp_trigger << 4;/* cmd mdp trigger */
-	data |= pinfo->dma_trigger;	/* cmd dma trigger */
+	data |= pinfo->mdp_trigger << 4;
+	data |= pinfo->dma_trigger;	
 	data |= (pinfo->stream & 0x01) << 8;
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0084,
-				data); /* DSI_TRIG_CTRL */
+				data); 
 
-	/* DSI_LAN_SWAP_CTRL */
+	
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x00b0, ctrl_pdata->dlane_swap);
 
-	/* clock out ctrl */
-	data = pinfo->t_clk_post & 0x3f;	/* 6 bits */
+	
+	data = pinfo->t_clk_post & 0x3f;	
 	data <<= 8;
-	data |= pinfo->t_clk_pre & 0x3f;	/*  6 bits */
-	/* DSI_CLKOUT_TIMING_CTRL */
+	data |= pinfo->t_clk_pre & 0x3f;	
+	
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xc4, data);
 
 	data = 0;
@@ -389,30 +379,26 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 	if (pinfo->tx_eot_append)
 		data |= BIT(0);
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x00cc,
-				data); /* DSI_EOT_PACKET_CTRL */
-	/*
-	 * DSI_HS_TIMER_CTRL -> timer resolution = 8 esc clk
-	 * HS TX timeout - 16136 (0x3f08) esc clk
-	 */
+				data); 
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x00bc, 0x3fd08);
 
 
-	/* allow only ack-err-status  to generate interrupt */
-	/* DSI_ERR_INT_MASK0 */
+	
+	
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x010c, 0x03f03fc0);
 
 	intr_ctrl |= DSI_INTR_ERROR_MASK;
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0110,
-				intr_ctrl); /* DSI_INTL_CTRL */
+				intr_ctrl); 
 
-	/* turn esc, byte, dsi, pclk, sclk, hclk on */
+	
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x11c,
-					0x23f); /* DSI_CLK_CTRL */
+					0x23f); 
 
-	dsi_ctrl |= BIT(0);	/* enable dsi */
+	dsi_ctrl |= BIT(0);	
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0004, dsi_ctrl);
 
-	/* enable contention detection for receiving */
+	
 	mdss_dsi_lp_cd_rx(ctrl_pdata);
 
 	wmb();
@@ -453,28 +439,24 @@ void mdss_dsi_sw_reset(struct mdss_dsi_ctrl_pdata *ctrl, bool restore)
 
 	data0 = MIPI_INP(ctrl->ctrl_base + 0x0004);
 	MIPI_OUTP(ctrl->ctrl_base + 0x0004, (data0 & ~BIT(0)));
-	/*
-	 * dsi controller need to be disabled before
-	 * clocks turned on
-	 */
-	wmb();	/* make sure dsi contoller is disabled */
+	wmb();	
 
-	/* turn esc, byte, dsi, pclk, sclk, hclk on */
-	MIPI_OUTP(ctrl->ctrl_base + 0x11c, 0x23f); /* DSI_CLK_CTRL */
-	wmb();	/* make sure clocks enabled */
+	
+	MIPI_OUTP(ctrl->ctrl_base + 0x11c, 0x23f); 
+	wmb();	
 
-	/* dsi controller can only be reset while clocks are running */
+	
 	MIPI_OUTP(ctrl->ctrl_base + 0x118, 0x01);
-	wmb();	/* make sure reset happen */
+	wmb();	
 	MIPI_OUTP(ctrl->ctrl_base + 0x118, 0x00);
-	wmb();	/* controller out of reset */
+	wmb();	
 
 	if (restore) {
 		MIPI_OUTP(ctrl->ctrl_base + 0x0004, data0);
-		wmb();	/* make sure dsi controller enabled again */
+		wmb();	
 	}
 
-	/* It is safe to clear mdp_busy as reset is happening */
+	
 	spin_lock_irqsave(&ctrl->mdp_lock, flag);
 	ctrl->mdp_busy = false;
 	complete_all(&ctrl->mdp_comp);
@@ -513,33 +495,28 @@ static inline bool mdss_dsi_poll_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 
 static void mdss_dsi_wait_clk_lane_to_stop(struct mdss_dsi_ctrl_pdata *ctrl)
 {
-	if (mdss_dsi_poll_clk_lane(ctrl)) /* stopped */
+	if (mdss_dsi_poll_clk_lane(ctrl)) 
 		return;
 
-	/* clk stuck at hs, start recovery process */
+	
 
-	/* force clk lane tx stop -- bit 20 */
+	
 	mdss_dsi_cfg_lane_ctrl(ctrl, BIT(20), 1);
 
 	if (mdss_dsi_poll_clk_lane(ctrl) == false)
 		pr_err("%s: clk lane recovery failed\n", __func__);
 	else
 		ctrl->clk_lane_cnt = 0;
-	/* clear clk lane tx stop -- bit 20 */
+	
 	mdss_dsi_cfg_lane_ctrl(ctrl, BIT(20), 0);
 }
 
 static void mdss_dsi_stop_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl);
 
-/*
- * mdss_dsi_start_hs_clk_lane:
- * this function is work around solution for 8994 dsi clk lane
- * may stuck at HS problem
- */
 static void mdss_dsi_start_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 
-	/* make sure clk lane is stopped */
+	
 	mdss_dsi_stop_hs_clk_lane(ctrl);
 
 	mutex_lock(&ctrl->clk_lane_mutex);
@@ -550,7 +527,7 @@ static void mdss_dsi_start_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 		mdss_dsi_wait_clk_lane_to_stop(ctrl);
 	}
 
-	/* force clk lane hs for next dma or mdp stream */
+	
 	mdss_dsi_cfg_lane_ctrl(ctrl, BIT(28), 1);
 	ctrl->clk_lane_cnt++;
 	pr_debug("%s: ndx=%d, set_hs, cnt=%d\n", __func__,
@@ -559,22 +536,17 @@ static void mdss_dsi_start_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 	mutex_unlock(&ctrl->clk_lane_mutex);
 }
 
-/*
- * mdss_dsi_stop_hs_clk_lane:
- * this function is work around solution for 8994 dsi clk lane
- * may stuck at HS problem
- */
 static void mdss_dsi_stop_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	u32 fifo = 0;
 	u32 lane = 0;
 
 	mutex_lock(&ctrl->clk_lane_mutex);
-	if (ctrl->clk_lane_cnt == 0)	/* stopped already */
+	if (ctrl->clk_lane_cnt == 0)	
 		goto release;
 
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
-	/* fifo */
+	
 	if (readl_poll_timeout(((ctrl->ctrl_base) + 0x000c),
 			   fifo,
 			   ((fifo & 0x11110000) == 0x11110000),
@@ -584,7 +556,7 @@ static void mdss_dsi_stop_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 		goto end;
 	}
 
-	/* data lane status */
+	
 	if (readl_poll_timeout(((ctrl->ctrl_base) + 0x00a8),
 			   lane,
 			   ((lane & 0x000f) == 0x000f),
@@ -593,7 +565,7 @@ static void mdss_dsi_stop_hs_clk_lane(struct mdss_dsi_ctrl_pdata *ctrl)
 					__func__, lane);
 	}
 end:
-	/* stop force clk lane hs */
+	
 	mdss_dsi_cfg_lane_ctrl(ctrl, BIT(28), 0);
 
 	mdss_dsi_wait_clk_lane_to_stop(ctrl);
@@ -644,20 +616,16 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 	u32 data0, data1, mask = 0, data_lane_en = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl0, *ctrl1;
 	u32 ln0, ln1, ln_ctrl0, ln_ctrl1, i;
-	/*
-	 * Add 2 ms delay suggested by HW team.
-	 * Check clk lane stop state after every 200 us
-	 */
 	u32 loop = 10, u_dly = 200;
 	pr_debug("%s: MDSS DSI CTRL and PHY reset. ctrl-num = %d\n",
 					__func__, ctrl->ndx);
 
 	if (event == DSI_EV_DLNx_FIFO_OVERFLOW) {
-		mask = BIT(20); /* clock lane only for overflow recovery */
+		mask = BIT(20); 
 	} else if (event == DSI_EV_LP_RX_TIMEOUT) {
 		data_lane_en = (MIPI_INP(ctrl->ctrl_base + 0x0004) &
 			DSI_DATA_LANES_ENABLED) >> 4;
-		/* clock and data lanes for LP_RX_TO recovery */
+		
 		mask = BIT(20) | (data_lane_en << 16);
 	}
 
@@ -669,28 +637,24 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		if (ctrl0->recovery)
 			ctrl0->recovery->fxn(ctrl0->recovery->data,
 					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
-		/*
-		 * Disable PHY contention detection and receive.
-		 * Configure the strength ctrl 1 register.
-		 */
 		MIPI_OUTP((ctrl0->phy_io.base) + 0x0188, 0);
 		MIPI_OUTP((ctrl1->phy_io.base) + 0x0188, 0);
 
 		data0 = MIPI_INP(ctrl0->ctrl_base + 0x0004);
 		data1 = MIPI_INP(ctrl1->ctrl_base + 0x0004);
-		/* Disable DSI video mode */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x004, (data0 & ~BIT(1)));
 		MIPI_OUTP(ctrl1->ctrl_base + 0x004, (data1 & ~BIT(1)));
-		/* Disable DSI controller */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x004,
 					(data0 & ~(BIT(0) | BIT(1))));
 		MIPI_OUTP(ctrl1->ctrl_base + 0x004,
 					(data1 & ~(BIT(0) | BIT(1))));
-		/* "Force On" all dynamic clocks */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x11c, 0x100a00);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x11c, 0x100a00);
 
-		/* DSI_SW_RESET */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x118, 0x1);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x118, 0x1);
 		wmb();
@@ -698,18 +662,14 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		MIPI_OUTP(ctrl1->ctrl_base + 0x118, 0x0);
 		wmb();
 
-		/* Remove "Force On" all dynamic clocks */
-		MIPI_OUTP(ctrl0->ctrl_base + 0x11c, 0x00); /* DSI_CLK_CTRL */
-		MIPI_OUTP(ctrl1->ctrl_base + 0x11c, 0x00); /* DSI_CLK_CTRL */
+		
+		MIPI_OUTP(ctrl0->ctrl_base + 0x11c, 0x00); 
+		MIPI_OUTP(ctrl1->ctrl_base + 0x11c, 0x00); 
 
-		/* Enable DSI controller */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x004, (data0 & ~BIT(1)));
 		MIPI_OUTP(ctrl1->ctrl_base + 0x004, (data1 & ~BIT(1)));
 
-		/*
-		 * Toggle Clk lane Force TX stop so that
-		 * clk lane status is no more in stop state
-		 */
 		ln0 = MIPI_INP(ctrl0->ctrl_base + 0x00a8);
 		ln1 = MIPI_INP(ctrl1->ctrl_base + 0x00a8);
 		pr_debug("%s: lane status, ctrl0 = 0x%x, ctrl1 = 0x%x\n",
@@ -726,7 +686,7 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 			if ((ln0 == 0x1f1f) && (ln1 == 0x1f1f))
 				break;
 			else
-				/* Check clk lane stopState for every 200us */
+				
 				udelay(u_dly);
 		}
 		if (i == loop) {
@@ -741,52 +701,40 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		MIPI_OUTP(ctrl0->ctrl_base + 0x0ac, ln_ctrl0 & ~mask);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x0ac, ln_ctrl1 & ~mask);
 
-		/* Enable Video mode for DSI controller */
+		
 		MIPI_OUTP(ctrl0->ctrl_base + 0x004, data0);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x004, data1);
 
-		/*
-		 * Enable PHY contention detection and receive.
-		 * Configure the strength ctrl 1 register.
-		 */
 		MIPI_OUTP((ctrl0->phy_io.base) + 0x0188, 0x6);
 		MIPI_OUTP((ctrl1->phy_io.base) + 0x0188, 0x6);
-		/*
-		 * Add sufficient delay to make sure
-		 * pixel transmission as started
-		 */
 		udelay(200);
 	} else {
 		if (ctrl->recovery)
 			ctrl->recovery->fxn(ctrl->recovery->data,
 					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
-		/* Disable PHY contention detection and receive */
+		
 		MIPI_OUTP((ctrl->phy_io.base) + 0x0188, 0);
 
 		data0 = MIPI_INP(ctrl->ctrl_base + 0x0004);
-		/* Disable DSI video mode */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x004, (data0 & ~BIT(1)));
-		/* Disable DSI controller */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x004,
 					(data0 & ~(BIT(0) | BIT(1))));
-		/* "Force On" all dynamic clocks */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x11c, 0x100a00);
 
-		/* DSI_SW_RESET */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x118, 0x1);
 		wmb();
 		MIPI_OUTP(ctrl->ctrl_base + 0x118, 0x0);
 		wmb();
 
-		/* Remove "Force On" all dynamic clocks */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x11c, 0x00);
-		/* Enable DSI controller */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x004, (data0 & ~BIT(1)));
 
-		/*
-		 * Toggle Clk lane Force TX stop so that
-		 * clk lane status is no more in stop state
-		 */
 		ln0 = MIPI_INP(ctrl->ctrl_base + 0x00a8);
 		pr_debug("%s: lane status, ctrl = 0x%x\n",
 			 __func__, ln0);
@@ -798,7 +746,7 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 			if (ln0 == 0x1f1f)
 				break;
 			else
-				/* Check clk lane stopState for every 200us */
+				
 				udelay(u_dly);
 		}
 		if (i == loop) {
@@ -811,14 +759,10 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 			 __func__, ln0);
 		MIPI_OUTP(ctrl->ctrl_base + 0x0ac, ln_ctrl0 & ~mask);
 
-		/* Enable Video mode for DSI controller */
+		
 		MIPI_OUTP(ctrl->ctrl_base + 0x004, data0);
-		/* Enable PHY contention detection and receiver */
+		
 		MIPI_OUTP((ctrl->phy_io.base) + 0x0188, 0x6);
-		/*
-		 * Add sufficient delay to make sure
-		 * pixel transmission as started
-		 */
 		udelay(200);
 	}
 	pr_debug("Recovery done\n");
@@ -839,7 +783,7 @@ void mdss_dsi_err_intr_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, u32 mask,
 
 	pr_debug("%s: intr=%x enable=%d\n", __func__, intr, enable);
 
-	MIPI_OUTP(ctrl->ctrl_base + 0x0110, intr); /* DSI_INTL_CTRL */
+	MIPI_OUTP(ctrl->ctrl_base + 0x0110, intr); 
 }
 
 void mdss_dsi_controller_cfg(int enable,
@@ -860,21 +804,21 @@ void mdss_dsi_controller_cfg(int enable,
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	/* Check for CMD_MODE_DMA_BUSY */
+	
 	if (readl_poll_timeout(((ctrl_pdata->ctrl_base) + 0x0008),
 			   status,
 			   ((status & 0x02) == 0),
 			       sleep_us, timeout_us))
 		pr_info("%s: DSI status=%x failed\n", __func__, status);
 
-	/* Check for x_HS_FIFO_EMPTY */
+	
 	if (readl_poll_timeout(((ctrl_pdata->ctrl_base) + 0x000c),
 			   status,
 			   ((status & 0x11111000) == 0x11111000),
 			       sleep_us, timeout_us))
 		pr_info("%s: FIFO status=%x failed\n", __func__, status);
 
-	/* Check for VIDEO_MODE_ENGINE_BUSY */
+	
 	if (readl_poll_timeout(((ctrl_pdata->ctrl_base) + 0x0008),
 			   status,
 			   ((status & 0x08) == 0),
@@ -920,7 +864,7 @@ void mdss_dsi_op_mode_config(int mode,
 				panel_data);
 
 	dsi_ctrl = MIPI_INP((ctrl_pdata->ctrl_base) + 0x0004);
-	/*If Video enabled, Keep Video and Cmd mode ON */
+	
 	if (dsi_ctrl & 0x02)
 		dsi_ctrl &= ~0x05;
 	else
@@ -930,7 +874,7 @@ void mdss_dsi_op_mode_config(int mode,
 		dsi_ctrl |= 0x03;
 		intr_ctrl = DSI_INTR_CMD_DMA_DONE_MASK | DSI_INTR_BTA_DONE_MASK
 			| DSI_INTR_ERROR_MASK;
-	} else {		/* command mode */
+	} else {		
 		dsi_ctrl |= 0x05;
 		if (pdata->panel_info.type == MIPI_VIDEO_PANEL)
 			dsi_ctrl |= 0x02;
@@ -939,7 +883,7 @@ void mdss_dsi_op_mode_config(int mode,
 			DSI_INTR_CMD_MDP_DONE_MASK | DSI_INTR_BTA_DONE_MASK;
 	}
 
-	dma_ctrl = BIT(28) | BIT(26);	/* embedded mode & LP mode */
+	dma_ctrl = BIT(28) | BIT(26);	
 	if (mdss_dsi_sync_wait_enable(ctrl_pdata))
 		dma_ctrl |= BIT(31);
 
@@ -964,10 +908,10 @@ void mdss_dsi_cmd_bta_sw_trigger(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x098, 0x01);	/* trigger */
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x098, 0x01);	
 	wmb();
 
-	/* Check for CMD_MODE_DMA_BUSY */
+	
 	if (readl_poll_timeout(((ctrl_pdata->ctrl_base) + 0x0008),
 				status, ((status & 0x0010) == 0),
 				0, timeout_us))
@@ -999,16 +943,6 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 }
 
 
-/**
- * mdss_dsi_reg_status_check() - Check dsi panel status through reg read
- * @ctrl_pdata: pointer to the dsi controller structure
- *
- * This function can be used to check the panel status through reading the
- * status register from the panel.
- *
- * Return: positive value if the panel is in good state, negative value or
- * zero otherwise.
- */
 int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	int ret = 0;
@@ -1024,11 +958,6 @@ int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 
 	ret = mdss_dsi_read_status(ctrl_pdata);
 
-	/*
-	 * mdss_dsi_read_status returns the number of bytes returned
-	 * by the panel. Success value is greater than zero and failure
-	 * case returns zero.
-	 */
 	if (ret > 0) {
 		ret = ctrl_pdata->check_read_status(ctrl_pdata);
 	} else {
@@ -1047,28 +976,28 @@ static void mdss_dsi_dsc_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	u32 data;
 
 	if (ctrl->panel_mode == DSI_VIDEO_MODE) {
-		/* MDSS_DSI_VIDEO_COMPRESSION_MODE_CTRL2 */
+		
 		MIPI_OUTP((ctrl->ctrl_base) + 0x2a4, 0);
 		data = dsc->bytes_per_pkt << 16;
-		data |= (0x0b << 8);	/*  dtype of compressed image */
+		data |= (0x0b << 8);	
 		data |= (dsc->pkt_per_line - 1) << 6;
 		data |= dsc->eol_byte_num << 4;
-		data |= 1;	/* enable */
-		/* MDSS_DSI_VIDEO_COMPRESSION_MODE_CTRL */
+		data |= 1;	
+		
 		MIPI_OUTP((ctrl->ctrl_base) + 0x2a0, data);
 	} else {
-		/* strem 0 */
-		/* MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL3 */
+		
+		
 		MIPI_OUTP((ctrl->ctrl_base) + 0x2b0, 0);
 
-		/* MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL2 */
+		
 		MIPI_OUTP((ctrl->ctrl_base) + 0x2ac, dsc->bytes_in_slice);
 
 		data = DTYPE_DCS_LWRITE << 8;
 		data |= (dsc->pkt_per_line - 1) << 6;
 		data |= dsc->eol_byte_num << 4;
-		data |= 1;	/* enable */
-		/* MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL */
+		data |= 1;	
+		
 		MIPI_OUTP((ctrl->ctrl_base) + 0x2a8, data);
 	}
 }
@@ -1109,7 +1038,7 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 			pdata->panel_info.bpp);
 	height = pdata->panel_info.yres;
 
-	if (dsc)	/* compressed */
+	if (dsc)	
 		width = dsc->pclk_per_line;
 
 	if (pdata->panel_info.type == MIPI_VIDEO_PANEL) {
@@ -1142,7 +1071,7 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x38, (vspw << 16));
 		if (ctrl_pdata->shared_data->timing_db_mode)
 			MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x1e4, 0x1);
-	} else {		/* command mode */
+	} else {		
 		if (mipi->dst_format == DSI_CMD_DST_FORMAT_RGB888)
 			bpp = 3;
 		else if (mipi->dst_format == DSI_CMD_DST_FORMAT_RGB666)
@@ -1150,7 +1079,7 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		else if (mipi->dst_format == DSI_CMD_DST_FORMAT_RGB565)
 			bpp = 2;
 		else
-			bpp = 3;	/* Default format set to RGB888 */
+			bpp = 3;	
 
 		ystride = width * bpp + 1;
 
@@ -1171,15 +1100,15 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 			stream_total = height << 16 | width;
 		}
 
-		/* DSI_COMMAND_MODE_NULL_INSERTION_CTRL */
+		
 		if (ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_104_2) {
-			data = (mipi->vc << 1); /* Virtual channel ID */
-			data |= 0 << 16; /* Word count of the NULL packet */
-			data |= 0x1; /* Enable Null insertion */
+			data = (mipi->vc << 1); 
+			data |= 0 << 16; 
+			data |= 0x1; 
 			MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x2b4, data);
 		}
 
-		/* Enable frame transfer in burst mode */
+		
 		if (ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_103) {
 			data = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
 			data = data | BIT(16);
@@ -1187,16 +1116,16 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 			ctrl_pdata->burst_mode_enabled = 1;
 		}
 
-		/* DSI_COMMAND_MODE_MDP_STREAM_CTRL */
+		
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x60, stream_ctrl);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x58, stream_ctrl);
 
-		/* DSI_COMMAND_MODE_MDP_STREAM_TOTAL */
+		
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x64, stream_total);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x5C, stream_total);
 	}
 
-	if (dsc)	/* compressed */
+	if (dsc)	
 		mdss_dsi_dsc_config(ctrl_pdata, dsc);
 }
 
@@ -1211,16 +1140,6 @@ void mdss_dsi_ctrl_setup(struct mdss_dsi_ctrl_pdata *ctrl)
 	mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode, pdata);
 }
 
-/**
- * mdss_dsi_bta_status_check() - Check dsi panel status through bta check
- * @ctrl_pdata: pointer to the dsi controller structure
- *
- * This function can be used to check status of the panel using bta check
- * for the panel.
- *
- * Return: positive value if the panel is in good state, negative value or
- * zero otherwise.
- */
 int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	int ret = 0;
@@ -1229,11 +1148,6 @@ int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	if (ctrl_pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 
-		/*
-		 * This should not return error otherwise
-		 * BTA status thread will treat it as dead panel scenario
-		 * and request for blank/unblank
-		 */
 		return 0;
 	}
 
@@ -1246,7 +1160,7 @@ int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	INIT_COMPLETION(ctrl_pdata->bta_comp);
 	mdss_dsi_enable_irq(ctrl_pdata, DSI_BTA_TERM);
 	spin_unlock_irqrestore(&ctrl_pdata->mdp_lock, flag);
-	MIPI_OUTP(ctrl_pdata->ctrl_base + 0x098, 0x01); /* trigger  */
+	MIPI_OUTP(ctrl_pdata->ctrl_base + 0x098, 0x01); 
 	wmb();
 
 	ret = wait_for_completion_killable_timeout(&ctrl_pdata->bta_comp,
@@ -1277,14 +1191,14 @@ int mdss_dsi_cmd_reg_tx(u32 data,
 
 	pr_debug("\n");
 
-	MIPI_OUTP(ctrl_base + 0x0084, 0x04);/* sw trigger */
+	MIPI_OUTP(ctrl_base + 0x0084, 0x04);
 	MIPI_OUTP(ctrl_base + 0x0004, 0x135);
 
 	wmb();
 
 	MIPI_OUTP(ctrl_base + 0x03c, data);
 	wmb();
-	MIPI_OUTP(ctrl_base + 0x090, 0x01);	/* trigger */
+	MIPI_OUTP(ctrl_base + 0x090, 0x01);	
 	wmb();
 
 	udelay(300);
@@ -1327,34 +1241,22 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (mdss_dsi_sync_wait_trigger(ctrl))
 		mctrl = mdss_dsi_get_other_ctrl(ctrl);
 
-	data = BIT(16) | BIT(17);	/* select CMD_DMA_PATTERN_SEL to 3 */
-	data |= BIT(2);			/* select CMD_DMA_FIFO_MODE to 1 */
-	data |= BIT(1);			/* enable CMD_DMA_TPG */
+	data = BIT(16) | BIT(17);	
+	data |= BIT(2);			
+	data |= BIT(1);			
 
 	MIPI_OUTP(ctrl->ctrl_base + 0x15c, data);
 	if (mctrl)
 		MIPI_OUTP(mctrl->ctrl_base + 0x15c, data);
 
-	/*
-	 * The DMA command parameters need to be programmed to the DMA_INIT_VAL
-	 * register in the proper order. The 'len' value will be a multiple
-	 * of 4, the padding bytes to make sure of this will be taken care of in
-	 * mdss_dsi_cmd_dma_add API.
-	 */
 	for (i = 0; i < len; i += 4) {
 		MIPI_OUTP(ctrl->ctrl_base + 0x17c, *bp);
 		if (mctrl)
 			MIPI_OUTP(mctrl->ctrl_base + 0x17c, *bp);
-		wmb(); /* make sure write happens before writing next command */
+		wmb(); 
 		bp++;
 	}
 
-	/*
-	 * The number of writes to the DMA_INIT_VAL register should be an even
-	 * number of dwords (32 bits). In case 'len' is not a multiple of 8,
-	 * we need to do make an extra write to the register with 0x00 to
-	 * satisfy this condition.
-	 */
 	if ((len % 8) != 0) {
 		MIPI_OUTP(ctrl->ctrl_base + 0x17c, 0x00);
 		if (mctrl)
@@ -1363,13 +1265,13 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	if (mctrl) {
 		MIPI_OUTP(mctrl->ctrl_base + 0x04c, len);
-		MIPI_OUTP(mctrl->ctrl_base + 0x090, 0x01); /* trigger */
+		MIPI_OUTP(mctrl->ctrl_base + 0x090, 0x01); 
 	}
 	MIPI_OUTP(ctrl->ctrl_base + 0x04c, len);
-	wmb(); /* make sure DMA length is programmed */
+	wmb(); 
 
-	MIPI_OUTP(ctrl->ctrl_base + 0x090, 0x01); /* trigger */
-	wmb(); /* make sure DMA trigger happens */
+	MIPI_OUTP(ctrl->ctrl_base + 0x090, 0x01); 
+	wmb(); 
 
 	ret = wait_for_completion_timeout(&ctrl->dma_comp,
 				msecs_to_jiffies(DMA_TX_TIMEOUT));
@@ -1378,21 +1280,21 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	else
 		ret = tp->len;
 
-	/* Reset the DMA TPG FIFO */
+	
 	MIPI_OUTP(ctrl->ctrl_base + 0x1ec, 0x1);
-	wmb(); /* make sure FIFO reset happens */
+	wmb(); 
 	MIPI_OUTP(ctrl->ctrl_base + 0x1ec, 0x0);
-	wmb(); /* make sure FIFO reset happens */
-	/* Disable CMD_DMA_TPG */
+	wmb(); 
+	
 	MIPI_OUTP(ctrl->ctrl_base + 0x15c, 0x0);
 
 	if (mctrl) {
-		/* Reset the DMA TPG FIFO */
+		
 		MIPI_OUTP(mctrl->ctrl_base + 0x1ec, 0x1);
-		wmb(); /* make sure FIFO reset happens */
+		wmb(); 
 		MIPI_OUTP(mctrl->ctrl_base + 0x1ec, 0x0);
-		wmb(); /* make sure FIFO reset happens */
-		/* Disable CMD_DMA_TPG */
+		wmb(); 
+		
 		MIPI_OUTP(mctrl->ctrl_base + 0x15c, 0x0);
 	}
 
@@ -1422,7 +1324,7 @@ static int mdss_dsi_cmds2buf_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		}
 		tot += len;
 		if (dchdr->last) {
-			tp->data = tp->start; /* begin of buf */
+			tp->data = tp->start; 
 
 			wait = mdss_dsi_wait4video_eng_busy(ctrl);
 			mdss_dsi_enable_irq(ctrl, DSI_CMD_TERM);
@@ -1449,19 +1351,6 @@ static int mdss_dsi_cmds2buf_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	return tot;
 }
 
-/**
- * __mdss_dsi_cmd_mode_config() - Enable/disable command mode engine
- * @ctrl: pointer to the dsi controller structure
- * @enable: true to enable command mode, false to disable command mode
- *
- * This function can be used to temporarily enable the command mode
- * engine (even for video mode panels) so as to transfer any dma commands to
- * the panel. It can also be used to disable the command mode engine
- * when no longer needed.
- *
- * Return: true, if there was a mode switch to command mode for video mode
- * panels.
- */
 static inline bool __mdss_dsi_cmd_mode_config(
 	struct mdss_dsi_ctrl_pdata *ctrl, bool enable)
 {
@@ -1469,7 +1358,7 @@ static inline bool __mdss_dsi_cmd_mode_config(
 	u32 dsi_ctrl;
 
 	dsi_ctrl = MIPI_INP((ctrl->ctrl_base) + 0x0004);
-	/* if currently in video mode, enable command mode */
+	
 	if (enable) {
 		if ((dsi_ctrl) & BIT(1)) {
 			MIPI_OUTP((ctrl->ctrl_base) + 0x0004,
@@ -1483,21 +1372,12 @@ static inline bool __mdss_dsi_cmd_mode_config(
 	return mode_changed;
 }
 
-/*
- * mdss_dsi_cmds_tx:
- * thread context only
- */
 int mdss_dsi_cmds_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		struct dsi_cmd_desc *cmds, int cnt, int use_dma_tpg)
 {
 	int len = 0;
 	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
 
-	/*
-	 * Turn on cmd mode in order to transmit the commands.
-	 * For video mode, do not send cmds more than one pixel line,
-	 * since it only transmit it during BLLP.
-	 */
 
 	if (mdss_dsi_sync_wait_enable(ctrl)) {
 		if (mdss_dsi_sync_wait_trigger(ctrl)) {
@@ -1511,7 +1391,7 @@ int mdss_dsi_cmds_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 			mctrl->cmd_cfg_restore =
 					__mdss_dsi_cmd_mode_config(mctrl, 1);
 		} else if (!ctrl->do_unicast) {
-			/* broadcast cmds, let cmd_trigger do it */
+			
 			return 0;
 
 		}
@@ -1542,27 +1422,13 @@ do_send:
 	return len;
 }
 
-/* MIPI_DSI_MRPS, Maximum Return Packet Size */
-static char max_pktsize[2] = {0x00, 0x00}; /* LSB tx first, 10 bytes */
+static char max_pktsize[2] = {0x00, 0x00}; 
 
 static struct dsi_cmd_desc pkt_size_cmd = {
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize)},
 	max_pktsize,
 };
 
-/*
- * mdss_dsi_cmds_rx() - dcs read from panel
- * @ctrl: dsi controller
- * @cmds: read command descriptor
- * @len: number of bytes to read back
- *
- * controller have 4 registers can hold 16 bytes of rxed data
- * dcs packet: 4 bytes header + payload + 2 bytes crc
- * 1st read: 4 bytes header + 10 bytes payload + 2 crc
- * 2nd read: 14 bytes payload + 2 crc
- * 3rd read: 14 bytes payload + 2 crc
- *
- */
 int mdss_dsi_cmds_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_cmd_desc *cmds, int rlen, int use_dma_tpg)
 {
@@ -1583,11 +1449,6 @@ int mdss_dsi_cmds_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 		return 0;
 	}
 
-	/*
-	 * Turn on cmd mode in order to transmit the commands.
-	 * For video mode, do not send cmds more than one pixel line,
-	 * since it only transmit it during BLLP.
-	 */
 	if (mdss_dsi_sync_wait_enable(ctrl)) {
 		if (mdss_dsi_sync_wait_trigger(ctrl)) {
 			mctrl = mdss_dsi_get_other_ctrl(ctrl);
@@ -1600,7 +1461,7 @@ int mdss_dsi_cmds_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 			mctrl->cmd_cfg_restore =
 					__mdss_dsi_cmd_mode_config(mctrl, 1);
 		} else {
-			/* skip cmds, let cmd_trigger do it */
+			
 			return 0;
 
 		}
@@ -1615,12 +1476,12 @@ do_send:
 		rx_byte = 4;
 	} else {
 		short_response = 0;
-		data_byte = 10;	/* first read */
+		data_byte = 10;	
 		if (rlen < data_byte)
 			pkt_size = rlen;
 		else
 			pkt_size = data_byte;
-		rx_byte = data_byte + 6; /* 4 header + 2 crc */
+		rx_byte = data_byte + 6; 
 	}
 
 
@@ -1672,16 +1533,16 @@ do_send:
 		}
 
 		if (ctrl->shared_data->hw_rev >= MDSS_DSI_HW_REV_101) {
-			/* clear the RDBK_DATA registers */
+			
 			MIPI_OUTP(ctrl->ctrl_base + 0x01d4, 0x1);
-			wmb(); /* make sure the RDBK registers are cleared */
+			wmb(); 
 			MIPI_OUTP(ctrl->ctrl_base + 0x01d4, 0x0);
-			wmb(); /* make sure the RDBK registers are cleared */
+			wmb(); 
 		}
 
-		mdss_dsi_wait4video_eng_busy(ctrl);	/* video mode only */
+		mdss_dsi_wait4video_eng_busy(ctrl);	
 		mdss_dsi_enable_irq(ctrl, DSI_CMD_TERM);
-		/* transmit read comamnd to client */
+		
 		if (use_dma_tpg)
 			ret = mdss_dsi_cmd_dma_tpg_tx(ctrl, tp);
 		else
@@ -1695,13 +1556,6 @@ do_send:
 			goto end;
 		}
 
-		/*
-		 * once cmd_dma_done interrupt received,
-		 * return data from client is ready and stored
-		 * at RDBK_DATA register already
-		 * since rx fifo is 16 bytes, dcs header is kept at first loop,
-		 * after that dcs header lost during shift into registers
-		 */
 		dlen = mdss_dsi_cmd_dma_rx(ctrl, rp, rx_byte);
 
 		if (!dlen)
@@ -1718,12 +1572,12 @@ do_send:
 			rlen -= data_byte;
 		}
 
-		dlen -= 2; /* 2 crc */
+		dlen -= 2; 
 		dlen -= diff;
-		rp->data += dlen;	/* next start position */
+		rp->data += dlen;	
 		rp->len += dlen;
 		if (!end) {
-			data_byte = 14; /* NOT first read */
+			data_byte = 14; 
 			if (rlen < data_byte)
 				pkt_size += rlen;
 			else
@@ -1734,12 +1588,6 @@ do_send:
 			 rp->len, dlen, diff);
 	}
 
-	/*
-	 * For single Long read, if the requested rlen < 10,
-	 * we need to shift the start position of rx
-	 * data buffer to skip the bytes which are not
-	 * updated.
-	 */
 	if (rp->read_cnt < 16 && !short_response)
 		rp->data = rp->start + (16 - rp->read_cnt);
 	else
@@ -1793,7 +1641,7 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	int domain = MDSS_IOMMU_DOMAIN_UNSECURE;
 	char *bp;
 	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
-	int ignored = 0;	/* overflow ignored */
+	int ignored = 0;	
 
 	bp = tp->data;
 
@@ -1822,26 +1670,26 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		ignored = 1;
 
 	if (mdss_dsi_sync_wait_trigger(ctrl)) {
-		/* broadcast same cmd to other panel */
+		
 		mctrl = mdss_dsi_get_other_ctrl(ctrl);
 		if (mctrl && mctrl->dma_addr == 0) {
 			if (ignored) {
-				/* mask out overflow isr */
+				
 				mdss_dsi_set_reg(mctrl, 0x10c,
 						0x0f0000, 0x0f0000);
 			}
 			MIPI_OUTP(mctrl->ctrl_base + 0x048, ctrl->dma_addr);
 			MIPI_OUTP(mctrl->ctrl_base + 0x04c, len);
-			MIPI_OUTP(mctrl->ctrl_base + 0x090, 0x01); /* trigger */
+			MIPI_OUTP(mctrl->ctrl_base + 0x090, 0x01); 
 		}
 	}
 
 	if (ignored) {
-		/* mask out overflow isr */
+		
 		mdss_dsi_set_reg(ctrl, 0x10c, 0x0f0000, 0x0f0000);
 	}
 
-	/* send cmd to its panel */
+	
 	MIPI_OUTP((ctrl->ctrl_base) + 0x048, ctrl->dma_addr);
 	MIPI_OUTP((ctrl->ctrl_base) + 0x04c, len);
 	wmb();
@@ -1850,7 +1698,7 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	wmb();
 
 	if (ctrl->do_unicast) {
-		/* let cmd_trigger to kickoff later */
+		
 		pr_debug("%s: SKIP, ndx=%d do_unicast=%d\n", __func__,
 					ctrl->ndx, ctrl->do_unicast);
 		ret = tp->len;
@@ -1866,9 +1714,9 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	if (mctrl && mctrl->dma_addr) {
 		if (ignored) {
-			/* clear pending overflow status */
+			
 			mdss_dsi_set_reg(mctrl, 0xc, 0xffffffff, 0x44440000);
-			/* restore overflow isr */
+			
 			mdss_dsi_set_reg(mctrl, 0x10c, 0x0f0000, 0);
 		}
 		if (mctrl->dmap_iommu_map) {
@@ -1889,9 +1737,9 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	}
 
 	if (ignored) {
-		/* clear pending overflow status */
+		
 		mdss_dsi_set_reg(ctrl, 0xc, 0xffffffff, 0x44440000);
-		/* restore overflow isr */
+		
 		mdss_dsi_set_reg(ctrl, 0x10c, 0x0f0000, 0);
 	}
 	ctrl->dma_addr = 0;
@@ -1918,7 +1766,7 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 	cnt >>= 2;
 
 	if (cnt > 4)
-		cnt = 4; /* 4 x 32 bits registers only */
+		cnt = 4; 
 
 	if (ctrl->shared_data->hw_rev >= MDSS_DSI_HW_REV_101) {
 		rp->read_cnt = (MIPI_INP((ctrl->ctrl_base) + 0x01d4) >> 16);
@@ -1928,7 +1776,7 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 				((rp->read_cnt - 4) == (max_pktsize[0] + 6));
 
 		if (ack_error)
-			rp->read_cnt -= 4; /* 4 byte read err report */
+			rp->read_cnt -= 4; 
 		if (!rp->read_cnt) {
 			pr_err("%s: Errors detected, no data rxed\n", __func__);
 			return 0;
@@ -1939,39 +1787,23 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 		rp->read_cnt = (max_pktsize[0] + 6);
 	}
 
-	/*
-	 * In case of multiple reads from the panel, after the first read, there
-	 * is possibility that there are some bytes in the payload repeating in
-	 * the RDBK_DATA registers. Since we read all the parameters from the
-	 * panel right from the first byte for every pass. We need to skip the
-	 * repeating bytes and then append the new parameters to the rx buffer.
-	 */
 	if (rp->read_cnt > 16) {
 		int bytes_shifted, data_lost = 0, rem_header_bytes = 0;
-		/* Any data more than 16 bytes will be shifted out */
+		
 		bytes_shifted = rp->read_cnt - rx_byte;
 		if (bytes_shifted >= 4)
-			data_lost = bytes_shifted - 4; /* remove dcs header */
+			data_lost = bytes_shifted - 4; 
 		else
-			rem_header_bytes = 4 - bytes_shifted; /* rem header */
-		/*
-		 * (rp->len - 4) -> current rx buffer data length.
-		 * If data_lost > 0, then ((rp->len - 4) - data_lost) will be
-		 * the number of repeating bytes.
-		 * If data_lost == 0, then ((rp->len - 4) + rem_header_bytes)
-		 * will be the number of bytes repeating in between rx buffer
-		 * and the current RDBK_DATA registers. We need to skip the
-		 * repeating bytes.
-		 */
+			rem_header_bytes = 4 - bytes_shifted; 
 		repeated_bytes = (rp->len - 4) - data_lost + rem_header_bytes;
 	}
 
-	off = 0x06c;	/* DSI_RDBK_DATA0 */
+	off = 0x06c;	
 	off += ((cnt - 1) * 4);
 
 	for (i = 0; i < cnt; i++) {
 		data = (u32)MIPI_INP((ctrl->ctrl_base) + off);
-		/* to network byte order */
+		
 		if (!repeated_bytes)
 			*lp++ = ntohl(data);
 		else
@@ -1981,7 +1813,7 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 		off -= 4;
 	}
 
-	/* Skip duplicates and append other data to the rx buffer */
+	
 	if (repeated_bytes) {
 		for (i = repeated_bytes; i < 16; i++)
 			rp->data[j++] = reg[i];
@@ -1996,7 +1828,7 @@ int mdss_dsi_en_wait4dynamic_done(struct mdss_dsi_ctrl_pdata *ctrl)
 	u32 data;
 	int rc = 0;
 
-	/* DSI_INTL_CTRL */
+	
 	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
 	data &= DSI_INTR_TOTAL_MASK;
 	data |= DSI_INTR_DYNAMIC_REFRESH_MASK;
@@ -2028,7 +1860,7 @@ void mdss_dsi_wait4video_done(struct mdss_dsi_ctrl_pdata *ctrl)
 	unsigned long flag;
 	u32 data;
 
-	/* DSI_INTL_CTRL */
+	
 	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
 	data &= DSI_INTR_TOTAL_MASK;
 	data |= DSI_INTR_VIDEO_DONE_MASK;
@@ -2058,7 +1890,7 @@ static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	if (ctrl->ctrl_state & CTRL_STATE_MDP_ACTIVE) {
 		mdss_dsi_wait4video_done(ctrl);
-		/* delay 4 ms to skip BLLP */
+		
 		usleep(4000);
 		ret = 1;
 	}
@@ -2085,12 +1917,6 @@ static int mdss_dsi_mdp_busy_tout_check(struct mdss_dsi_ctrl_pdata *ctrl)
 	bool stop_hs_clk = false;
 	int tout = 1;
 
-	/*
-	 * two possible scenario:
-	 * 1) DSI_INTR_CMD_MDP_DONE set but isr not fired
-	 * 2) DSI_INTR_CMD_MDP_DONE set and cleared (isr fired)
-	 *    but event_thread not wakeup
-	 */
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 	spin_lock_irqsave(&ctrl->mdp_lock, flag);
 
@@ -2098,16 +1924,16 @@ static int mdss_dsi_mdp_busy_tout_check(struct mdss_dsi_ctrl_pdata *ctrl)
 	if (isr & DSI_INTR_CMD_MDP_DONE) {
 		WARN(1, "INTR_CMD_MDP_DONE set but isr not fired\n");
 		isr &= DSI_INTR_MASK_ALL;
-		isr |= DSI_INTR_CMD_MDP_DONE; /* clear this isr only */
+		isr |= DSI_INTR_CMD_MDP_DONE; 
 		MIPI_OUTP(ctrl->ctrl_base + 0x0110, isr);
 		mdss_dsi_disable_irq_nosync(ctrl, DSI_MDP_TERM);
 		ctrl->mdp_busy = false;
 		if (ctrl->shared_data->cmd_clk_ln_recovery_en &&
 			ctrl->panel_mode == DSI_CMD_MODE) {
-			/* has hs_lane_recovery do the work */
+			
 			stop_hs_clk = true;
 		}
-		tout = 0;	/* recovered */
+		tout = 0;	
 	}
 
 	spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
@@ -2138,7 +1964,7 @@ int mdss_dsi_cmd_mdp_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 	spin_unlock_irqrestore(&ctrl->mdp_lock, flags);
 
 	if (need_wait) {
-		/* wait until DMA finishes the current job */
+		
 		rc = wait_for_completion_timeout(&ctrl->mdp_comp,
 					msecs_to_jiffies(DMA_TX_TIMEOUT));
 		spin_lock_irqsave(&ctrl->mdp_lock, flags);
@@ -2217,7 +2043,7 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	if (mdss_get_sd_client_cnt())
 		return -EPERM;
 
-	if (from_mdp) {	/* from mdp kickoff */
+	if (from_mdp) {	
 		if (!ctrl->burst_mode_enabled) {
 			mutex_lock(&ctrl->cmd_mutex);
 			cmd_mutex_acquired = true;
@@ -2241,7 +2067,7 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 
 	if (!ctrl->burst_mode_enabled ||
 		(from_mdp && ctrl->shared_data->cmd_clk_ln_recovery_en)) {
-		/* make sure dsi_cmd_mdp is idle */
+		
 		rc = mdss_dsi_cmd_mdp_busy(ctrl);
 		if (rc) {
 			pr_err("%s: mdp busy timeout\n", __func__);
@@ -2252,26 +2078,20 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	}
 	mdss_dsi_get_hw_revision(ctrl);
 
-	/* For DSI versions less than 1.3.0, CMD DMA TPG is not supported */
+	
 	if (req && (ctrl->shared_data->hw_rev < MDSS_DSI_HW_REV_103))
 		req->flags &= ~CMD_REQ_DMA_TPG;
 
 	pr_debug("%s: ctrl=%d from_mdp=%d pid=%d\n", __func__,
 				ctrl->ndx, from_mdp, current->pid);
 
-	if (from_mdp) { /* from mdp kickoff */
-		/*
-		 * when partial update enabled, the roi of pinfo
-		 * is updated before mdp kickoff. Either width or
-		 * height of roi is non zero, then really kickoff
-		 * will followed.
-		 */
+	if (from_mdp) { 
 		if (!roi || (roi->w != 0 || roi->h != 0)) {
 			if (ctrl->shared_data->cmd_clk_ln_recovery_en &&
 					ctrl->panel_mode == DSI_CMD_MODE)
 				mdss_dsi_start_hs_clk_lane(ctrl);
 		}
-	} else {	/* from dcs send */
+	} else {	
 		if (ctrl->shared_data->cmd_clk_ln_recovery_en &&
 				ctrl->panel_mode == DSI_CMD_MODE && hs_req)
 			mdss_dsi_cmd_start_hs_clk_lane(ctrl);
@@ -2332,20 +2152,12 @@ need_lock:
 	MDSS_XLOG(ctrl->ndx, from_mdp, ctrl->mdp_busy, current->pid,
 							XLOG_FUNC_EXIT);
 
-	if (from_mdp) { /* from mdp kickoff */
-		/*
-		 * when partial update enabled, the roi of pinfo
-		 * is updated before mdp kickoff. Either width or
-		 * height of roi is 0, then it is false kickoff so
-		 * no mdp_busy flag set needed.
-		 * when partial update disabled, mdp_busy flag
-		 * alway set.
-		 */
+	if (from_mdp) { 
 		if (!roi || (roi->w != 0 || roi->h != 0))
 			mdss_dsi_cmd_mdp_start(ctrl);
 		if (cmd_mutex_acquired)
 			mutex_unlock(&ctrl->cmd_mutex);
-	} else {	/* from dcs send */
+	} else {	
 		if (ctrl->shared_data->cmd_clk_ln_recovery_en &&
 				ctrl->panel_mode == DSI_CMD_MODE &&
 				(req && (req->flags & CMD_REQ_HS_MODE)))
@@ -2375,6 +2187,7 @@ static void dsi_send_events(struct mdss_dsi_ctrl_pdata *ctrl,
 	spin_unlock(&dsi_event.event_lock);
 }
 
+extern struct msm_fb_data_type *mfd_instance;
 static int dsi_event_thread(void *data)
 {
 	struct mdss_dsi_event *ev;
@@ -2392,7 +2205,7 @@ static int dsi_event_thread(void *data)
 		pr_err("%s: set priority failed\n", __func__);
 
 	ev = (struct mdss_dsi_event *)data;
-	/* event */
+	
 	init_waitqueue_head(&ev->event_q);
 	spin_lock_init(&ev->event_lock);
 
@@ -2413,19 +2226,12 @@ static int dsi_event_thread(void *data)
 			mdss_dsi_pll_relock(ctrl);
 
 		if (todo & DSI_EV_MDP_FIFO_UNDERFLOW) {
-			mutex_lock(&ctrl->mutex);
-			if (ctrl->recovery) {
-				pr_debug("%s: Handling underflow event\n",
-							__func__);
-				mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
-				mdss_dsi_sw_reset(ctrl, true);
-				ctrl->recovery->fxn(ctrl->recovery->data,
-					MDP_INTF_DSI_CMD_FIFO_UNDERFLOW);
-				mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
-			}
-			mutex_unlock(&ctrl->mutex);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
-				"dsi1_ctrl", "dsi1_phy", "panic");
+				"dsi1_ctrl", "dsi1_phy");
+			if(mfd_instance) {
+				pr_info("DSI_EV_MDP_FIFO_UNDERFLOW: mdss_fb_report_panel_dead recovery\n");
+				mdss_fb_report_panel_dead(mfd_instance);
+			}
 		}
 
 		if (todo & DSI_EV_DSI_FIFO_EMPTY)
@@ -2434,12 +2240,6 @@ static int dsi_event_thread(void *data)
 		if (todo & DSI_EV_DLNx_FIFO_OVERFLOW) {
 			mdss_dsi_get_hw_revision(ctrl);
 			mutex_lock(&dsi_mtx);
-			/*
-			 * For targets other than msm8994,
-			 * run the overflow recovery sequence only when
-			 * data lanes are in stop state and
-			 * clock lane is not in Stop State.
-			 */
 			ln_status = MIPI_INP(ctrl->ctrl_base + 0x00a8);
 			force_clk_ln_hs = (MIPI_INP(ctrl->ctrl_base + 0x00ac)
 					& BIT(28));
@@ -2485,7 +2285,7 @@ static int dsi_event_thread(void *data)
 			complete_all(&ctrl->mdp_comp);
 			spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
 
-			/* enable dsi error interrupt */
+			
 			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 			mdss_dsi_err_intr_ctrl(ctrl, DSI_INTR_ERROR_MASK, 1);
 			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
@@ -2511,18 +2311,12 @@ void mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	base = ctrl->ctrl_base;
 
-	status = MIPI_INP(base + 0x0068);/* DSI_ACK_ERR_STATUS */
+	status = MIPI_INP(base + 0x0068);
 
 	if (status) {
 		MIPI_OUTP(base + 0x0068, status);
-		/* Writing of an extra 0 needed to clear error bits */
+		
 		MIPI_OUTP(base + 0x0068, 0);
-		/*
-		 * After bta done, h/w may have a fake overflow and
-		 * that overflow may further cause ack_err about 3 ms
-		 * later which is another false alarm. Here the
-		 * warning message is ignored.
-		 */
 		if (ctrl->panel_data.panel_info.esd_check_enabled &&
 			(ctrl->status_mode == ESD_BTA) && (status & 0x1008000))
 			return;
@@ -2538,7 +2332,7 @@ void mdss_dsi_timeout_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	base = ctrl->ctrl_base;
 
-	status = MIPI_INP(base + 0x00c0);/* DSI_TIMEOUT_STATUS */
+	status = MIPI_INP(base + 0x00c0);
 
 	if (status & 0x0111) {
 		MIPI_OUTP(base + 0x00c0, status);
@@ -2555,7 +2349,7 @@ void mdss_dsi_dln0_phy_err(struct mdss_dsi_ctrl_pdata *ctrl, bool print_en)
 
 	base = ctrl->ctrl_base;
 
-	status = MIPI_INP(base + 0x00b4);/* DSI_DLN0_PHY_ERR */
+	status = MIPI_INP(base + 0x00b4);
 
 	if (status & 0x011111) {
 		MIPI_OUTP(base + 0x00b4, status);
@@ -2571,29 +2365,24 @@ void mdss_dsi_fifo_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	base = ctrl->ctrl_base;
 
-	status = MIPI_INP(base + 0x000c);/* DSI_FIFO_STATUS */
+	status = MIPI_INP(base + 0x000c);
 
-	/* fifo underflow, overflow and empty*/
+	
 	if (status & 0xcccc4489) {
 		MIPI_OUTP(base + 0x000c, status);
 
-		/*
-		 * During dynamic refresh rate update, DSI fifo errors are
-		 * expected, Check the dfps status and avoid the log. However,
-		 * FIFO errors needs to be cleared.
-		 */
 		if (!ctrl->dfps_status)
 			pr_err("%s: ctrl ndx=%d status=%x\n", __func__,
 					ctrl->ndx, status);
 
-		if (status & 0x44440000) {/* DLNx_HS_FIFO_OVERFLOW */
+		if (status & 0x44440000) {
 			dsi_send_events(ctrl, DSI_EV_DLNx_FIFO_OVERFLOW, 0);
-			/* Ignore FIFO EMPTY when overflow happens */
+			
 			status = status & 0xeeeeffff;
 		}
-		if (status & 0x0080)  /* CMD_DMA_FIFO_UNDERFLOW */
+		if (status & 0x0080)  
 			dsi_send_events(ctrl, DSI_EV_MDP_FIFO_UNDERFLOW, 0);
-		if (status & 0x11110000) /* DLN_FIFO_EMPTY */
+		if (status & 0x11110000) 
 			dsi_send_events(ctrl, DSI_EV_DSI_FIFO_EMPTY, 0);
 	}
 
@@ -2608,9 +2397,9 @@ void mdss_dsi_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	base = ctrl->ctrl_base;
 
-	status = MIPI_INP(base + 0x0008);/* DSI_STATUS */
+	status = MIPI_INP(base + 0x0008);
 
-	if (status & 0x80000000) { /* INTERLEAVE_OP_CONTENTION */
+	if (status & 0x80000000) { 
 		MIPI_OUTP(base + 0x0008, status);
 		pr_err("%s: status=%x\n", __func__, status);
 	}
@@ -2622,9 +2411,9 @@ void mdss_dsi_clk_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	unsigned char *base;
 
 	base = ctrl->ctrl_base;
-	status = MIPI_INP(base + 0x0120);/* DSI_CLK_STATUS */
+	status = MIPI_INP(base + 0x0120);
 
-	if (status & 0x10000) { /* DSI_CLK_PLL_UNLOCKED */
+	if (status & 0x10000) { 
 		MIPI_OUTP(base + 0x0120, status);
 		dsi_send_events(ctrl, DSI_EV_PLL_UNLOCKED, 0);
 		pr_err("%s: status=%x\n", __func__, status);
@@ -2635,18 +2424,18 @@ void mdss_dsi_error(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	u32 intr;
 
-	/* disable dsi error interrupt */
+	
 	mdss_dsi_err_intr_ctrl(ctrl, DSI_INTR_ERROR_MASK, 0);
 
-	/* DSI_ERR_INT_MASK0 */
-	mdss_dsi_clk_status(ctrl);	/* Mask0, 0x10000000 */
-	mdss_dsi_fifo_status(ctrl);	/* mask0, 0x133d00 */
-	mdss_dsi_ack_err_status(ctrl);	/* mask0, 0x01f */
-	mdss_dsi_timeout_status(ctrl);	/* mask0, 0x0e0 */
-	mdss_dsi_status(ctrl);		/* mask0, 0xc0100 */
-	mdss_dsi_dln0_phy_err(ctrl, true);	/* mask0, 0x3e00000 */
+	
+	mdss_dsi_clk_status(ctrl);	
+	mdss_dsi_fifo_status(ctrl);	
+	mdss_dsi_ack_err_status(ctrl);	
+	mdss_dsi_timeout_status(ctrl);	
+	mdss_dsi_status(ctrl);		
+	mdss_dsi_dln0_phy_err(ctrl, true);	
 
-	/* clear dsi error interrupt */
+	
 	intr = MIPI_INP(ctrl->ctrl_base + 0x0110);
 	intr &= DSI_INTR_TOTAL_MASK;
 	intr |= DSI_INTR_ERROR;
@@ -2667,7 +2456,7 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 		return IRQ_HANDLED;
 	}
 
-	isr = MIPI_INP(ctrl->ctrl_base + 0x0110);/* DSI_INTR_CTRL */
+	isr = MIPI_INP(ctrl->ctrl_base + 0x0110);
 	MIPI_OUTP(ctrl->ctrl_base + 0x0110, (isr & ~DSI_INTR_ERROR));
 
 	pr_debug("%s: ndx=%d isr=%x\n", __func__, ctrl->ndx, isr);
@@ -2676,20 +2465,11 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 		spin_lock(&ctrl->mdp_lock);
 		mdss_dsi_disable_irq_nosync(ctrl, DSI_BTA_TERM);
 		complete(&ctrl->bta_comp);
-		/*
-		 * When bta done happens, the panel should be in good
-		 * state. However, bta could cause the fake overflow
-		 * error for video mode. The similar issue happens when
-		 * sending dcs cmd. This overflow further causes
-		 * flicking because of phy reset which is unncessary,
-		 * so here overflow error is ignored, and errors are
-		 * cleared.
-		 */
 		if (ctrl->panel_data.panel_info.esd_check_enabled &&
 			(ctrl->status_mode == ESD_BTA) &&
 			(ctrl->panel_mode == DSI_VIDEO_MODE)) {
 			isr &= ~DSI_INTR_ERROR;
-			/* clear only overflow */
+			
 			mdss_dsi_set_reg(ctrl, 0x0c, 0x44440000, 0x44440000);
 		}
 		spin_unlock(&ctrl->mdp_lock);
@@ -2721,7 +2501,7 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 		mdss_dsi_disable_irq_nosync(ctrl, DSI_MDP_TERM);
 		if (ctrl->shared_data->cmd_clk_ln_recovery_en &&
 				ctrl->panel_mode == DSI_CMD_MODE) {
-			/* stop force clk lane hs */
+			
 			mdss_dsi_cfg_lane_ctrl(ctrl, BIT(28), 0);
 			dsi_send_events(ctrl, DSI_EV_STOP_HS_CLK_LANE,
 							DSI_MDP_TERM);

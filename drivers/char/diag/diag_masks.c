@@ -26,6 +26,8 @@
 
 #define DIAG_SET_FEATURE_MASK(x) (feature_bytes[(x)/8] |= (1 << (x & 0x7)))
 
+extern int diag_rb_enable;
+
 struct diag_mask_info msg_mask;
 struct diag_mask_info msg_bt_mask;
 struct diag_mask_info log_mask;
@@ -61,11 +63,6 @@ static const struct diag_ssid_range_t msg_mask_tbl[] = {
 
 static int diag_apps_responds(void)
 {
-	/*
-	 * Apps processor should respond to mask commands only if the
-	 * Modem channel is up, the feature mask is received from Modem
-	 * and if Modem supports Mask Centralization.
-	 */
 	if (!chk_apps_only())
 		return 0;
 
@@ -96,7 +93,7 @@ static void diag_send_log_mask_update(uint8_t peripheral, int equip_id)
 
 	if (!driver->diagfwd_cntl[peripheral] ||
 	    !driver->diagfwd_cntl[peripheral]->ch_open) {
-		pr_debug("diag: In %s, control channel is not open, p: %d\n",
+		DIAG_DBUG("diag: In %s, control channel is not open, p: %d\n",
 			 __func__, peripheral);
 		return;
 	}
@@ -118,7 +115,7 @@ static void diag_send_log_mask_update(uint8_t peripheral, int equip_id)
 		send_once = 0;
 		break;
 	default:
-		pr_debug("diag: In %s, invalid log_mask status\n", __func__);
+		DIAG_DBUG("diag: In %s, invalid log_mask status\n", __func__);
 		return;
 	}
 
@@ -179,7 +176,7 @@ static void diag_send_event_mask_update(uint8_t peripheral)
 	int temp_len = 0;
 
 	if (num_bytes <= 0 || num_bytes > driver->event_mask_size) {
-		pr_debug("diag: In %s, invalid event mask length %d\n",
+		DIAG_DBUG("diag: In %s, invalid event mask length %d\n",
 			 __func__, num_bytes);
 		return;
 	}
@@ -189,7 +186,7 @@ static void diag_send_event_mask_update(uint8_t peripheral)
 
 	if (!driver->diagfwd_cntl[peripheral] ||
 	    !driver->diagfwd_cntl[peripheral]->ch_open) {
-		pr_debug("diag: In %s, control channel is not open, p: %d\n",
+		DIAG_DBUG("diag: In %s, control channel is not open, p: %d\n",
 			 __func__, peripheral);
 		return;
 	}
@@ -226,7 +223,7 @@ static void diag_send_event_mask_update(uint8_t peripheral)
 		write_len += num_bytes;
 		break;
 	default:
-		pr_debug("diag: In %s, invalid status %d\n", __func__,
+		DIAG_DBUG("diag: In %s, invalid status %d\n", __func__,
 			 event_mask.status);
 		goto err;
 	}
@@ -259,7 +256,7 @@ static void diag_send_msg_mask_update(uint8_t peripheral, int first, int last)
 
 	if (!driver->diagfwd_cntl[peripheral] ||
 	    !driver->diagfwd_cntl[peripheral]->ch_open) {
-		pr_debug("diag: In %s, control channel is not open, p: %d\n",
+		DIAG_DBUG("diag: In %s, control channel is not open, p: %d\n",
 			 __func__, peripheral);
 		return;
 	}
@@ -275,7 +272,7 @@ static void diag_send_msg_mask_update(uint8_t peripheral, int first, int last)
 	case DIAG_CTRL_MASK_VALID:
 		break;
 	default:
-		pr_debug("diag: In %s, invalid status: %d\n", __func__,
+		DIAG_DBUG("diag: In %s, invalid status: %d\n", __func__,
 			 msg_mask.status);
 		goto err;
 	}
@@ -302,7 +299,7 @@ static void diag_send_msg_mask_update(uint8_t peripheral, int first, int last)
 			} else {
 				msg_mask.update_buf = temp;
 				msg_mask.update_buf_len = temp_len;
-				pr_debug("diag: In %s, successfully reallocated msg_mask update buffer to len: %d\n",
+				DIAG_DBUG("diag: In %s, successfully reallocated msg_mask update buffer to len: %d\n",
 					 __func__, msg_mask.update_buf_len);
 			}
 		} else if (msg_mask.status == DIAG_CTRL_MASK_ALL_ENABLED) {
@@ -392,7 +389,7 @@ static void diag_send_feature_mask_update(uint8_t peripheral)
 	}
 
 	mutex_lock(&driver->diag_cntl_mutex);
-	/* send feature mask update */
+	
 	feature_mask.ctrl_pkt_id = DIAG_CTRL_MSG_FEATURE;
 	feature_mask.ctrl_pkt_data_len = sizeof(uint32_t) + FEATURE_MASK_LEN;
 	feature_mask.feature_mask_len = FEATURE_MASK_LEN;
@@ -553,7 +550,7 @@ static int diag_cmd_get_msg_mask(unsigned char *src_buf, int src_len,
 			continue;
 		}
 		mask_size = mask->range * sizeof(uint32_t);
-		/* Copy msg mask only till the end of the rsp buffer */
+		
 		if (mask_size + sizeof(rsp) > dest_len)
 			mask_size = dest_len - sizeof(rsp);
 		memcpy(dest_buf + sizeof(rsp), mask->ptr, mask_size);
@@ -598,7 +595,7 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 		found = 1;
 		mutex_lock(&mask->lock);
 		if (req->ssid_last > mask->ssid_last) {
-			pr_debug("diag: Msg SSID range mismatch\n");
+			DIAG_DBUG("diag: Msg SSID range mismatch\n");
 			mask->ssid_last = req->ssid_last;
 		}
 		mask_size = req->ssid_last - req->ssid_first + 1;
@@ -626,10 +623,6 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 
 	diag_update_userspace_clients(MSG_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	rsp.cmd_code = DIAG_CMD_MSG_CONFIG;
 	rsp.sub_cmd = DIAG_CMD_OP_SET_MSG_MASK;
 	rsp.ssid_first = req->ssid_first;
@@ -644,8 +637,17 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 		mask_size = dest_len - write_len;
 	memcpy(dest_buf + write_len, src_buf + header_len, mask_size);
 	write_len += mask_size;
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_msg_mask_update(i, req->ssid_first, req->ssid_last);
+	}
 end:
 	return write_len;
 }
@@ -681,10 +683,6 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 
 	diag_update_userspace_clients(MSG_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	rsp.cmd_code = DIAG_CMD_MSG_CONFIG;
 	rsp.sub_cmd = DIAG_CMD_OP_SET_ALL_MSG_MASK;
 	rsp.status = MSG_STATUS_SUCCESS;
@@ -693,9 +691,17 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf, &rsp, header_len);
 	write_len += header_len;
 
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_msg_mask_update(i, ALL_SSID, ALL_SSID);
-
+	}
 	return write_len;
 }
 
@@ -764,10 +770,6 @@ static int diag_cmd_update_event_mask(unsigned char *src_buf, int src_len,
 	mutex_unlock(&event_mask.lock);
 	diag_update_userspace_clients(EVENT_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	rsp.cmd_code = DIAG_CMD_SET_EVENT_MASK;
 	rsp.status = EVENT_STATUS_SUCCESS;
 	rsp.padding = 0;
@@ -777,9 +779,17 @@ static int diag_cmd_update_event_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf + write_len, event_mask.ptr, mask_len);
 	write_len += mask_len;
 
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_event_mask_update(i);
-
+	}
 	return write_len;
 }
 
@@ -809,14 +819,19 @@ static int diag_cmd_toggle_events(unsigned char *src_buf, int src_len,
 	mutex_unlock(&event_mask.lock);
 	diag_update_userspace_clients(EVENT_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	header.cmd_code = DIAG_CMD_EVENT_TOGGLE;
 	header.padding = 0;
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_event_mask_update(i);
+	}
 	memcpy(dest_buf, &header, sizeof(header));
 	write_len += sizeof(header);
 
@@ -854,10 +869,6 @@ static int diag_cmd_get_log_mask(unsigned char *src_buf, int src_len,
 	rsp.padding[1] = 0;
 	rsp.padding[2] = 0;
 	rsp.sub_cmd = DIAG_CMD_OP_GET_LOG_MASK;
-	/*
-	 * Don't copy the response header now. Copy at the end after
-	 * calculating the status field value
-	 */
 	write_len += rsp_header_len;
 
 	log_item = (struct diag_log_mask_t *)log_mask.ptr;
@@ -866,12 +877,6 @@ static int diag_cmd_get_log_mask(unsigned char *src_buf, int src_len,
 			continue;
 		mutex_lock(&log_item->lock);
 		mask_size = LOG_ITEMS_TO_SIZE(log_item->num_items);
-		/*
-		 * Make sure we have space to fill the response in the buffer.
-		 * Destination buffer should atleast be able to hold equip_id
-		 * (uint32_t), num_items(uint32_t), mask (mask_size) and the
-		 * response header.
-		 */
 		if ((mask_size + (2 * sizeof(uint32_t)) + rsp_header_len) >
 								dest_len) {
 			pr_err("diag: In %s, invalid length: %d, max rsp_len: %d\n",
@@ -971,12 +976,6 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 			mask->num_items = req->num_items;
 		mask_size = LOG_ITEMS_TO_SIZE(req->num_items);
 		if (mask_size > mask->range) {
-			/*
-			 * If the size of the log mask cannot fit into our
-			 * buffer, trim till we have space left in the buffer.
-			 * num_items should then reflect the items that we have
-			 * in our buffer.
-			 */
 			mask_size = mask->range;
 			mask->num_items = LOG_SIZE_TO_ITEMS(mask_size);
 			req->num_items = mask->num_items;
@@ -990,10 +989,6 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 	mutex_unlock(&log_mask.lock);
 	diag_update_userspace_clients(LOG_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	payload_len = LOG_ITEMS_TO_SIZE(req->num_items);
 	if (payload_len + rsp_header_len > dest_len) {
 		pr_err("diag: In %s, invalid length, payload_len: %d, header_len: %d, dest_len: %d\n",
@@ -1015,8 +1010,17 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf + write_len, src_buf + read_len, payload_len);
 	write_len += payload_len;
 
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_log_mask_update(i, req->equip_id);
+	}
 end:
 	return write_len;
 }
@@ -1043,10 +1047,6 @@ static int diag_cmd_disable_log_mask(unsigned char *src_buf, int src_len,
 	log_mask.status = DIAG_CTRL_MASK_ALL_DISABLED;
 	diag_update_userspace_clients(LOG_MASKS_TYPE);
 
-	/*
-	 * Apps processor must send the response to this command. Frame the
-	 * response.
-	 */
 	header.cmd_code = DIAG_CMD_LOG_CONFIG;
 	header.padding[0] = 0;
 	header.padding[1] = 0;
@@ -1055,9 +1055,17 @@ static int diag_cmd_disable_log_mask(unsigned char *src_buf, int src_len,
 	header.status = LOG_STATUS_SUCCESS;
 	memcpy(dest_buf, &header, sizeof(struct diag_log_config_rsp_t));
 	write_len += sizeof(struct diag_log_config_rsp_t);
-	for (i = 0; i < NUM_PERIPHERALS; i++)
+	for (i = 0; i < NUM_PERIPHERALS; i++) {
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & DQ_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
+		if (i == PERIPHERAL_MODEM && (diag_rb_enable & WCNSS_FILTER_MASK)) {
+			printk("diag(%d): Filter Modem mask\n", __LINE__);
+			continue;
+		}
 		diag_send_log_mask_update(i, ALL_EQUIP_ID);
-
+	}
 	return write_len;
 }
 
@@ -1324,7 +1332,7 @@ static int diag_build_time_mask_init(void)
 {
 	int err = 0;
 
-	/* There is no need for update buffer for Build Time masks */
+	
 	err = __diag_mask_init(&msg_bt_mask, MSG_MASK_SIZE, 0);
 	if (err)
 		return err;
@@ -1444,7 +1452,7 @@ int diag_copy_to_user_msg_mask(char __user *buf, size_t count)
 		memcpy(ptr + len, mask->ptr, copy_len);
 		len += copy_len;
 		mutex_unlock(&mask->lock);
-		/* + sizeof(int) to account for data_type already in buf */
+		
 		if (total_len + sizeof(int) + len > count) {
 			pr_err("diag: In %s, unable to send msg masks to user space, total_len: %d, count: %zu\n",
 			       __func__, total_len, count);
@@ -1498,7 +1506,7 @@ int diag_copy_to_user_log_mask(char __user *buf, size_t count)
 		memcpy(ptr + len, mask->ptr, copy_len);
 		len += copy_len;
 		mutex_unlock(&mask->lock);
-		/* + sizeof(int) to account for data_type already in buf */
+		
 		if (total_len + sizeof(int) + len > count) {
 			pr_err("diag: In %s, unable to send log masks to user space, total_len: %d, count: %zu\n",
 			       __func__, total_len, count);

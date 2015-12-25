@@ -128,6 +128,18 @@
 				qcom,hw-settle-time = <0>;
 				qcom,fast-avg-setup = <0>;
 			};
+
+			chan@10 {
+				label = "case_therm";
+				reg = <0x10>;
+				qcom,decimation = <0>;
+				qcom,pre-div-channel-scaling = <0>;
+				qcom,calibration-type = "ratiometric";
+				qcom,scale-function = <2>;
+				qcom,hw-settle-time = <2>;
+				qcom,fast-avg-setup = <0>;
+				qcom,vadc-thermal-node;
+			};
 		};
 
 		pmi8950_gpios: gpios {
@@ -162,9 +174,14 @@
 			label = "pmi8950-mpp";
 
 			mpp@a000 {
+				/* MPP1 - CASE_THERM config */
 				reg = <0xa000 0x100>;
 				qcom,pin-num = <1>;
-				status = "disabled";
+				qcom,mode = <4>; /* AIN input */
+				qcom,invert = <1>; /* Enable MPP */
+				qcom,ain-route = <0>; /* AMUX 5 */
+				qcom,master-en = <1>;
+				qcom,src-sel = <0>; /* Function constant */
 			};
 
 			mpp@a100 {
@@ -547,7 +564,7 @@
 				qcom,default-led-trigger =
 						"flash0_trigger";
 				qcom,max-current = <1000>;
-				qcom,duration = <1280>;
+				qcom,duration = <600>;
 				qcom,id = <0>;
 				qcom,current = <625>;
 			};
@@ -558,7 +575,7 @@
 				qcom,default-led-trigger =
 						"flash1_trigger";
 				qcom,max-current = <1000>;
-				qcom,duration = <1280>;
+				qcom,duration = <600>;
 				qcom,id = <1>;
 				qcom,current = <625>;
 			};
@@ -580,6 +597,16 @@
 						"torch1_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <1>;
+				qcom,current = <120>;
+			};
+
+			pmi8950_flashlight: qcom,flashlight {
+				label = "dual_leds";
+				qcom,led-name = "flashlight";
+				qcom,default-led-trigger =
+						"torch0_trigger";
+				qcom,max-current = <750>;
+				qcom,id = <3>;
 				qcom,current = <120>;
 			};
 
@@ -616,6 +643,9 @@
 			qcom,wave-samples = [3e 3e 3e 3e 3e 3e 3e 3e];
 			qcom,wave-rep-cnt = <1>;
 			qcom,wave-samp-rep-cnt = <1>;
+			qcom,lra-auto-res-mode="qwd";
+			qcom,lra-high-z="opt1";
+			qcom,lra-res-cal-period = <0>;
 		};
 	};
 };

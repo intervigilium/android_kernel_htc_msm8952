@@ -456,9 +456,6 @@ struct sps_bam_props {
 	u32 restricted_pipes;
 	u32 ee;
 
-	/* Log Level property */
-	u32 ipc_loglevel;
-
 	/* BAM MTI interrupt generation */
 
 	u32 irq_gen_addr;

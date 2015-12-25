@@ -11,6 +11,7 @@
  * GNU General Public License for more details.
  */
 
+#include "msm8976.dtsi"
 #include "msm8976-pinctrl.dtsi"
 #include "msm8976-camera-sensor-cdp.dtsi"
 #include "msm8976-mdss-cdp.dtsi"

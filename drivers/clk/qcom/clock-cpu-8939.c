@@ -115,6 +115,29 @@ static struct clk_lookup cpu_clocks_8939[] = {
 static struct mux_div_clk *a53ssmux[] = {&a53ssmux_bc,
 						&a53ssmux_lc, &a53ssmux_cci};
 
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+int clk_get_cpu_idx(struct clk *c)
+{
+	
+	if (c == &a53ssmux_bc.c)
+		return 0;
+
+	
+	if (c == &a53ssmux_lc.c)
+		return 4;
+
+	return -1;
+}
+
+int clk_get_l2_idx(struct clk *c)
+{
+	if (c == &a53ssmux_cci.c)
+		return 0;
+
+	return -1;
+}
+#endif
+
 static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 								char *prop_name)
 {
@@ -430,7 +453,7 @@ static int clock_a53_probe(struct platform_device *pdev)
 		rc = of_get_fmax_vdd_class(pdev, &a53ssmux[mux_id]->c,
 								prop_name);
 		if (rc) {
-			/* Fall back to most conservative PVS table */
+			
 			dev_err(&pdev->dev, "Unable to load voltage plan %s!\n",
 								prop_name);
 
@@ -458,17 +481,10 @@ static int clock_a53_probe(struct platform_device *pdev)
 	clk_set_rate(&a53ssmux[A53SS_MUX_CCI]->c, rate);
 
 	for (mux_id = 0; mux_id < A53SS_MUX_CCI; mux_id++) {
-		/* Force a PLL reconfiguration */
+		
 		config_pll(mux_id);
 	}
 
-	/*
-	 * We don't want the CPU clocks to be turned off at late init
-	 * if CPUFREQ or HOTPLUG configs are disabled. So, bump up the
-	 * refcount of these clocks. Any cpufreq/hotplug manager can assume
-	 * that the clocks have already been prepared and enabled by the time
-	 * they take over.
-	 */
 	get_online_cpus();
 	for_each_online_cpu(cpu) {
 		WARN(clk_prepare_enable(&a53ssmux[cpu/4]->c),
@@ -533,19 +549,19 @@ module_init(cpu_clock_init_vote);
 
 static void __init configure_enable_sr2_pll(void __iomem *base)
 {
-	/* Disable Mode */
+	
 	writel_relaxed(0x0, base + C0_PLL_MODE);
 
-	/* Configure L/M/N values */
+	
 	writel_relaxed(0x34, base + C0_PLL_L_VAL);
 	writel_relaxed(0x0,  base + C0_PLL_M_VAL);
 	writel_relaxed(0x1,  base + C0_PLL_N_VAL);
 
-	/* Configure USER_CTL and CONFIG_CTL value */
+	
 	writel_relaxed(0x0100000f, base + C0_PLL_USER_CTL);
 	writel_relaxed(0x4c015765, base + C0_PLL_CONFIG_CTL);
 
-	/* Enable PLL now */
+	
 	writel_relaxed(0x2, base + C0_PLL_MODE);
 	udelay(2);
 	writel_relaxed(0x6, base + C0_PLL_MODE);
@@ -570,23 +586,23 @@ static int __init cpu_clock_a53_init_little(void)
 	base = ioremap_nocache(APCS_ALIAS0_CMD_RCGR, SZ_8);
 	regval = readl_relaxed(base);
 	/* Source GPLL0 and 1/2 the rate of GPLL0 */
-	regval = (SRC_SEL << 8) | SRC_DIV; /* 0x403 */
+	regval = (SRC_SEL << 8) | SRC_DIV; 
 	writel_relaxed(regval, base + APCS_ALIAS0_CFG_OFF);
 	mb();
 
-	/* update bit */
+	
 	regval = readl_relaxed(base);
 	regval |= BIT(0);
 	writel_relaxed(regval, base);
 
-	/* Wait for update to take effect */
+	
 	for (count = 500; count > 0; count--) {
 		if (!(readl_relaxed(base)) & BIT(0))
 			break;
 		udelay(1);
 	}
 
-	/* Enable the branch */
+	
 	regval =  readl_relaxed(base + APCS_ALIAS0_CORE_CBCR_OFF);
 	regval |= BIT(0);
 	writel_relaxed(regval, base + APCS_ALIAS0_CORE_CBCR_OFF);
