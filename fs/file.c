@@ -669,8 +669,10 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 	fdt = files_fdtable(files);
 	BUG_ON(fdt->fd[fd] != NULL);
 	rcu_assign_pointer(fdt->fd[fd], file);
+#ifdef CONFIG_HTC_DEBUG
 	fdt->user[fd].installer = current->pid;
 	fdt->user[fd].install_ts = htc_debug_get_sched_clock_ms();
+#endif
 	spin_unlock(&files->file_lock);
 }
 
@@ -714,8 +716,10 @@ int __close_fd(struct files_struct *files, unsigned fd)
 		goto out_unlock;
 	}
 	rcu_assign_pointer(fdt->fd[fd], NULL);
+#ifdef CONFIG_HTC_DEBUG
 	fdt->user[fd].remover = current->pid;
 	fdt->user[fd].remove_ts = htc_debug_get_sched_clock_ms();
+#endif
 	__clear_close_on_exec(fd, fdt);
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);
