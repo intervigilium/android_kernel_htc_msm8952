@@ -39,7 +39,6 @@
 #define pr_info(fmt, ...) printk(KERN_INFO pr_aud_fmt(fmt), ##__VA_ARGS__)
 #define pr_err(fmt, ...) printk(KERN_ERR pr_aud_fmt(fmt), ##__VA_ARGS__)
 
-extern int is_audio_booted;
 static struct i2c_client *this_client;
 struct mutex spk_amp_lock;
 static int last_spkamp_state;
@@ -345,7 +344,6 @@ static long tfa9895_ioctl(struct file *file, unsigned int cmd,
 	case TFA9895_ENABLE_DSP_NR:
 		pr_info("%s: TFA9895_ENABLE_DSP %d\n", __func__, *(int *)buf);
 		dsp_enabled = *(int *)buf;
-		is_audio_booted = dsp_enabled;
 		break;
 	case TFA9895_KERNEL_LOCK_NR:
 		pr_info("%s: TFA9895_KERNEL_LOCK %d\n", __func__, *(int *)buf);

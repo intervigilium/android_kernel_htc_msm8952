@@ -176,9 +176,9 @@ vfe0_reg_get_failed:
 	return rc;
 }
 
-static int msm_ispif_reset_hw(struct ispif_device *ispif)
+static int msm_ispif_reset_hw(struct ispif_device *ispif, int release)
 {
-	int rc = 0;
+	int rc = 0, i;
 	long timeout = 0;
 	struct clk *reset_clk1[ARRAY_SIZE(ispif_8626_reset_clk_info)];
 	ispif->clk_idx = 0;
@@ -218,6 +218,16 @@ static int msm_ispif_reset_hw(struct ispif_device *ispif)
 		ispif->clk_idx = 1;
 	}
 
+	if (release) {
+		for (i = 0; i < ispif->vfe_info.num_vfe; i++) {
+			msm_camera_io_w_mb(ISPIF_STOP_INTF_IMMEDIATELY,
+				ispif->base + ISPIF_VFE_m_INTF_CMD_0(i));
+			msm_camera_io_w_mb(ISPIF_STOP_INTF_IMMEDIATELY,
+				ispif->base + ISPIF_VFE_m_INTF_CMD_1(i));
+		}
+		msm_camera_io_w_mb(ISPIF_IRQ_GLOBAL_CLEAR_CMD,
+			ispif->base + ISPIF_IRQ_GLOBAL_CLEAR_CMD_ADDR);
+	}
 	init_completion(&ispif->reset_complete[VFE0]);
 	if (ispif->hw_num_isps > 1)
 		init_completion(&ispif->reset_complete[VFE1]);
@@ -679,6 +689,12 @@ static int msm_ispif_config(struct ispif_device *ispif,
 	BUG_ON(!ispif);
 	BUG_ON(!params);
 
+	if (!ispif->base) {
+		pr_err("%s: ispif base is NULL\n", __func__);
+		rc = -EPERM;
+		return rc;
+	}
+
 	if (ispif->ispif_state != ISPIF_POWER_UP) {
 		pr_err("%s: ispif invalid state %d\n", __func__,
 			ispif->ispif_state);
@@ -942,16 +958,14 @@ static int msm_ispif_restart_frame_boundary(struct ispif_device *ispif,
 
 	if (vfe_mask & (1 << VFE0)) {
 		init_completion(&ispif->reset_complete[VFE0]);
-		pr_err("%s Init completion VFE0\n", __func__);
-			/* initiate reset of ISPIF */
+		/* initiate reset of ISPIF */
 		msm_camera_io_w(0x00001FF9,
 				ispif->base + ISPIF_RST_CMD_ADDR);
 	}
 	if (ispif->hw_num_isps > 1 && (vfe_mask & (1 << VFE1))) {
 		init_completion(&ispif->reset_complete[VFE1]);
-		pr_err("%s Init completion VFE1\n", __func__);
-				msm_camera_io_w(0x00001FF9,
-					ispif->base + ISPIF_RST_CMD_1_ADDR);
+		msm_camera_io_w(0x00001FF9,
+			ispif->base + ISPIF_RST_CMD_1_ADDR);
 	}
 
 	if (vfe_mask & (1 << VFE0)) {
@@ -975,7 +989,7 @@ static int msm_ispif_restart_frame_boundary(struct ispif_device *ispif,
 		}
 	}
 
-	pr_info("%s: ISPIF reset hw done", __func__);
+	pr_info("%s: ISPIF reset hw done, Restarting", __func__);
 	rc = msm_cam_clk_enable(&ispif->pdev->dev,
 		ispif_clk_info, ispif->clk,
 		ispif->num_clk, 0);
@@ -1321,7 +1335,7 @@ static int msm_ispif_init(struct ispif_device *ispif,
 		goto error_irq;
 	}
 
-	msm_ispif_reset_hw(ispif);
+	msm_ispif_reset_hw(ispif, 0);
 
 	rc = msm_ispif_clk_ahb_enable(ispif, 1);
 	if (rc) {
@@ -1361,8 +1375,7 @@ static void msm_ispif_release(struct ispif_device *ispif)
 	}
 
 	/* make sure no streaming going on */
-	msm_ispif_reset(ispif);
-	msm_ispif_reset_hw(ispif);
+	msm_ispif_reset_hw(ispif, 1);
 	msm_ispif_clk_ahb_enable(ispif, 0);
 
 	free_irq(ispif->irq->start, ispif);
@@ -1448,8 +1461,6 @@ static long msm_ispif_subdev_ioctl(struct v4l2_subdev *sd,
 		return 0;
 	}
 	case MSM_SD_SHUTDOWN: {
-		struct ispif_device *ispif =
-			(struct ispif_device *)v4l2_get_subdevdata(sd);
 		if (ispif && ispif->base) {
 			mutex_lock(&ispif->mutex);
 			msm_ispif_release(ispif);

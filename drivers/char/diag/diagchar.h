@@ -546,6 +546,7 @@ extern uint16_t wrap_count;
 
 #define    SMDDIAG_NAME "DIAG"
 extern struct diagchar_dev *driver;
+extern bool DM_enable; 
 void diag_get_timestamp(char *time_str);
 void check_drain_timer(void);
 int diag_get_remote(int remote_info);

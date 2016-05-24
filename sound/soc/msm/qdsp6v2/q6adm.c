@@ -29,13 +29,10 @@
 #include <sound/adsp_err.h>
 
 #include <linux/delay.h>
-#include <linux/reboot.h>
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
-
-int is_audio_booted = 0;
 
 #define TIMEOUT_MS 1000
 
@@ -1536,6 +1533,8 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 				   open->copp_id);
 			pr_debug("%s: coppid rxed=%d\n", __func__,
 				 open->copp_id);
+			pr_info("%s: ADM_CMDRSP_DEVICE_OPEN_V5, port_idx %d copp_idx %d\n",
+				__func__, port_idx, copp_idx); 
 			wake_up(&this_adm.copp.wait[port_idx][copp_idx]);
 			}
 			break;
@@ -2459,9 +2458,9 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 		if (ret)
 			return ret;
 
-		pr_info("%s: port_id=0x%x rate=%d topology_id=0x%X copp_idx:%d\n",
+		pr_info("%s: port_id=0x%x rate=%d topology_id=0x%X\n",
 			__func__, open.endpoint_id_1, open.sample_rate,
-			open.topology_id, copp_idx);
+			open.topology_id);
 
 		atomic_set(&this_adm.copp.stat[port_idx][copp_idx], 0);
 		atomic_set(&this_adm.copp.cmd_err_code[port_idx][copp_idx], 0);
@@ -2483,11 +2482,6 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 			pr_err("%s: audio trigger ramdump\n", __func__);
 			BUG();
 #endif
-			
-			if (!is_audio_booted) {
-				pr_err("%s: dsp trigger reboot\n", __func__);
-				machine_restart("");
-			}
 			return -EINVAL;
 		} else if (atomic_read(&this_adm.copp.cmd_err_code
 					[port_idx][copp_idx]) > 0) {

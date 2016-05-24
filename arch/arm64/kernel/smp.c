@@ -476,7 +476,7 @@ static void smp_send_all_cpu_backtrace(void)
 	}
 
 #if defined(CONFIG_HTC_DEBUG_WATCHDOG)
-	if(i == backtrace_timeout)
+	if(i == backtrace_timeout * 1000)
 		pr_info( " dump cpu backtrace timeout \n");
 #endif
 

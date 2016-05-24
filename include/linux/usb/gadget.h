@@ -360,6 +360,7 @@ struct usb_gadget {
 	u32				xfer_isr_count;
 	bool				bam2bam_func_enabled;
 	u32				extra_buf_alloc;
+	int				interrupt_num;
 };
 #define work_to_gadget(w)	(container_of((w), struct usb_gadget, work))
 

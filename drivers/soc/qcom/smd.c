@@ -104,6 +104,12 @@ static struct {
 	.idx = 0,
 	.lck = __RW_LOCK_UNLOCKED(lck)
 };
+
+#ifdef CONFIG_DEBUG_FS
+int smsm_dumplog_debugfs_init(struct dentry *);
+int smd_dumplog_debugfs_init(struct dentry *);
+#endif
+
 #endif
 
 #define SMSM_SNAPSHOT_CNT 64
@@ -3363,6 +3369,46 @@ const struct file_operations smd_dbg_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+
+#ifdef CONFIG_DEBUG_FS
+int smsm_dumplog_debugfs_init(struct dentry *dent)
+{
+	do {
+		if ( dent == NULL ) {
+			pr_err("%s: dent is null\n", __func__);
+			break;
+		}
+
+		if (!IS_ERR(dent)) {
+			debugfs_create_file("dumplog", S_IRUGO, dent, NULL, &smsm_dbg_fops);
+		} else {
+			pr_err("%s: dent IS_ERR\n", __func__);
+		}
+	} while(0);
+
+	return 0;
+}
+EXPORT_SYMBOL(smsm_dumplog_debugfs_init);
+
+int smd_dumplog_debugfs_init(struct dentry *dent)
+{
+	do {
+		if ( dent == NULL ) {
+			pr_err("%s: dent is null\n", __func__);
+			break;
+		}
+
+		if (!IS_ERR(dent)) {
+			debugfs_create_file("dumplog", S_IRUGO, dent, NULL, &smd_dbg_fops);
+		} else {
+			pr_err("%s: dent IS_ERR\n", __func__);
+		}
+	} while(0);
+
+	return 0;
+}
+EXPORT_SYMBOL(smd_dumplog_debugfs_init);
+#endif
 #endif
 
 int __init msm_smd_init(void)
@@ -3407,27 +3453,6 @@ int __init msm_smd_init(void)
 			__func__, rc);
 		return rc;
 	}
-
-#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
-#ifdef CONFIG_DEBUG_FS
-	do {
-		struct dentry *dent;
-
-		dent = debugfs_create_dir("smsm", 0);
-		if (!IS_ERR(dent)) {
-			debugfs_create_file("dumplog", S_IRUGO, dent, NULL, &smsm_dbg_fops);
-		}
-	} while(0);
-	do {
-		struct dentry *dent;
-
-		dent = debugfs_create_dir("smd", 0);
-		if (!IS_ERR(dent)) {
-			debugfs_create_file("dumplog", S_IRUGO, dent, NULL, &smd_dbg_fops);
-		}
-	} while(0);
-#endif
-#endif
 
 	return 0;
 }

@@ -1,6 +1,6 @@
 
 
-#define NFC_READ_RFSKUID 0
+#define NFC_READ_RFSKUID 1
 #define NFC_GET_BOOTMODE 1
 
 #define NFC_BOOT_MODE_NORMAL 0

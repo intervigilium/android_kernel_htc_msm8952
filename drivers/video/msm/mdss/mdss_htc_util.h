@@ -22,6 +22,10 @@
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 
+#define BRI_SETTING_MIN                 30
+#define BRI_SETTING_DEF                 142
+#define BRI_SETTING_MAX                 255
+
 struct attribute_status {
        char *title;
        u32 req_value;
@@ -41,5 +45,6 @@ void htc_set_pp_pa(struct mdss_mdp_ctl *ctl);
 void htc_bkl_ctrl(struct msm_fb_data_type *mfd,int enable);
 void htc_panel_info(const char *panel);
 void htc_enable_backlight_when_flashlight(int enable);
+int shrink_pwm(struct msm_fb_data_type *mfd, int val);
 
 #endif 

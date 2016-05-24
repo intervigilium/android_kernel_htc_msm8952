@@ -42,7 +42,8 @@ static int msm_isp_stats_cfg_ping_pong_address(struct vfe_device *vfe_dev,
 
 	pingpong_bit = (~(pingpong_status >> stats_pingpong_offset) & 0x1);
 	rc = vfe_dev->buf_mgr->ops->get_buf(vfe_dev->buf_mgr,
-			vfe_dev->pdev->id, bufq_handle, &buf, &buf_cnt);
+			vfe_dev->pdev->id, bufq_handle, &buf, &buf_cnt,
+			pingpong_bit);
 	if (rc < 0) {
 		vfe_dev->error_info.stats_framedrop_count[stats_idx]++;
 		return rc;
@@ -203,7 +204,7 @@ static int32_t msm_isp_stats_configure(struct vfe_device *vfe_dev,
 		stream_info = &vfe_dev->stats_data.stream_info[i];
 
 		if (stream_info->state == STATS_INACTIVE) {
-			pr_warn("%s: Warning! Stream already inactive. Drop irq handling\n",
+			pr_debug("%s: Warning! Stream already inactive. Drop irq handling\n",
 				__func__);
 			continue;
 		}

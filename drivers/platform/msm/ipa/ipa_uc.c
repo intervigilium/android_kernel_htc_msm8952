@@ -347,6 +347,7 @@ static void ipa_uc_event_handler(enum ipa_irq_type interrupt,
 			IPAERR("IPA has encountered a ZIP engine error\n");
 			ipa_ctx->uc_ctx.uc_zip_error = true;
 		}
+		BUG();
 	} else if (ipa_ctx->uc_ctx.uc_sram_mmio->eventOp ==
 		IPA_HW_2_CPU_EVENT_LOG_INFO) {
 			IPADBG("uC evt log info ofst=0x%x\n",
@@ -735,21 +736,18 @@ int ipa_uc_monitor_holb(enum ipa_client_type ipa_client, bool enable)
 	union IpaHwmonitorHolbCmdData_t cmd;
 	int ep_idx;
 	int ret;
-	struct ipa_ep_context *ep;
+
+	/* HOLB monitoring is applicable only to 2.6L. */
+	if (ipa_ctx->ipa_hw_type != IPA_HW_v2_6L) {
+		IPADBG("Not applicable on this target\n");
+		return 0;
+	}
 
 	ep_idx = ipa_get_ep_mapping(ipa_client);
 	if (ep_idx == -1) {
 		IPAERR("Invalid IPA client\n");
 		return 0;
 	}
-
-	ep = &ipa_ctx->ep[ep_idx];
-
-	if (!ep->valid) {
-		IPAERR("EP not valid.\n");
-		return 0;
-	}
-
 
 	/*
 	 * If the uC interface has not been initialized yet,
@@ -772,7 +770,7 @@ int ipa_uc_monitor_holb(enum ipa_client_type ipa_client, bool enable)
 	cmd.params.monitorPipe = (u8)(enable ? 1 : 0);
 	cmd.params.pipeNum = (u8)ep_idx;
 
-	IPADBG("uC holb monitoring on IPA pipe %d\n, Enable: %d",
+	IPADBG("uC holb monitoring on IPA pipe %d, Enable: %d\n",
 	       ep_idx, enable);
 
 	ret = ipa_uc_send_cmd(cmd.raw32b,

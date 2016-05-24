@@ -991,6 +991,9 @@ int sdhci_msm_execute_tuning(struct sdhci_host *host, u32 opcode)
 		(ios.timing == MMC_TIMING_MMC_HS200) ||
 		(ios.timing == MMC_TIMING_UHS_SDR104)))
 		return 0;
+	if (msm_host->tuning_in_progress)
+		return 0;
+	msm_host->tuning_in_progress = true;
 
 	pr_debug("%s: Enter %s\n", mmc_hostname(mmc), __func__);
 
@@ -1110,11 +1113,11 @@ retry:
 			}
 		}
 	}
-
+#if 0
 	
 	if (drv_type_changed)
 		sdhci_msm_set_mmc_drv_type(host, opcode, 0);
-
+#endif
 	if (tuned_phase_cnt) {
 		rc = msm_find_most_appropriate_phase(host, tuned_phases,
 							tuned_phase_cnt);
@@ -1138,6 +1141,10 @@ retry:
 		rc = -EIO;
 	}
 
+	
+	if (drv_type_changed)
+		sdhci_msm_set_mmc_drv_type(host, opcode, 0);
+
 kfree:
 	kfree(data_buf);
 out:
@@ -1145,6 +1152,7 @@ out:
 	if (!rc)
 		msm_host->tuning_done = true;
 	spin_unlock_irqrestore(&host->lock, flags);
+	msm_host->tuning_in_progress = false;
 	pr_debug("%s: Exit %s, err(%d)\n", mmc_hostname(mmc), __func__, rc);
 	return rc;
 }
@@ -2587,33 +2595,45 @@ static int sdhci_msm_enable_controller_clock(struct sdhci_host *host)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
 	int rc = 0;
+	int retry=1;
 
 	if (atomic_read(&msm_host->controller_clock))
 		return 0;
 
 	sdhci_msm_bus_voting(host, 1);
 
+retry_pclk:
 	if (!IS_ERR(msm_host->pclk)) {
 		rc = clk_prepare_enable(msm_host->pclk);
 		if (rc) {
 			pr_err("%s: %s: failed to enable the pclk with error %d\n",
 			       mmc_hostname(host->mmc), __func__, rc);
+			if (retry--)
+				goto retry_pclk;
 			goto remove_vote;
 		}
 	}
 
+	retry = 1;
+retry_host_clk:
 	rc = clk_prepare_enable(msm_host->clk);
 	if (rc) {
 		pr_err("%s: %s: failed to enable the host-clk with error %d\n",
 		       mmc_hostname(host->mmc), __func__, rc);
+		if (retry--)
+			goto retry_host_clk;
 		goto disable_pclk;
 	}
 
+	retry = 1;
+retry_ice_clk:
 	if (!IS_ERR(msm_host->ice_clk)) {
 		rc = clk_prepare_enable(msm_host->ice_clk);
 		if (rc) {
 			pr_err("%s: %s: failed to enable the ice-clk with error %d\n",
 				mmc_hostname(host->mmc), __func__, rc);
+			if (retry--)
+				goto retry_ice_clk;
 			goto disable_host_clk;
 		}
 	}
@@ -3087,6 +3107,7 @@ int sdhci_msm_notify_load(struct sdhci_host *host, enum mmc_load state)
 
 static struct sdhci_ops sdhci_msm_ops = {
 	.crypto_engine_cfg = sdhci_msm_ice_cfg,
+	.crypto_cfg_reset = sdhci_msm_ice_cfg_reset,
 	.crypto_engine_reset = sdhci_msm_ice_reset,
 	.platform_reset_enter = sdhci_msm_reset_enter,
 	.set_uhs_signaling = sdhci_msm_set_uhs_signaling,
@@ -3498,7 +3519,6 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	msm_host->mmc->caps2 |= (MMC_CAP2_BOOTPART_NOACC |
 				MMC_CAP2_DETECT_ON_ERR);
 	msm_host->mmc->caps2 |= MMC_CAP2_CACHE_CTRL;
-	msm_host->mmc->caps2 |= MMC_CAP2_POWEROFF_NOTIFY;
 	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
 	msm_host->mmc->caps2 |= MMC_CAP2_STOP_REQUEST;
 	msm_host->mmc->caps2 |= MMC_CAP2_ASYNC_SDIO_IRQ_4BIT_MODE;

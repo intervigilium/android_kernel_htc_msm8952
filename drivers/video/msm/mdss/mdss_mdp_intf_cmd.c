@@ -389,6 +389,7 @@ static void mdss_mdp_cmd_intf_recovery(void *data, int event)
 {
 	struct mdss_mdp_cmd_ctx *ctx = data;
 	unsigned long flags;
+	bool reset_done = false;
 
 	if (!data) {
 		pr_err("%s: invalid ctx\n", __func__);
@@ -404,9 +405,13 @@ static void mdss_mdp_cmd_intf_recovery(void *data, int event)
 		return;
 	}
 
-	spin_lock_irqsave(&ctx->koff_lock, flags);
 	if (atomic_read(&ctx->koff_cnt)) {
 		mdss_mdp_ctl_reset(ctx->ctl);
+		reset_done = true;
+	}
+
+	spin_lock_irqsave(&ctx->koff_lock, flags);
+	if (reset_done && atomic_read(&ctx->koff_cnt)) {
 		pr_debug("%s: intf_num=%d\n", __func__,
 					ctx->ctl->intf_num);
 		atomic_dec(&ctx->koff_cnt);
@@ -630,6 +635,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
 	int rc = 0;
+	static int timeout_cnt = 0;
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -681,13 +687,19 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 			WARN(1, "cmd kickoff timed out (%d) ctl=%d\n",
 					rc, ctl->num);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
-				"dsi1_ctrl", "dsi1_phy", "panic");
+				"dsi1_ctrl", "dsi1_phy");
 			mdss_fb_report_panel_dead(ctl->mfd);
 		}
 		ctx->pp_timeout_report_cnt++;
 		rc = -EPERM;
 		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_TIMEOUT);
 		atomic_add_unless(&ctx->koff_cnt, -1, 0);
+
+		++timeout_cnt;
+		if(timeout_cnt == 10) {
+			mdss_fb_report_panel_dead(ctl->mfd);
+			timeout_cnt = 0;
+		}
 	} else {
 		rc = 0;
 		ctx->pp_timeout_report_cnt = 0;

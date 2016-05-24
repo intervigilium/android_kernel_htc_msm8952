@@ -722,6 +722,27 @@ void unlock_new_inode(struct inode *inode)
 }
 EXPORT_SYMBOL(unlock_new_inode);
 
+void lock_two_nondirectories(struct inode *inode1, struct inode *inode2)
+{
+	if (inode1 > inode2)
+		swap(inode1, inode2);
+
+	if (inode1 && !S_ISDIR(inode1->i_mode))
+		mutex_lock(&inode1->i_mutex);
+	if (inode2 && !S_ISDIR(inode2->i_mode) && inode2 != inode1)
+		mutex_lock_nested(&inode2->i_mutex, I_MUTEX_NONDIR2);
+}
+EXPORT_SYMBOL(lock_two_nondirectories);
+
+void unlock_two_nondirectories(struct inode *inode1, struct inode *inode2)
+{
+	if (inode1 && !S_ISDIR(inode1->i_mode))
+		mutex_unlock(&inode1->i_mutex);
+	if (inode2 && !S_ISDIR(inode2->i_mode) && inode2 != inode1)
+		mutex_unlock(&inode2->i_mutex);
+}
+EXPORT_SYMBOL(unlock_two_nondirectories);
+
 struct inode *iget5_locked(struct super_block *sb, unsigned long hashval,
 		int (*test)(struct inode *, void *),
 		int (*set)(struct inode *, void *), void *data)
@@ -1171,8 +1192,8 @@ int file_remove_suid(struct file *file)
 		error = security_inode_killpriv(dentry);
 	if (!error && killsuid)
 		error = __remove_suid(dentry, killsuid);
-	if (!error && (inode->i_sb->s_flags & MS_NOSEC))
-		inode->i_flags |= S_NOSEC;
+	if (!error)
+		inode_has_no_xattr(inode);
 
 	return error;
 }

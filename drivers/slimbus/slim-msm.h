@@ -87,6 +87,8 @@
 #define SLIMBUS_QMI_SVC_V1 1
 #define SLIMBUS_QMI_INS_ID 0
 
+#define SLIM_QMI_RESP_TOUT 500
+
 #define PGD_THIS_EE(r, v) ((v) ? PGD_THIS_EE_V2(r) : PGD_THIS_EE_V1(r))
 #define PGD_PORT(r, p, v) ((v) ? PGD_PORT_V2(r, p) : PGD_PORT_V1(r, p))
 #define CFG_PORT(r, v) ((v) ? CFG_PORT_V2(r) : CFG_PORT_V1(r))
@@ -225,10 +227,11 @@ struct msm_slim_pdata {
 };
 
 struct msm_slim_bulk_wr {
-	phys_addr_t	phys;
+	dma_addr_t	wr_dma;
 	void		*base;
 	int		size;
-	int (*cb)(void *ctx, int err);
+	int		buf_sz;
+	int		(*cb)(void *ctx, int err);
 	void		*ctx;
 	bool		in_progress;
 };
@@ -345,13 +348,13 @@ enum {
 } while (0)
 
 #define SLIM_WARN(dev, x...) do { \
-	pr_warn(x); \
+	pr_warn_ratelimited(x); \
 	if (dev->ipc_slimbus_log && dev->ipc_log_mask >= WARN_LEV) \
 		ipc_log_string(dev->ipc_slimbus_log, x); \
 } while (0)
 
 #define SLIM_ERR(dev, x...) do { \
-	pr_err(x); \
+	pr_err_ratelimited(x); \
 	if (dev->ipc_slimbus_log && dev->ipc_log_mask >= ERR_LEV) { \
 		ipc_log_string(dev->ipc_slimbus_log, x); \
 		dev->default_ipc_log_mask = dev->ipc_log_mask; \

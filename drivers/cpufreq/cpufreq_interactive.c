@@ -1585,7 +1585,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			up_read(&pcpu->enable_sem);
 
 
-			if (policy->max > pcpu->max_freq) {
+			if (policy->max > pcpu->max_freq || policy->min < pcpu->min_freq) {
 				pcpu->reject_notification = true;
 				down_write(&pcpu->enable_sem);
 				del_timer_sync(&pcpu->cpu_timer);
@@ -1596,6 +1596,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			}
 
 			pcpu->max_freq = policy->max;
+			pcpu->min_freq = policy->min;
 		}
 		break;
 	}

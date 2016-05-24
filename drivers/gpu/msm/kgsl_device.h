@@ -187,13 +187,13 @@ struct kgsl_device {
 	unsigned long reg_phys;
 
 	
-	void *reg_virt;
+	void __iomem *reg_virt;
 
 	
 	unsigned int reg_len;
 
 	
-	void *shader_mem_virt;
+	void __iomem *shader_mem_virt;
 
 	
 	unsigned long shader_mem_phys;

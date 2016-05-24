@@ -255,7 +255,8 @@ u32 mdss_mdp_smp_calc_num_blocks(struct mdss_mdp_pipe *pipe)
 	return num_blks;
 }
 
-u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe)
+u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe,
+	u32 num_planes)
 {
 	int i, mb_cnt = 0, smp_size;
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
@@ -263,7 +264,7 @@ u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe)
 	if (mdata->has_pixel_ram) {
 		smp_size = mdss_mdp_get_pixel_ram_size(mdata);
 	} else {
-		for (i = 0; i < MAX_PLANES; i++) {
+		for (i = 0; i < num_planes; i++) {
 			mb_cnt += bitmap_weight(pipe->smp_map[i].allocated,
 								SMP_MB_CNT);
 			mb_cnt += bitmap_weight(pipe->smp_map[i].fixed,
@@ -279,33 +280,38 @@ u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe)
 	return smp_size;
 }
 
-static void mdss_mdp_smp_set_wm_levels(struct mdss_mdp_pipe *pipe, int mb_cnt)
+static void mdss_mdp_smp_set_wm_levels(struct mdss_mdp_pipe *pipe,
+	u32 useable_space)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	u32 useable_space, latency_bytes, val, wm[3];
+	u32 latency_bytes, val, wm[3], req_entries;
 	struct mdss_mdp_mixer *mixer = pipe->mixer_left;
+	u32 useable_entries = useable_space;
+	u8 bpp =  pipe->src_fmt->bpp;
 
-	useable_space = mb_cnt * SMP_MB_SIZE;
+	BUG_ON(useable_space < SMP_MB_SIZE);
 
 
-	latency_bytes = mdss_mdp_calc_latency_buf_bytes(pipe->src_fmt->is_yuv,
-		pipe->bwc_mode, pipe->src_fmt->tile, pipe->src.w,
-		pipe->src_fmt->bpp,
-		false, useable_space);
+	if (pipe->src_fmt->is_yuv)
+		bpp = (pipe->src_fmt->chroma_sample ==
+				MDSS_MDP_CHROMA_H1V2) ? 2 : 1;
 
-	if ((pipe->flags & MDP_FLIP_LR) && !pipe->src_fmt->tile) {
-		u8 bpp = pipe->src_fmt->is_yuv ? 1 :
-			pipe->src_fmt->bpp;
-		latency_bytes -= (pipe->src.w * bpp);
-	}
+	latency_bytes = mdss_mdp_calc_latency_buf_bytes(pipe->bwc_mode,
+		pipe->src_fmt->tile, pipe->src.w, bpp, false,
+		useable_space);
+
+	if ((pipe->flags & MDP_FLIP_LR) && !pipe->src_fmt->tile)
+		useable_entries -= (pipe->src.w * bpp);
+
+	useable_entries = useable_entries / SMP_MB_ENTRY_SIZE;
+	req_entries = (latency_bytes / SMP_MB_ENTRY_SIZE);
 
 	if (IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev, MDSS_MDP_HW_REV_103) &&
 		(pipe->src_fmt->tile)) {
-		val = latency_bytes / SMP_MB_ENTRY_SIZE;
 
-		wm[0] = (val * 5) / 8;
-		wm[1] = (val * 6) / 8;
-		wm[2] = (val * 7) / 8;
+		wm[0] = (req_entries * 5) / 8;
+		wm[1] = (req_entries * 6) / 8;
+		wm[2] = (req_entries * 7) / 8;
 	} else if (mixer->rotator_mode ||
 		(mixer->ctl->intf_num == MDSS_MDP_NO_INTF)) {
 		
@@ -313,15 +319,17 @@ static void mdss_mdp_smp_set_wm_levels(struct mdss_mdp_pipe *pipe, int mb_cnt)
 		wm[1]  = 0xffff;
 		wm[2]  = 0xffff;
 	} else {
-		val = (latency_bytes / SMP_MB_ENTRY_SIZE) / 3;
 
-		wm[0] = val;
-		wm[1] = wm[0] + val;
-		wm[2] = wm[1] + val;
+		val = req_entries / 3;
+
+		wm[2] = useable_entries - val;
+		wm[1] = wm[2] - val;
+		wm[0] = wm[1] - val;
 	}
 
 	trace_mdp_perf_set_wm_levels(pipe->num, useable_space, latency_bytes,
-		wm[0], wm[1], wm[2], mb_cnt, SMP_MB_SIZE);
+			wm[0], wm[1], wm[2], (useable_space / SMP_MB_SIZE),
+			SMP_MB_SIZE);
 
 	pr_debug("pnum=%d useable_space=%u watermarks %u,%u,%u\n", pipe->num,
 			useable_space, wm[0], wm[1], wm[2]);
@@ -515,7 +523,7 @@ int mdss_mdp_smp_reserve(struct mdss_mdp_pipe *pipe)
 static int mdss_mdp_smp_alloc(struct mdss_mdp_pipe *pipe)
 {
 	int i;
-	int cnt = 0;
+	u32 smp_size = 0;
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	if (mdata->has_pixel_ram)
@@ -523,20 +531,21 @@ static int mdss_mdp_smp_alloc(struct mdss_mdp_pipe *pipe)
 
 	mutex_lock(&mdss_mdp_smp_lock);
 	for (i = 0; i < MAX_PLANES; i++) {
-		cnt += bitmap_weight(pipe->smp_map[i].fixed, SMP_MB_CNT);
-
 		if (bitmap_empty(pipe->smp_map[i].reserved, SMP_MB_CNT)) {
-			cnt += mdss_mdp_smp_mmb_set(pipe->ftch_id + i,
-				pipe->smp_map[i].allocated);
+			mdss_mdp_smp_mmb_set(pipe->ftch_id + i,
+			pipe->smp_map[i].allocated);
 			continue;
 		}
 
 		mdss_mdp_smp_mmb_amend(pipe->smp_map[i].allocated,
 			pipe->smp_map[i].reserved);
-		cnt += mdss_mdp_smp_mmb_set(pipe->ftch_id + i,
+		mdss_mdp_smp_mmb_set(pipe->ftch_id + i,
 			pipe->smp_map[i].allocated);
 	}
-	mdss_mdp_smp_set_wm_levels(pipe, cnt);
+
+	
+	smp_size = mdss_mdp_smp_get_size(pipe, 1);
+	mdss_mdp_smp_set_wm_levels(pipe, smp_size);
 	mutex_unlock(&mdss_mdp_smp_lock);
 	return 0;
 }
@@ -956,6 +965,7 @@ static void mdss_mdp_pipe_free(struct kref *kref)
 
 	pipe->mfd = NULL;
 	pipe->mixer_left = pipe->mixer_right = NULL;
+	pipe->mixer_stage = MDSS_MDP_STAGE_UNUSED;
 	memset(&pipe->scale, 0, sizeof(struct mdp_scale_data));
 	memset(&pipe->req_data, 0, sizeof(pipe->req_data));
 }

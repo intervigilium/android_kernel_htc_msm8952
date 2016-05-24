@@ -133,8 +133,13 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
-				mfd->panel_info->brightness_max);
+	
+	bl_lvl = shrink_pwm(mfd, value);
+
+	if (bl_lvl < 0) {
+		MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
+					mfd->panel_info->brightness_max);
+	}
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -167,8 +172,14 @@ static void mdss_mdp_process_input(struct work_struct *work)
 
 	if (mfd->mdp.input_event_handler) {
 		rc = mfd->mdp.input_event_handler(mfd);
-		if (rc)
+		if (rc) {
 			pr_err("mdp input event handler failed\n");
+		} else {
+			
+			if (mfd->idle_time)
+				schedule_delayed_work(&mfd->idle_notify_work,
+					msecs_to_jiffies(200));
+		}
 	}
 }
 
@@ -1465,6 +1476,7 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
 	int cur_power_state;
+	bool cur_panel_dead;
 
 	if (!mfd)
 		return -EINVAL;
@@ -1480,6 +1492,7 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 	}
 
 	cur_power_state = mfd->panel_power_state;
+	cur_panel_dead = mfd->panel_info->panel_dead;
 	pr_debug("Transitioning from %d --> %d\n", cur_power_state,
 		MDSS_PANEL_POWER_ON);
 
@@ -1512,7 +1525,8 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 			mfd->bl_updated = 1;
 			if (IS_CALIB_MODE_BL(mfd))
 				mdss_fb_set_backlight(mfd, mfd->calib_mode_bl);
-			else if (!mfd->panel_info->mipi.post_init_delay)
+			else if (!mfd->panel_info->mipi.post_init_delay ||
+				cur_panel_dead)
 				mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
 		}
 		mutex_unlock(&mfd->bl_lock);

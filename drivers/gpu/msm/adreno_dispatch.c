@@ -1979,11 +1979,6 @@ static void adreno_dispatcher_timer(unsigned long data)
 
 	adreno_dispatcher_schedule(device);
 }
-void adreno_dispatcher_irq_fault(struct kgsl_device *device)
-{
-	adreno_set_gpu_fault(ADRENO_DEVICE(device), ADRENO_HARD_FAULT);
-	adreno_dispatcher_schedule(device);
-}
 
 void adreno_dispatcher_start(struct kgsl_device *device)
 {

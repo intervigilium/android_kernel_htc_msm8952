@@ -103,7 +103,7 @@ module_param(poolsize_qsc_usb, uint, 0);
 #endif
 
 static unsigned int max_clients = 15;
-static unsigned int threshold_client_limit = 30;
+static unsigned int threshold_client_limit = 50;
 module_param(max_clients, uint, 0);
 static struct timer_list drain_timer;
 static int timer_in_progress;
@@ -432,8 +432,8 @@ static int diagchar_open(struct inode *inode, struct file *file)
 				diag_add_client(i, file);
 			} else {
 				mutex_unlock(&driver->diagchar_mutex);
-				pr_alert("Max client limit for DIAG reached\n");
-				DIAG_INFO("Cannot open handle %s"
+				pr_err_ratelimited("diag: Max client limit for DIAG reached\n");
+				DIAG_INFO("diag: Cannot open handle %s"
 					   " %d", current->comm, current->tgid);
 				for (i = 0; i < driver->num_clients; i++)
 					DIAG_WARNING("%d) %s PID=%d", i, driver->
@@ -460,7 +460,7 @@ static int diagchar_open(struct inode *inode, struct file *file)
 fail:
 	mutex_unlock(&driver->diagchar_mutex);
 	driver->num_clients--;
-	pr_alert("diag: Insufficient memory for new client");
+	pr_err_ratelimited("diag: Insufficient memory for new client");
 	return -ENOMEM;
 }
 
@@ -556,12 +556,12 @@ static int diag_remove_client_entry(struct file *file)
 
 	mutex_lock(&driver->diag_file_mutex);
 	if (!file) {
-		DIAG_LOG(DIAG_DEBUG_USERSPACE, "Invalid file pointer \n");
+		DIAG_LOG(DIAG_DEBUG_USERSPACE, "Invalid file pointer\n");
 		mutex_unlock(&driver->diag_file_mutex);
 		return -ENOENT;
 	}
 	if (!(file->private_data)) {
-		DIAG_LOG(DIAG_DEBUG_USERSPACE, "Invalid private data \n");
+		DIAG_LOG(DIAG_DEBUG_USERSPACE, "Invalid private data\n");
 		mutex_unlock(&driver->diag_file_mutex);
 		return -EINVAL;
 	}
@@ -1277,7 +1277,7 @@ static int diag_switch_logging(const int requested_mode)
 	if (new_mode == current_mode) {
 		if (requested_mode != MEMORY_DEVICE_MODE ||
 		    driver->real_time_mode) {
-			pr_info_ratelimited("diag: Already in logging mode change requested, mode: %d\n",
+			DIAG_INFO("diag: Already in logging mode change requested, mode: %d\n",
 					    current_mode);
 		}
 		DIAG_LOG(DIAG_DEBUG_USERSPACE, "no mode change required\n");
@@ -1312,10 +1312,7 @@ static int diag_switch_logging(const int requested_mode)
 	}
 	driver->logging_mode = new_mode;
 
-	pr_info("diag: Logging switched from %d to %d mode\n",
-		current_mode, new_mode);
-	DIAG_LOG(DIAG_DEBUG_USERSPACE,
-		 "logging switched from %d to %d mode\n",
+	DIAG_INFO("logging switched from %d to %d mode\n",
 		 current_mode, new_mode);
 
 	if (new_mode != MEMORY_DEVICE_MODE) {
@@ -3067,7 +3064,7 @@ static int __init diagchar_init(void)
 	driver->hdlc_disabled = 0;
 	driver->dci_state = DIAG_DCI_NO_ERROR;
 	setup_timer(&drain_timer, drain_timer_func, 1234);
-	driver->supports_sockets = 0;
+	driver->supports_sockets = 1;
 	driver->time_sync_enabled = 0;
 	driver->uses_time_api = 0;
 	driver->poolsize = poolsize;

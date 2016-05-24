@@ -296,6 +296,23 @@ static int qpnp_pon_readl_for_pmi(struct qpnp_pon *pon, u16 addr, u8 *reg)
 	return rc;
 }
 
+#define SID_PM8004 4
+static int qpnp_pon_readl_for_pm8004(struct qpnp_pon *pon, u16 addr, u8 *reg)
+{
+        int rc = 0;
+
+        rc = spmi_ext_register_readl(pon->spmi->ctrl, SID_PM8004,
+                        addr, reg, 1);
+        if (rc) {
+                dev_err(&pon->spmi->dev,
+                        "Unable to read addr=%x, rc(%d)\n",
+                        QPNP_PON_REVISION2(pon->base), rc);
+                return rc;
+        }
+
+        return rc;
+}
+
 #ifdef CONFIG_HTC_POWER_DEBUG
 static u8 htc_dump_pon_reg[] =
 {
@@ -341,19 +358,26 @@ static u8 htc_dump_pon_reg[] =
 	0xff
 };
 
+#include <soc/qcom/socinfo.h>
+
 void debug_htc_dump_pon_reg(void)
 {
 	struct qpnp_pon *pon = sys_reset_dev;
 	int i = 0;
 	u8 offset = 0;
-	u8 pm_reg = 0, pmi_reg = 0;
+	u8 pm_reg = 0, pmi_reg = 0, pm8004_reg = 0;
 
 	for( i = 0; htc_dump_pon_reg[i] != 0xff; i++)
 	{
 		offset = htc_dump_pon_reg[i];
 		qpnp_pon_readl(pon, pon->base + (u16)offset, &pm_reg);
 		qpnp_pon_readl_for_pmi(pon, pon->base + (u16)offset, &pmi_reg);
-		pr_info("PON 0x%X: 0x%X 0x%X\n", pon->base + offset, pm_reg, pmi_reg);
+		if(socinfo_get_id() == 278) {
+			qpnp_pon_readl_for_pm8004(pon, pon->base + (u16)offset, &pm8004_reg);
+			pr_info("PON 0x%X: 0x%X 0x%X 0x%X\n", pon->base + offset, pm_reg, pmi_reg, pm8004_reg);
+		} else {
+			pr_info("PON 0x%X: 0x%X 0x%X\n", pon->base + offset, pm_reg, pmi_reg);
+		}
 	}
 	pr_info("End of dump PMIC PON.\n");
 }
@@ -390,6 +414,95 @@ bool qpnp_pon_check_hard_reset_stored(void)
 	return pon->store_hard_reset_reason;
 }
 EXPORT_SYMBOL(qpnp_pon_check_hard_reset_stored);
+
+int qpnp_get_s2_en(int pon_type)
+{
+	u16 rst_en_reg;
+	struct qpnp_pon *pon = sys_reset_dev;
+	int rc;
+	u8 val = 0;
+
+	if (pon == NULL)
+		return -ENOMEM;
+
+	switch (pon_type) {
+	case PON_KPDPWR:
+		rst_en_reg = QPNP_PON_KPDPWR_S2_CNTL2(pon->base);
+		break;
+	case PON_RESIN:
+		rst_en_reg = QPNP_PON_RESIN_S2_CNTL2(pon->base);
+		break;
+	case PON_KPDPWR_RESIN:
+		rst_en_reg = QPNP_PON_KPDPWR_RESIN_S2_CNTL2(pon->base);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
+			rst_en_reg, &val, 1);
+	if (rc) {
+		dev_err(&pon->spmi->dev,
+			"%s: Unable to read addr = %x, rc(%d)\n", __func__, rst_en_reg, rc);
+		return -EINVAL;
+	}
+
+	if (val & QPNP_PON_S2_RESET_ENABLE)
+		return 1;
+	else
+		return 0;
+}
+EXPORT_SYMBOL(qpnp_get_s2_en);
+
+int qpnp_config_s2_enable(int pon_type, int en)
+{
+	u16 rst_en_reg;
+	struct qpnp_pon *pon = sys_reset_dev;
+	int rc;
+
+	if (pon == NULL)
+		return -ENOMEM;
+
+	switch (pon_type) {
+	case PON_KPDPWR:
+		rst_en_reg = QPNP_PON_KPDPWR_S2_CNTL2(pon->base);
+		break;
+	case PON_RESIN:
+		rst_en_reg = QPNP_PON_RESIN_S2_CNTL2(pon->base);
+		break;
+	case PON_KPDPWR_RESIN:
+		rst_en_reg = QPNP_PON_KPDPWR_RESIN_S2_CNTL2(pon->base);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (en)
+		rc = qpnp_pon_masked_write(pon, rst_en_reg, QPNP_PON_RESET_EN,
+							QPNP_PON_S2_RESET_ENABLE);
+	else
+		rc = qpnp_pon_masked_write(pon, rst_en_reg, QPNP_PON_RESET_EN, 0);
+
+	if (rc) {
+		dev_err(&pon->spmi->dev,
+			"%s: Unable to write to addr = %x, rc(%d)\n", __func__, rst_en_reg, rc);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(qpnp_config_s2_enable);
+
+void qpnp_kick_s2_timer(void)
+{
+	if (qpnp_get_s2_en(PON_KPDPWR_RESIN) > 0) {
+		qpnp_config_s2_enable(PON_KPDPWR_RESIN, 0);
+		udelay(100);
+		qpnp_config_s2_enable(PON_KPDPWR_RESIN, 1);
+		udelay(100);
+	}
+}
+EXPORT_SYMBOL(qpnp_kick_s2_timer);
 
 static int qpnp_pon_set_dbc(struct qpnp_pon *pon, u32 delay)
 {
@@ -1495,6 +1608,54 @@ free_input_dev:
 	return rc;
 }
 
+static int do_kick_s2_timer(const char *val, const struct kernel_param *kp)
+{
+	qpnp_kick_s2_timer();
+	return 0;
+}
+
+static int get_kick_s2_timer(char *buf, const struct kernel_param *kp)
+{
+       return snprintf(buf, PAGE_SIZE, "%d", 0);
+}
+
+static bool to_extend_s3_timer;
+static bool to_extend_s3_timer_z = false;
+int qpnp_pon_set_s3_timer(u32 s3_debounce);
+static int do_extend_s3_timer(const char *val, const struct kernel_param *kp)
+{
+	int rc;
+	int s3_debounce;
+
+	rc = param_set_bool(val, kp);
+	if (rc) {
+		pr_err("do_extend_s3_timer: wrong param, %d\n", rc);
+		return rc;
+	}
+
+	
+	if((*(bool *)kp->arg) == to_extend_s3_timer_z)
+		return 0;
+
+	if (*(bool *)kp->arg)
+		s3_debounce = ilog2(128); 
+	else
+		s3_debounce = ilog2(32); 
+
+
+	
+	rc = qpnp_pon_set_s3_timer((u32)s3_debounce);
+	if (rc) {
+		pr_err("do_extend_s3_timer failed, %d\n", rc);
+		return rc;
+	}
+
+	
+	to_extend_s3_timer_z = to_extend_s3_timer;
+
+	return 0;
+}
+
 static bool dload_on_uvlo;
 
 static int qpnp_pon_debugfs_uvlo_dload_get(char *buf,
@@ -1560,6 +1721,20 @@ static int qpnp_pon_debugfs_uvlo_dload_set(const char *val,
 
 	return 0;
 }
+
+static struct kernel_param_ops kick_s2_timer_ops = {
+	.set = do_kick_s2_timer,
+	.get = get_kick_s2_timer,
+};
+
+module_param_cb(kick_s2_timer, &kick_s2_timer_ops, NULL, 0644);
+
+static struct kernel_param_ops extend_s3_timer_ops = {
+	.set = do_extend_s3_timer,
+	.get = param_get_bool,
+};
+
+module_param_cb(extend_s3_timer, &extend_s3_timer_ops, &to_extend_s3_timer, 0644);
 
 static struct kernel_param_ops dload_on_uvlo_ops = {
 	.set = qpnp_pon_debugfs_uvlo_dload_set,

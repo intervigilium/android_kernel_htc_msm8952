@@ -1,8 +1,7 @@
 
 /* drivers/input/misc/hall_sensor.c - Ak8789 Hall sensor driver
  *
- * Copyright (C) 2013 HTC Corporation.
- *
+ * Copyright (C) 2016 HTC Corporation.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -40,6 +39,7 @@ struct ak_hall_data {
 	uint32_t gpio_att_s:16;
 	uint8_t  debug_level;
 	uint8_t  hall_enable;
+	uint8_t  irq_enable;
 	uint8_t  att_used;
 	struct wake_lock wake_lock;
 	struct pinctrl *pinctrl;
@@ -101,7 +101,7 @@ static ssize_t read_att(struct device *dev,
 		pos += snprintf(string+pos, sizeof(string)-pos,  ", ATT_S=%d", ret);
 	}
 
-	pos = snprintf(buf, pos + 2, "%s", string);
+	pos = snprintf(buf, pos + 2, "%s\n", string);
 	return pos;
 }
 
@@ -112,23 +112,31 @@ static ssize_t write_att(struct device *dev, struct device_attribute *attr,
 	if (buf[0] == '0' || buf[0] == '1') {
 		if(hl->hall_enable == 1 && buf[0] == '0')
 		{
-			HL_LOG("Disable hall sensor interrupts\n");
-			disable_irq_nosync(gpio_to_irq(hl->gpio_att));
-			disable_irq_nosync(gpio_to_irq(hl->gpio_att_s));
+			if (hl->irq_enable) {
+				HL_LOG("Disable hall sensor interrupts\n");
+				disable_irq_nosync(gpio_to_irq(hl->gpio_att));
+				disable_irq_nosync(gpio_to_irq(hl->gpio_att_s));
+				hl->irq_enable = 0;
+			}
 			hl->hall_enable = 0;
 			irq_set_irq_wake(gpio_to_irq(hl->gpio_att_s), 0);
 			irq_set_irq_wake(gpio_to_irq(hl->gpio_att), 0);
+			HL_LOG("irq_set_irq_wake: 0\n");
 		}
 		else if(hl->hall_enable == 0 && buf[0] == '1')
 		{
-			HL_LOG("Enable hall sensor interrupts\n");
-			report_cover_event(0, gpio_to_irq(hl->gpio_att), hl);
-			report_cover_event(1, gpio_to_irq(hl->gpio_att_s), hl);
-			enable_irq(gpio_to_irq(hl->gpio_att));
-			enable_irq(gpio_to_irq(hl->gpio_att_s));
+			if (!hl->irq_enable) {
+				HL_LOG("Enable hall sensor interrupts\n");
+				report_cover_event(0, gpio_to_irq(hl->gpio_att), hl);
+				report_cover_event(1, gpio_to_irq(hl->gpio_att_s), hl);
+				enable_irq(gpio_to_irq(hl->gpio_att));
+				enable_irq(gpio_to_irq(hl->gpio_att_s));
+				hl->irq_enable = 1;
+			}
 			hl->hall_enable = 1;
 			irq_set_irq_wake(gpio_to_irq(hl->gpio_att_s), 1);
 			irq_set_irq_wake(gpio_to_irq(hl->gpio_att), 1);
+			HL_LOG("irq_set_irq_wake: 1\n");
 		}
 		else
 			HL_LOG("Invalid paramater(0:Disable 1:Enable) hall enable = %d\n", hl->hall_enable);
@@ -334,6 +342,7 @@ static int hall_sensor_probe(struct platform_device *pdev)
 		if (!pdata)
 		{
 			HL_ERR("platform_data alloc memory fail");
+			ret = -ENOMEM;
 			goto err_alloc_mem_failed;
 		}
 		ret = hall_sensor_dt_parser(pdev->dev.of_node, pdata);
@@ -414,6 +423,7 @@ static int hall_sensor_probe(struct platform_device *pdev)
 			goto err_request_irq_failed;
 		}
 	}
+	hl->irq_enable = 1;
 
 	hall_cover_sysfs_init();
 	g_hl = hl;
@@ -449,6 +459,49 @@ static int hall_sensor_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int hall_sensor_suspend(struct device *dev)
+{
+	struct ak_hall_data *hl = dev_get_drvdata(dev);
+
+	if (hl->hall_enable && hl->irq_enable) {
+		if (gpio_is_valid(hl->gpio_att)) {
+			irq_set_irq_wake(gpio_to_irq(hl->gpio_att), 1);
+			disable_irq(gpio_to_irq(hl->gpio_att));
+		}
+		if ((hl->att_used > 1) && (gpio_is_valid(hl->gpio_att_s))) {
+			irq_set_irq_wake(gpio_to_irq(hl->gpio_att_s), 1);
+			disable_irq(gpio_to_irq(hl->gpio_att_s));
+		}
+		hl->irq_enable = 0;
+	}
+	HL_LOG("Hall enable: %d, irq_enable: %d",hl->hall_enable, hl->irq_enable);
+	return 0;
+}
+
+static int hall_sensor_resume(struct device *dev)
+{
+	struct ak_hall_data *hl = dev_get_drvdata(dev);
+
+	if (hl->hall_enable && !hl->irq_enable) {
+		if (gpio_is_valid(hl->gpio_att)) {
+			enable_irq(gpio_to_irq(hl->gpio_att));
+		}
+		if ((hl->att_used > 1) && (gpio_is_valid(hl->gpio_att_s))) {
+			enable_irq(gpio_to_irq(hl->gpio_att_s));
+		}
+		hl->irq_enable = 1;
+	}
+	HL_LOG("Hall enable: %d, irq_enable: %d",hl->hall_enable, hl->irq_enable);
+	return 0;
+}
+
+static const struct dev_pm_ops hall_sensor_pm_ops = {
+	.suspend = hall_sensor_suspend,
+	.resume  = hall_sensor_resume,
+};
+#endif
+
 #ifdef CONFIG_OF
 static const struct of_device_id hall_sensor_mttable[] = {
 	{ .compatible = "hall_sensor,ak8789"},
@@ -464,6 +517,9 @@ static struct platform_driver hall_sensor_driver = {
 	.driver = {
 		.name = "AK8789_HALL_SENSOR",
 		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &hall_sensor_pm_ops,
+#endif
 		.of_match_table = hall_sensor_mttable,
 	},
 };
@@ -471,10 +527,13 @@ static struct platform_driver hall_sensor_driver = {
 static void __init hall_sensor_init_async(void *unused, async_cookie_t cookie)
 {
 	platform_driver_register(&hall_sensor_driver);
+	HL_LOG("In reg HL");
 }
 
 static int __init hall_sensor_init(void)
 {
+
+	HL_LOG("In init HL");
 	async_schedule(hall_sensor_init_async, NULL);
 	return 0;
 }

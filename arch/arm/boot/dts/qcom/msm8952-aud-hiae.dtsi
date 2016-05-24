@@ -272,6 +272,11 @@
 		hset-amp-gpio-en = <&msm_gpio 94 0>;
 		rcv-ldo-gpio-en	= <&msm_gpio 22 0>;
 		rcv-amp-gpio-en	= <&msm_gpio 23 0>;
+
+		htc,aud-component-list =
+			"RT5507",
+			"TPA6185",
+			"TFA9895";
 	};
 
 	cpe: qcom,msm-cpe-lsm {

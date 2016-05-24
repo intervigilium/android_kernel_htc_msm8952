@@ -80,16 +80,9 @@ static void process_lpm_workarounds(struct work_struct *w)
 {
 	int ret = 0, status = 0, cpu = 0;
 
-	/* MSM8952 have L1/L2 dynamic clock gating disabled in HW for
-	 * performance cluster cores. Enable it via SW to reduce power
-	 * impact.
-	 */
 
 	if (enable_dynamic_clock_gating) {
 
-		/* Skip enabling L1/L2 clock gating if perf l2 is not in low
-		 * power mode.
-		 */
 		status = (__raw_readl(l2_pwr_sts) & L2_HS_STS_SET)
 							== L2_HS_STS_SET;
 		if (status) {
@@ -118,6 +111,7 @@ static void process_lpm_workarounds(struct work_struct *w)
 		put_cpu();
 
 		HOTPLUG_NO_MITIGATION(&curr_req.offline_mask);
+		pr_info("%s: Start to request hotplug: 0x%x\n", __func__, (uint32_t)*cpumask_bits(&curr_req.offline_mask));
 		ret = devmgr_client_request_mitigation(
 				hotplug_handle,
 				HOTPLUG_MITIGATION_REQ,
@@ -151,6 +145,7 @@ static ssize_t store_clock_gating_enabled(struct kobject *kobj,
 	}
 
 	cpumask_copy(&curr_req.offline_mask, &l1_l2_offline_mask);
+	pr_info("%s: Start to request hotplug: 0x%x\n", __func__, (uint32_t)*cpumask_bits(&curr_req.offline_mask));
 	ret = devmgr_client_request_mitigation(
 			hotplug_handle,
 			HOTPLUG_MITIGATION_REQ,
@@ -183,11 +178,6 @@ static int lpm_wa_probe(struct platform_device *pdev)
 	skip_l2_spm = of_property_read_bool(pdev->dev.of_node,
 					"qcom,lpm-wa-skip-l2-spm");
 
-	/*
-	 * Enabling L1/L2 tag ram clock gating requires core and L2 to be
-	 * in quiescent state. lpm-wa-dynamic-clock-gating flag specifies
-	 * WA implementation in SW for perf core0 and L2.
-	 */
 	enable_dynamic_clock_gating = of_property_read_bool(pdev->dev.of_node,
 					"qcom,lpm-wa-dynamic-clock-gating");
 	if (!enable_dynamic_clock_gating)
@@ -258,9 +248,8 @@ static int lpm_wa_probe(struct platform_device *pdev)
 		pr_err("%s: cannot create kobject for module %s\n",
 			__func__, KBUILD_MODNAME);
 		ret = -ENOENT;
-	}
-
-	ret = sysfs_create_file(module_lpm_wa,
+	} else
+		ret = sysfs_create_file(module_lpm_wa,
 					&clock_gating_enabled_attr.attr);
 	if (ret) {
 		pr_err("cannot create attr group. err:%d\n", ret);

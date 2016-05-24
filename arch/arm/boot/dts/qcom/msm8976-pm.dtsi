@@ -337,6 +337,7 @@
 			<0xff 112>, /* smmu_bus_intr[38] */
 			<0xff 114>, /* qdsd_intr_out */
 			<0xff 126>, /* app_cxt_irpt_10 */
+			<0xff 128>, /* blsp1_peripheral_irq[3] */
 			<0xff 129>, /* blsp1_peripheral_irq[4] */
 			<0xff 130>, /* qup_irq */
 			<0xff 131>, /* qup_irq */
@@ -391,6 +392,7 @@
 			<0xff 207>, /* rpm_ipc(27) */
 			<0xff 212>, /* lpass_slimbus_bam_ee1_irq */
 			<0xff 215>, /* o_bimc_intr[0] */
+			<0xff 224>, /* spdm_realtime_irq[1] */
 			<0xff 239>, /* crypto_bam_irq[1]*/
 			<0xff 240>, /* summary_irq_kpss */
 			<0xff 253>, /* sdc2_pwr_cmd_irq */
@@ -463,17 +465,8 @@
 			<56  35>;
 	};
 
-	qcom,cpu-sleep-status@b088008{
+	qcom,cpu-sleep-status{
 		compatible = "qcom,cpu-sleep-status";
-		reg = <0xb188008 0x100>,
-			<0xb198008 0x100>,
-			<0xb1a8008 0x100>,
-			<0xb1b8008 0x100>,
-			<0xb088008 0x100>,
-			<0xb098008 0x100>,
-			<0xb0a8008 0x100>,
-			<0xb0b8008 0x100>;
-		qcom,sleep-status-mask= <0x40000>;
 	};
 
 	qcom,rpm-log@29dc00 {
@@ -495,6 +488,19 @@
 		reg-names = "phys_addr_base", "offset_addr", "heap_phys_addrbase";
 		qcom,sleep-stats-version = <2>;
 	};
+
+	qcom,rpm-stats-ver {
+		compatible = "qcom,rpm-stats-ver";
+		reg = <0x290000 0x4>;
+		reg-names = "rpm_data_base";
+	};
+
+        qcom,rpm-stats@29ffa0{
+                compatible = "qcom,rpm-stats";
+                reg = <0x29ffa0 0x60>;
+                reg-names = "phys_addr_base";
+                qcom,sleep-stats-version = <3>;
+        };
 
 	qcom,rpm-master-stats@60150 {
 		compatible = "qcom,rpm-master-stats";

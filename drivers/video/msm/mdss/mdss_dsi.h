@@ -130,6 +130,7 @@ enum dsi_pm_type {
 #define CTRL_STATE_UNKNOWN		0x00
 #define CTRL_STATE_PANEL_INIT		BIT(0)
 #define CTRL_STATE_MDP_ACTIVE		BIT(1)
+#define CTRL_STATE_DSI_ACTIVE		BIT(2)
 
 #define DSI_NON_BURST_SYNCH_PULSE	0
 #define DSI_NON_BURST_SYNCH_EVENT	1
@@ -213,6 +214,7 @@ struct dsi_shared_data {
 	u32 hw_config; 
 	u32 pll_src_config; 
 	u32 hw_rev; 
+	u32 phy_rev; 
 
 	
 	u32 ulps_clamp_ctrl_off;
@@ -222,6 +224,7 @@ struct dsi_shared_data {
 	bool cmd_clk_ln_recovery_en;
 	bool dsi0_active;
 	bool dsi1_active;
+	bool split_config_independent_pll;
 
 	
 	struct clk *mdp_core_clk;
@@ -555,6 +558,7 @@ void mdss_dsi_ctrl_setup(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_dln0_phy_err(struct mdss_dsi_ctrl_pdata *ctrl, bool print_en);
 void mdss_dsi_lp_cd_rx(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_get_hw_revision(struct mdss_dsi_ctrl_pdata *ctrl);
+void mdss_dsi_get_phy_revision(struct mdss_dsi_ctrl_pdata *ctrl);
 u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 		char cmd1, void (*fxn)(int), char *rbuf, int len);
 int mdss_dsi_panel_init(struct device_node *node,

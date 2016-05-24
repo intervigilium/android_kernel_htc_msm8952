@@ -187,6 +187,19 @@ struct htc_charger {
 	int (*get_vbus)(int *result);
 	int (*get_max_iusb)(int *result);
 	int (*get_AICL)(int *result);
+
+	int (*set_system_temp_level)(int val);
+	int (*get_system_temp_level)(void);
+
+	int (*get_input_current_max)(void);
+
+	int (*set_dp_dm)(int val);
+	int (*get_dp_dm)(void);
+
+	int (*get_input_current_limited)(void);
+
+	int (*set_rerun_aicl)(int val);
+	int (*get_rerun_aicl)(void);
 };
 
 int htc_charger_event_notify(enum htc_charger_event);

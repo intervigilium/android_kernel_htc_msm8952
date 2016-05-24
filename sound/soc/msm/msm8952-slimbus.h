@@ -41,6 +41,8 @@ int msm_snd_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params);
 int msm8952_slimbus_2_hw_params(struct snd_pcm_substream *substream,
 					  struct snd_pcm_hw_params *params);
+int htc_msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+				struct snd_pcm_hw_params *params); 
 int msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 				struct snd_pcm_hw_params *params);
 int msm_quin_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,

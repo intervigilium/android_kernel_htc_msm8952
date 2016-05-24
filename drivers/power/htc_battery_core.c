@@ -135,7 +135,12 @@ static enum power_supply_property htc_battery_properties[] = {
 #if 0
 	POWER_SUPPLY_PROP_USB_OVERHEAT,
 #endif
+	POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_MAX,
 	POWER_SUPPLY_PROP_FLASH_ACTIVE,
+	POWER_SUPPLY_PROP_DP_DM,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED,
+	POWER_SUPPLY_PROP_RERUN_AICL,
 };
 
 static enum power_supply_property htc_power_properties[] = {
@@ -927,7 +932,10 @@ static int htc_battery_set_property(struct power_supply *psy,
 		return ret;
 #endif
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED:
+	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
 	case POWER_SUPPLY_PROP_FLASH_ACTIVE:
+	case POWER_SUPPLY_PROP_DP_DM:
+	case POWER_SUPPLY_PROP_RERUN_AICL:
 		if (battery_core_info.func.func_set_chg_property)
 			ret = battery_core_info.func.func_set_chg_property(psp, val->intval);
 		else {
@@ -979,7 +987,12 @@ static int htc_battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_FLASH_CURRENT_MAX :
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
+	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_FLASH_ACTIVE:
+	case POWER_SUPPLY_PROP_DP_DM:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
+	case POWER_SUPPLY_PROP_RERUN_AICL:
 		if (battery_core_info.func.func_get_chg_status) {
 			val->intval = battery_core_info.func.func_get_chg_status(psp);
 			if (val->intval == (-EINVAL))
@@ -1112,6 +1125,9 @@ static int htc_battery_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED:
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN:
+	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
+	case POWER_SUPPLY_PROP_DP_DM:
+	case POWER_SUPPLY_PROP_RERUN_AICL:
 		return 1;
 	default:
 		break;

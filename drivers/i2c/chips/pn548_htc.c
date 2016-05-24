@@ -6,6 +6,10 @@
 #include <linux/types.h>
 #include "pn548_htc.h"
 
+#if NFC_READ_RFSKUID
+#include <linux/htc_flags.h>
+#define HAS_NFC_CHIP 0x7000000
+#endif 
 
 #if NFC_GET_BOOTMODE
 #include <linux/htc_flags.h>
@@ -26,7 +30,39 @@ static unsigned int   pvdd_gpio;
 
 
 int pn548_htc_check_rfskuid(int in_is_alive){
+#if NFC_READ_RFSKUID
+	int nfc_rfbandid_size = 0;
+	int i;
+	unsigned int *nfc_rfbandid_info;
+	struct device_node *nfc_rfbandid;
+	nfc_rfbandid = of_find_node_by_path("/chosen/mfg");
+	if (nfc_rfbandid){
+		nfc_rfbandid_info = (unsigned int *) of_get_property(nfc_rfbandid,"skuid.rf_id",&nfc_rfbandid_size);
+		if (nfc_rfbandid_info == NULL)
+		{
+			E("%s:Get skuid.rf_id fail keep NFC by default",__func__);
+			return 1;
+		}
+	}else {
+		E("%s:Get skuid.rf_id fail (can't find /chosen/mfg) keep NFC by default",__func__);
+		return 1;
+	}
+	if(nfc_rfbandid_size != 32) {  
+		E("%s:Get skuid.rf_id size error keep NFC by default",__func__);
+		return 1;
+	}
+
+	for ( i = 0; i < 8; i++) {
+		if (nfc_rfbandid_info[i] == HAS_NFC_CHIP) {
+			I("%s: Check skuid.rf_id done device has NFC chip",__func__);
+			return 1;
+		}
+	}
+	I("%s: Check skuid.rf_id done remove NFC",__func__);
+	return 0;
+#else 
 	return in_is_alive;
+#endif 
 }
 
 

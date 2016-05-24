@@ -112,6 +112,7 @@ struct mmc_ext_csd {
 	u8			cmdq_depth;		
 	u8			cmdq_support;		
 
+	u8			fw_version;		
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  
 };

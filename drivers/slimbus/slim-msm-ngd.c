@@ -98,8 +98,6 @@ static irqreturn_t ngd_slim_interrupt(int irq, void *d)
 	u32 stat = readl_relaxed(ngd + NGD_INT_STAT);
 	u32 pstat;
 
-	if (dev->bulk.in_progress)
-		SLIM_INFO(dev, "Interrupt in bulk:stat:0x%x", stat);
 	if ((stat & NGD_INT_MSG_BUF_CONTE) ||
 		(stat & NGD_INT_MSG_TX_INVAL) || (stat & NGD_INT_DEV_ERR) ||
 		(stat & NGD_INT_TX_NACKED_2)) {
@@ -131,12 +129,10 @@ static irqreturn_t ngd_slim_interrupt(int irq, void *d)
 						(4 * i));
 			SLIM_DBG(dev, "REG-RX data: %x\n", rx_buf[i]);
 		}
-		ngd_slim_rx(dev, (u8 *)rx_buf);
 		writel_relaxed(NGD_INT_RX_MSG_RCVD,
 				ngd + NGD_INT_CLR);
 		mb();
-		if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED)
-			SLIM_WARN(dev, "direct msg rcvd with RX MSGQs\n");
+		ngd_slim_rx(dev, (u8 *)rx_buf);
 	}
 	if (stat & NGD_INT_RECFG_DONE) {
 		writel_relaxed(NGD_INT_RECFG_DONE, ngd + NGD_INT_CLR);
@@ -190,11 +186,6 @@ static int dsp_ssr_notify_cb(struct notifier_block *n, unsigned long code,
 		
 		pm_runtime_get_noresume(dev->dev);
 		dev->state = MSM_CTRL_DOWN;
-		
-		if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED)
-			dev->use_rx_msgqs = MSM_MSGQ_DOWN;
-		if (dev->use_tx_msgqs == MSM_MSGQ_ENABLED)
-			dev->use_tx_msgqs = MSM_MSGQ_DOWN;
 		msm_slim_sps_exit(dev, false);
 		ngd_adsp_down(dev);
 		mutex_unlock(&dev->tx_lock);
@@ -678,9 +669,19 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	u32 *header;
 	DECLARE_COMPLETION_ONSTACK(done);
 
-	msm_slim_get_ctrl(dev);
+	ret = msm_slim_get_ctrl(dev);
 	mutex_lock(&dev->tx_lock);
-	if (dev->state == MSM_CTRL_ASLEEP) {
+
+	if ((pm_runtime_enabled(dev->dev) && ret < 0) ||
+			dev->state == MSM_CTRL_DOWN) {
+		SLIM_WARN(dev, "vote failed/SSR in-progress ret:%d, state:%d",
+				ret, dev->state);
+		pm_runtime_set_suspended(dev->dev);
+		mutex_unlock(&dev->tx_lock);
+		msm_slim_put_ctrl(dev);
+		return -EREMOTEIO;
+	}
+	if (!pm_runtime_enabled(dev->dev) && dev->state == MSM_CTRL_ASLEEP) {
 		mutex_unlock(&dev->tx_lock);
 		ret = ngd_slim_runtime_resume(dev->dev);
 
@@ -694,18 +695,14 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	if (dev->use_tx_msgqs != MSM_MSGQ_ENABLED) {
 		SLIM_WARN(dev, "bulk wr not supported");
 		ret = -EPROTONOSUPPORT;
-		goto ret_async;
+		goto retpath;
 	}
 	if (dev->bulk.in_progress) {
 		SLIM_WARN(dev, "bulk wr in progress:");
 		ret = -EAGAIN;
-		goto ret_async;
+		goto retpath;
 	}
-	if (dev->bulk.size) {
-		dma_free_coherent(dev->dev, dev->bulk.size, dev->bulk.base,
-					dev->bulk.phys);
-		memset(&dev->bulk, 0, sizeof(dev->bulk));
-	}
+	dev->bulk.in_progress = true;
 	
 	dev->bulk.size = n * 5;
 	for (i = 0; i < n; i++) {
@@ -716,17 +713,20 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	if (dev->bulk.size > 0xffff) {
 		SLIM_WARN(dev, "len exceeds limit, split bulk and retry");
 		ret = -EDQUOT;
-		goto ret_async;
+		goto retpath;
 	}
-	header = dma_alloc_coherent(dev->dev, dev->bulk.size, &dev->bulk.phys,
-					GFP_KERNEL);
-	if (!header) {
-		ret = -ENOMEM;
-		goto ret_async;
+	if (dev->bulk.size > dev->bulk.buf_sz) {
+		void *temp = krealloc(dev->bulk.base, dev->bulk.size,
+				      GFP_KERNEL);
+		if (!temp) {
+			ret = -ENOMEM;
+			goto retpath;
+		}
+		dev->bulk.base = temp;
+		dev->bulk.buf_sz = dev->bulk.size;
 	}
 
-	dev->bulk.base = header;
-	dev->bulk.in_progress = true;
+	header = dev->bulk.base;
 	for (i = 0; i < n; i++) {
 		u8 *buf = (u8 *)header;
 		int rl = msgs[i].num_bytes + 5;
@@ -749,7 +749,7 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	}
 	header = dev->bulk.base;
 	
-	for (i = 0; i < (dev->bulk.size); i += 4, header += 4)
+	for (i = 0; i < (dev->bulk.size); i += 16, header += 4)
 		SLIM_INFO(dev, "bulk sz:%d:0x%x, 0x%x, 0x%x, 0x%x",
 			  dev->bulk.size, *header, *(header+1), *(header+2),
 			  *(header+3));
@@ -760,7 +760,14 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		dev->bulk.cb = ngd_bulk_cb;
 		dev->bulk.ctx = &done;
 	}
-	ret = sps_transfer_one(pipe, dev->bulk.phys, dev->bulk.size, NULL,
+	dev->bulk.wr_dma = dma_map_single(dev->dev, dev->bulk.base,
+					  dev->bulk.size, DMA_TO_DEVICE);
+	if (dma_mapping_error(dev->dev, dev->bulk.wr_dma)) {
+		ret = -ENOMEM;
+		goto retpath;
+	}
+
+	ret = sps_transfer_one(pipe, dev->bulk.wr_dma, dev->bulk.size, NULL,
 				SPS_IOVEC_FLAG_EOT);
 	if (ret) {
 		SLIM_WARN(dev, "sps transfer one returned error:%d", ret);
@@ -771,16 +778,14 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 
 		if (!timeout) {
 			SLIM_WARN(dev, "timeout for bulk wr");
+			dma_unmap_single(dev->dev, dev->bulk.wr_dma,
+					 dev->bulk.size, DMA_TO_DEVICE);
 			ret = -ETIMEDOUT;
 		}
-	} else {
-		goto ret_async;
 	}
 retpath:
-	dma_free_coherent(dev->dev, dev->bulk.size, dev->bulk.base,
-				dev->bulk.phys);
-	memset(&dev->bulk, 0, sizeof(dev->bulk));
-ret_async:
+	if (ret)
+		dev->bulk.in_progress = false;
 	mutex_unlock(&dev->tx_lock);
 	msm_slim_put_ctrl(dev);
 	return ret;
@@ -992,30 +997,65 @@ static int ngd_get_laddr(struct slim_controller *ctrl, const u8 *ea,
 	return ret;
 }
 
-static void ngd_slim_setup_msg_path(struct msm_slim_ctrl *dev)
+static void ngd_slim_setup(struct msm_slim_ctrl *dev)
 {
+	u32 cfg = readl_relaxed(dev->base +
+				 NGD_BASE(dev->ctrl.nr, dev->ver));
 	if (dev->state == MSM_CTRL_DOWN) {
+		
+		if (dev->use_tx_msgqs != MSM_MSGQ_RESET)
+			msm_slim_deinit_ep(dev, &dev->tx_msgq,
+					   &dev->use_tx_msgqs);
+
+		if (dev->use_rx_msgqs != MSM_MSGQ_RESET)
+			msm_slim_deinit_ep(dev, &dev->rx_msgq,
+					   &dev->use_rx_msgqs);
+
 		msm_slim_sps_init(dev, dev->bam_mem,
 			NGD_BASE(dev->ctrl.nr,
 			dev->ver) + NGD_STATUS, true);
 	} else {
 		if (dev->use_rx_msgqs == MSM_MSGQ_DISABLED)
 			goto setup_tx_msg_path;
-		if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED) {
-			SLIM_WARN(dev, "pipe setup when RX msgq enabled?");
+		if (cfg & NGD_CFG_RX_MSGQ_EN) {
+			SLIM_WARN(dev, "RX msgq status HW:0x%x, SW:%d:", cfg,
+				  dev->use_rx_msgqs);
 			goto setup_tx_msg_path;
 		}
+
+		if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED)
+			msm_slim_disconnect_endp(dev, &dev->rx_msgq,
+						 &dev->use_rx_msgqs);
 		msm_slim_connect_endp(dev, &dev->rx_msgq);
 
 setup_tx_msg_path:
 		if (dev->use_tx_msgqs == MSM_MSGQ_DISABLED)
-			return;
-		if (dev->use_tx_msgqs == MSM_MSGQ_ENABLED) {
-			SLIM_WARN(dev, "pipe setup when TX msgq enabled?");
-			return;
+			goto ngd_enable;
+		if (cfg & NGD_CFG_TX_MSGQ_EN) {
+			SLIM_WARN(dev, "TX msgq status HW:0x%x, SW:%d:", cfg,
+				  dev->use_tx_msgqs);
+			goto ngd_enable;
 		}
+
+		if (dev->use_tx_msgqs == MSM_MSGQ_ENABLED)
+			msm_slim_disconnect_endp(dev, &dev->tx_msgq,
+						 &dev->use_tx_msgqs);
 		msm_slim_connect_endp(dev, &dev->tx_msgq);
 	}
+ngd_enable:
+	if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED)
+		cfg |= NGD_CFG_RX_MSGQ_EN;
+	if (dev->use_tx_msgqs == MSM_MSGQ_ENABLED)
+		cfg |= NGD_CFG_TX_MSGQ_EN;
+
+	
+	if (!(cfg & NGD_CFG_ENABLE))
+		cfg |= NGD_CFG_ENABLE;
+
+	writel_relaxed(cfg, dev->base + NGD_BASE(dev->ctrl.nr, dev->ver));
+	
+	mb();
+
 }
 
 static void ngd_slim_rx(struct msm_slim_ctrl *dev, u8 *buf)
@@ -1139,10 +1179,6 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 		dev->state = MSM_CTRL_DOWN;
 	}
 
-	msm_slim_deinit_ep(dev, &dev->rx_msgq,
-				&dev->use_rx_msgqs);
-	msm_slim_deinit_ep(dev, &dev->tx_msgq,
-				&dev->use_tx_msgqs);
 	writel_relaxed(ngd_int, dev->base + NGD_INT_EN +
 				NGD_BASE(dev->ctrl.nr, dev->ver));
 
@@ -1152,13 +1188,12 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 	
 	mb();
 
-	writel_relaxed(1, dev->base + NGD_BASE(dev->ctrl.nr, dev->ver));
 	
-	mb();
+	ngd_slim_setup(dev);
 
 	timeout = wait_for_completion_timeout(&dev->reconf, HZ);
 	if (!timeout) {
-		SLIM_ERR(dev, "Failed to receive master capability\n");
+		SLIM_WARN(dev, "capability exchange timed-out\n");
 #ifdef CONFIG_HTC_DEBUG_DSP
 		pr_info("%s:trigger ramdump to keep status\n",__func__);
 		BUG();
@@ -1222,7 +1257,6 @@ static int ngd_slim_rx_msgq_thread(void *data)
 	struct msm_slim_ctrl *dev = (struct msm_slim_ctrl *)data;
 	struct completion *notify = &dev->rx_msgq_notify;
 	int ret = 0;
-	u32 msgq_en = 1;
 
 	while (!kthread_should_stop()) {
 		struct slim_msg_txn txn;
@@ -1245,17 +1279,6 @@ static int ngd_slim_rx_msgq_thread(void *data)
 		txn.wbuf = wbuf;
 		txn.len = 4;
 		SLIM_INFO(dev, "SLIM SAT: Rcvd master capability\n");
-		if (dev->state >= MSM_CTRL_ASLEEP) {
-			ngd_slim_setup_msg_path(dev);
-			if (dev->use_rx_msgqs == MSM_MSGQ_ENABLED)
-				msgq_en |= NGD_CFG_RX_MSGQ_EN;
-			if (dev->use_tx_msgqs == MSM_MSGQ_ENABLED)
-				msgq_en |= NGD_CFG_TX_MSGQ_EN;
-			writel_relaxed(msgq_en, dev->base +
-					NGD_BASE(dev->ctrl.nr, dev->ver));
-			
-			mb();
-		}
 capability_retry:
 		txn.rl = 8;
 		ret = ngd_xfer_msg(&dev->ctrl, &txn);
@@ -1267,7 +1290,7 @@ capability_retry:
 			if (prev_state >= MSM_CTRL_ASLEEP)
 				complete(&dev->reconf);
 			else
-				SLIM_ERR(dev,
+				SLIM_WARN(dev,
 					"SLIM: unexpected capability, state:%d\n",
 						prev_state);
 			
@@ -1280,6 +1303,8 @@ capability_retry:
 				retries++;
 				goto capability_retry;
 			}
+		} else {
+			SLIM_WARN(dev, "SLIM: capability TX failed:%d\n", ret);
 		}
 	}
 	return 0;
@@ -1423,6 +1448,15 @@ static int ngd_slim_probe(struct platform_device *pdev)
 				GFP_KERNEL);
 	if (!dev->wr_comp)
 		return -ENOMEM;
+
+	
+	dev->bulk.buf_sz = SLIM_MAX_TXNS * 8;
+	dev->bulk.base = kzalloc(dev->bulk.buf_sz, GFP_KERNEL);
+	if (!dev->bulk.base) {
+		ret = -ENOMEM;
+		goto err_nobulk;
+	}
+
 	dev->dev = &pdev->dev;
 	platform_set_drvdata(pdev, dev);
 	slim_set_ctrldata(&dev->ctrl, dev);
@@ -1604,6 +1638,8 @@ err_ioremap_failed:
 	if (dev->sysfs_created)
 		sysfs_remove_file(&dev->dev->kobj,
 				&dev_attr_debug_mask.attr);
+	kfree(dev->bulk.base);
+err_nobulk:
 	kfree(dev->wr_comp);
 	kfree(dev);
 	return ret;
@@ -1626,10 +1662,7 @@ static int ngd_slim_remove(struct platform_device *pdev)
 	if (!IS_ERR_OR_NULL(dev->ext_mdm.ssr))
 		subsys_notif_unregister_notifier(dev->ext_mdm.ssr,
 						&dev->ext_mdm.nb);
-	if (dev->bulk.size)
-		dma_free_coherent(dev->dev, dev->bulk.size, dev->bulk.base,
-					dev->bulk.phys);
-
+	kfree(dev->bulk.base);
 	free_irq(dev->irq, dev);
 	slim_del_controller(&dev->ctrl);
 	kthread_stop(dev->rx_msgq_thread);

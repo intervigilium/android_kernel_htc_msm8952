@@ -5,6 +5,7 @@
 #
 
 menu "Miscellaneous I2C Chip support"
+source drivers/i2c/chips/stmvl53l0/Kconfig
 
 config INPUT_CWSTM32
        tristate "CyWee CWSTM32 Sensor HUB"
@@ -238,6 +239,12 @@ config AMP_TFA9895L
 	depends on I2C=y
 	help
 		NXP TFA9895L Speaker AMP Driver implemented by HTC.
+
+config AMP_TFA9888
+	tristate "NXP TFA9888 Speaker AMP Driver"
+	depends on I2C=y
+	help
+		NXP TFA9888 Speaker AMP Driver implemented by HTC.
 
 config INPUT_ISL29028
 	tristate "ISL29028 proximity and light sensor"

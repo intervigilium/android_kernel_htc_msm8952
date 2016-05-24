@@ -33,7 +33,9 @@ struct attribute_status htc_attr_stat[] = {
 };
 
 
-static struct delayed_work dimming_work;
+static void dimming_do_work(struct work_struct *work);
+static DECLARE_DELAYED_WORK(dimming_work, dimming_do_work);
+static DEFINE_MUTEX(dimming_wq_lock);
 
 struct msm_fb_data_type *mfd_instance;
 #define DEBUG_BUF   2048
@@ -44,6 +46,7 @@ static char debug_buf[DEBUG_BUF];
 struct mdss_dsi_ctrl_pdata *ctrl_instance = NULL;
 static char dcs_cmds[DCS_MAX_CNT];
 static char *tmp;
+
 static struct dsi_cmd_desc debug_cmd = {
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, 1}, dcs_cmds
 };
@@ -130,6 +133,11 @@ EXPORT_SYMBOL(disp_vendor);
 
 void htc_panel_info(const char *panel)
 {
+	if (strcmp(&panel_name[0], "") != 0) {
+		PR_DISP_INFO("%s: Created already!\n", __func__);
+		return;
+	}
+
 	android_disp_kobj = kobject_create_and_add("android_display", NULL);
 	if (!android_disp_kobj) {
 		PR_DISP_ERR("%s: subsystem register failed\n", __func__);
@@ -405,7 +413,9 @@ void htc_reset_status(void)
 		htc_attr_stat[i].cur_value = htc_attr_stat[i].def_value;
 	}
 	
+	mutex_lock(&dimming_wq_lock);
 	cancel_delayed_work_sync(&dimming_work);
+	mutex_unlock(&dimming_wq_lock);
 
 	return;
 }
@@ -581,10 +591,10 @@ void htc_dimming_on(struct msm_fb_data_type *mfd)
 		return;
 
 	mfd_instance = mfd;
-
-	INIT_DELAYED_WORK(&dimming_work, dimming_do_work);
-
+	mutex_lock(&dimming_wq_lock);
 	schedule_delayed_work(&dimming_work, msecs_to_jiffies(1000));
+	mutex_unlock(&dimming_wq_lock);
+
 	return;
 }
 
@@ -737,4 +747,33 @@ void htc_set_enable_backlight_when_flashlight(struct msm_fb_data_type *mfd)
 		PR_DISP_INFO("%s set backlight off!\n", __func__);
 	}
 	htc_attr_stat[FLASH_INDEX].cur_value = htc_attr_stat[FLASH_INDEX].req_value;
+}
+
+int shrink_pwm(struct msm_fb_data_type *mfd, int val)
+{
+	struct mdss_panel_data *pdata = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	unsigned int shrink_br = BRI_SETTING_DEF;
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+
+	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	if (val <= 0) {
+		shrink_br = 0;
+	} else if (val > 0 && (val < BRI_SETTING_MIN)) {
+		shrink_br = ctrl->pwm_min;
+	} else if ((val >= BRI_SETTING_MIN) && (val <= BRI_SETTING_DEF)) {
+		shrink_br = (val - BRI_SETTING_MIN) * (ctrl->pwm_default - ctrl->pwm_min) /
+				(BRI_SETTING_DEF - BRI_SETTING_MIN) + ctrl->pwm_min;
+	} else if (val > BRI_SETTING_DEF && val <= BRI_SETTING_MAX) {
+		shrink_br = (val - BRI_SETTING_DEF) * (ctrl->pwm_max - ctrl->pwm_default) /
+				(BRI_SETTING_MAX - BRI_SETTING_DEF) + ctrl->pwm_default;
+	} else if (val > BRI_SETTING_MAX)
+		shrink_br = ctrl->pwm_max;
+
+	PR_DISP_INFO("brightness orig=%d, transformed=%d\n", val, shrink_br);
+
+	return shrink_br;
 }

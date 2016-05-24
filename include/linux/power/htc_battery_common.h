@@ -69,6 +69,7 @@ enum ftm_charger_control_flag {
 #define HTC_BATT_CHG_LIMIT_BIT_THRML				(1<<2)
 #define HTC_BATT_CHG_LIMIT_BIT_KDDI				(1<<3)
 #define HTC_BATT_CHG_LIMIT_BIT_NET_TALK			(1<<4)
+#define HTC_BATT_CHG_LIMIT_BIT_THRML_IUSB			(1<<5)
 
 enum batt_context_event {
 	EVENT_TALK_START = 0,

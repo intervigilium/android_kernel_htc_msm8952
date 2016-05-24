@@ -127,6 +127,14 @@ int pmi8952_is_chg_safety_timer_timeout(int *result);
 int pmi8952_get_vbus(int *result);
 int pmi8952_get_max_iusb(int *result);
 int pmi8952_get_AICL(int *result);
+int pmi8952_set_system_temp_level(int val);
+int pmi8952_get_system_temp_level(void);
+int pmi8952_get_input_current_max(void);
+int pmi8952_set_dp_dm(int val);
+int pmi8952_get_dp_dm(void);
+int pmi8952_get_input_current_limited(void);
+int pmi8952_set_rerun_aicl(int val);
+int pmi8952_get_rerun_aicl(void);
 #endif
 #else 
 #ifdef CONFIG_HTC_BATT_8960
@@ -430,6 +438,46 @@ static inline int pmi8952_get_max_iusb(int *result)
 }
 
 static inline int pmi8952_get_AICL(int *result)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_set_system_temp_level(int val)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_get_system_temp_level(void)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_get_input_current_max(void)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_set_dp_dm(int val)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_get_dp_dm(void)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_get_input_current_limited(void)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_set_rerun_aicl(int val)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8952_get_rerun_aicl(void)
 {
 	return -ENXIO;
 }

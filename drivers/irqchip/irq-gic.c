@@ -88,6 +88,7 @@ struct gic_chip_data {
 	unsigned int wakeup_irqs[32];
 	unsigned int enabled_irqs[32];
 #endif
+	u32 saved_regs[0x400];
 };
 
 static DEFINE_RAW_SPINLOCK(irq_controller_lock);
@@ -216,6 +217,22 @@ static void gic_disable_irq(struct irq_data *d)
 		gic_arch_extn.irq_disable(d);
 }
 
+static int gic_panic_handler(struct notifier_block *this,
+			unsigned long event, void *ptr)
+{
+	int i;
+	void __iomem *base;
+
+	base = gic_data_dist_base(&gic_data[0]);
+	for (i = 0; i < 0x400; i += 1)
+		gic_data[0].saved_regs[i] = readl_relaxed(base + 4 * i);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block gic_panic_blk = {
+	.notifier_call = gic_panic_handler,
+};
+
 #ifdef CONFIG_PM
 static int gic_suspend_one(struct gic_chip_data *gic)
 {
@@ -265,20 +282,16 @@ void gic_show_pending_irq(void)
 	}
 }
 
-bool gic_is_any_irq_pending(void)
+uint32_t gic_return_irq_pending(void)
 {
 	struct gic_chip_data *gic = &gic_data[0];
 	void __iomem *cpu_base = gic_data_cpu_base(gic);
 	int val;
 
 	val = readl_relaxed_no_log(cpu_base + GIC_CPU_HIGHPRI);
-	val &= GIC_INVL_INTERRUPT_MASK;
-	if (val == GIC_INVL_INTERRUPT_MASK)
-		return 0;
-	else
-		return 1;
+	return val;
 }
-EXPORT_SYMBOL(gic_is_any_irq_pending);
+EXPORT_SYMBOL(gic_return_irq_pending);
 
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
@@ -1080,6 +1093,7 @@ int __init gic_of_init(struct device_node *node, struct device_node *parent)
 		gic_cascade_irq(gic_cnt, irq);
 	}
 	gic_cnt++;
+	atomic_notifier_chain_register(&panic_notifier_list, &gic_panic_blk);
 	return 0;
 }
 

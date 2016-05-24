@@ -415,6 +415,7 @@ static int htc_read_fuse(void){
 		}
 		fuse_data = readl_relaxed(addr);
 		pr_debug("%s: 0x%llX\n", __func__, fuse_data);
+		iounmap(addr);
 	} else {
 		return -ENOMEM;
 	}

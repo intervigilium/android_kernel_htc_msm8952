@@ -235,6 +235,7 @@ struct _mmc_csd {
 #define EXT_CSD_GENERIC_CMD6_TIME	248	
 #define EXT_CSD_CACHE_SIZE		249	
 #define EXT_CSD_PWR_CL_DDR_200_360	253	
+#define EXT_CSD_FW_VERSION              254     
 #define EXT_CSD_VENDOR_SPECIFIC_FIELDS_258 258 
 #define EXT_CSD_CMDQ_DEPTH		307	
 #define EXT_CSD_CMDQ_SUPPORT		308	

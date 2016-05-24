@@ -157,6 +157,9 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 				trace_almk_vmpressure(pressure, other_free,
 					other_file);
 		}
+	} else if (atomic_read(&shift_adj)) {
+		trace_almk_vmpressure(pressure, other_free, other_file);
+		atomic_set(&shift_adj, 0);
 	}
 
 	return 0;

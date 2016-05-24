@@ -2078,15 +2078,15 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	unsigned char finger_status;
 	unsigned char size_of_2d_data;
 	unsigned char detected_gestures;
-	unsigned short data_addr;
+	unsigned short data_addr = 0;
 	unsigned short glove_status = 0;
-	int x;
-	int y;
-	int z;
-	int wx;
-	int wy;
-	int temp;
-	int state;
+	int x = 0;
+	int y = 0;
+	int z = 0;
+	int wx = 0;
+	int wy = 0;
+	int temp = 0;
+	int state = 0;
 	struct synaptics_rmi4_f12_extra_data *extra_data;
 	struct synaptics_rmi4_f12_finger_data *data;
 	struct synaptics_rmi4_f12_finger_data *finger_data;
@@ -4204,11 +4204,37 @@ static int synaptics_rmi4_set_gpio(struct synaptics_rmi4_data *rmi4_data)
 		retval = synaptics_rmi4_gpio_setup(
 				bdata->power_gpio,
 				true, 1, bdata->power_on_state);
-		if (retval < 0) {
+		if (retval == -EBUSY)
+		{
+			rmi4_data->hw_if->board_data->power_gpio = -1;
+			dev_info(rmi4_data->pdev->dev.parent,
+					"%s: power GPIO has been requested, by pass.\n",
+					__func__);
+		}
+		else if (retval < 0) {
 			dev_err(rmi4_data->pdev->dev.parent,
 					"%s: Failed to configure power GPIO\n",
 					__func__);
 			goto err_gpio_power;
+		}
+	}
+
+	if (bdata->power_gpio_1v8 >= 0) {
+		retval = synaptics_rmi4_gpio_setup(
+				bdata->power_gpio_1v8,
+				true, 1, bdata->power_on_state);
+		if (retval == -EBUSY)
+		{
+			rmi4_data->hw_if->board_data->power_gpio_1v8 = -1;
+			dev_info(rmi4_data->pdev->dev.parent,
+					"%s: power-1v8 GPIO has been requested, by pass.\n",
+					__func__);
+		}
+		else if (retval < 0) {
+			dev_err(rmi4_data->pdev->dev.parent,
+					"%s: Failed to configure power-1v8 GPIO\n",
+					__func__);
+			goto err_gpio_power_1v8;
 		}
 	}
 
@@ -4241,6 +4267,11 @@ static int synaptics_rmi4_set_gpio(struct synaptics_rmi4_data *rmi4_data)
 		msleep(bdata->power_delay_ms);
 	}
 
+	if (bdata->power_gpio_1v8 >= 0) {
+		gpio_set_value(bdata->power_gpio_1v8, bdata->power_on_state);
+		msleep(bdata->power_delay_ms);
+	}
+
 	if (bdata->reset_gpio >= 0) {
 		gpio_set_value(bdata->reset_gpio, bdata->reset_on_state);
 		msleep(bdata->reset_active_ms);
@@ -4254,6 +4285,9 @@ err_gpio_switch:
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);
 err_gpio_reset:
+	if (bdata->power_gpio_1v8 >= 0)
+		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
+err_gpio_power_1v8:
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
 
@@ -4760,7 +4794,7 @@ static int check_chip_exist(struct synaptics_rmi4_data *rmi4_data)
 static int synaptics_rmi4_probe(struct platform_device *pdev)
 {
 	int retval;
-	unsigned char attr_count;
+	int attr_count;
 	struct synaptics_rmi4_data *rmi4_data;
 	const struct synaptics_dsx_hw_interface *hw_if;
 	const struct synaptics_dsx_board_data *bdata;
@@ -5102,6 +5136,9 @@ err_set_input_dev:
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
 
+	if (bdata->power_gpio_1v8 >= 0)
+		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
+
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);
 
@@ -5123,7 +5160,7 @@ err_get_reg:
 
 static int synaptics_rmi4_remove(struct platform_device *pdev)
 {
-	unsigned char attr_count;
+	int attr_count;
 	struct synaptics_rmi4_data *rmi4_data = platform_get_drvdata(pdev);
 	const struct synaptics_dsx_board_data *bdata =
 			rmi4_data->hw_if->board_data;
@@ -5175,6 +5212,9 @@ static int synaptics_rmi4_remove(struct platform_device *pdev)
 
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
+
+	if (bdata->power_gpio_1v8 >= 0)
+		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
 
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);

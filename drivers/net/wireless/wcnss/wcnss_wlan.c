@@ -3149,6 +3149,12 @@ void wcnss_flush_work(struct work_struct *work)
 }
 EXPORT_SYMBOL(wcnss_flush_work);
 
+void wcnss_dump_stack(struct task_struct *task)
+{
+	show_stack(task, NULL);
+}
+EXPORT_SYMBOL(wcnss_dump_stack);
+
 void wcnss_flush_delayed_work(struct delayed_work *dwork)
 {
 	struct delayed_work *cnss_dwork = dwork;

@@ -114,12 +114,14 @@
 #define FW_FLASH_TIMEOUT 120
 struct touch_fwu_notifier synaptics_tp_notifier;
 static void synaptics_fwu_progress(int percentage);
+static uint8_t mfg_flag = 0;
 #endif
 
 extern char *htc_get_bootmode(void);
 static int fwu_do_reflash(void);
 
 static int fwu_recovery_check_status(void);
+static int check_img_version(const struct firmware *, int *, unsigned int);
 
 static ssize_t fwu_sysfs_show_image(struct file *data_file,
 		struct kobject *kobj, struct bin_attribute *attributes,
@@ -2277,7 +2279,7 @@ static enum flash_area fwu_go_nogo(void)
 	memset(str_buf, 0, sizeof(str_buf));
 	for (ii = 0; ii < config_id_size; ii++) {
 		snprintf(tmp_buf, 3, "%02x ", fwu->config_id[ii]);
-		strcat(str_buf, tmp_buf);
+		strncat(str_buf, tmp_buf, sizeof(str_buf) - strlen(str_buf) - 1);
 	}
 
 	dev_info(rmi4_data->pdev->dev.parent,
@@ -2288,7 +2290,7 @@ static enum flash_area fwu_go_nogo(void)
 	memset(str_buf, 0, sizeof(str_buf));
 	for (ii = 0; ii < config_id_size; ii++) {
 		snprintf(tmp_buf, 3, "%02x", fwu->img.ui_config.data[ii]);
-		strcat(str_buf, tmp_buf);
+		strncat(str_buf, tmp_buf, sizeof(str_buf) - strlen(str_buf) - 1);
 	}
 
 	dev_info(rmi4_data->pdev->dev.parent,
@@ -3953,7 +3955,7 @@ int synaptics_config_updater(struct synaptics_dsx_board_data *bdata)
 	memset(str_buf, 0, sizeof(str_buf));
 	for (ii = 0; ii < config_id_size; ii++) {
 		snprintf(tmp_buf, 3, "%02x ", config_id[ii]);
-		strcat(str_buf, tmp_buf);
+		strncat(str_buf, tmp_buf, sizeof(str_buf) - strlen(str_buf) - 1);
 	}
 
 	dev_info(rmi4_data->pdev->dev.parent,
@@ -4019,7 +4021,7 @@ int synaptics_config_updater(struct synaptics_dsx_board_data *bdata)
 	memset(str_buf, 0, sizeof(str_buf));
 	for (ii = 0; ii < config_id_size; ii++) {
 		snprintf(tmp_buf, 3, "%02x", config_data[ii]);
-		strcat(str_buf, tmp_buf);
+		strncat(str_buf, tmp_buf, sizeof(str_buf) - strlen(str_buf) - 1);
 	}
 
 	dev_info(rmi4_data->pdev->dev.parent,
@@ -4089,9 +4091,61 @@ exit:
 EXPORT_SYMBOL(synaptics_config_updater);
 
 #ifdef DO_STARTUP_FW_UPDATE
+void fwu_get_mfg_startup_fw(unsigned char **fw_data)
+{
+	struct synaptics_dsx_board_data *bdata = fwu->rmi4_data->hw_if->board_data;
+	int retval = 0, tagLen = 0;
+	const struct firmware *fw_entry = NULL;
+	struct synaptics_rmi4_data *rmi4_data = fwu->rmi4_data;
+	unsigned char *fw_source = NULL;
+
+	pr_info("%s ++\n", __func__);
+
+	rmi4_data->stay_awake = true;
+
+	retval = secure_memcpy(fwu->image_name, MAX_IMAGE_NAME_LEN,
+			FW_IMAGE_NAME, sizeof(FW_IMAGE_NAME),
+			sizeof(FW_IMAGE_NAME));
+	if (retval < 0) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Failed to copy image file name\n",
+				__func__);
+		return;
+	}
+	dev_dbg(rmi4_data->pdev->dev.parent,
+			"%s: Requesting firmware image %s\n",
+			__func__, fwu->image_name);
+
+	retval = request_firmware(&fw_entry, fwu->image_name,
+			rmi4_data->pdev->dev.parent);
+	if (retval != 0) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Firmware image %s not available\n",
+				__func__, fwu->image_name);
+		return;
+	}
+	dev_dbg(rmi4_data->pdev->dev.parent,
+			"%s: Firmware image size = %zu\n",
+			__func__, fw_entry->size);
+
+
+	if (!check_img_version(fw_entry, &tagLen, rmi4_data->firmware_id)) {
+		pr_info("%s: Same FW version, skip FW update\n", __func__);
+		return;
+	}
+	fw_source = kzalloc(fw_entry->size-tagLen, GFP_KERNEL);
+	memcpy(fw_source, fw_entry->data+tagLen, fw_entry->size-tagLen);
+	*fw_data = fw_source;
+
+	bdata->update_feature |= SYNAPTICS_RMI4_UPDATE_IMAGE;
+
+	rmi4_data->stay_awake = false;
+}
+
 static void fwu_startup_fw_update_work(struct work_struct *work)
 {
 	struct synaptics_dsx_board_data *bdata = fwu->rmi4_data->hw_if->board_data;
+	unsigned char *fw_source = NULL;
 
 	if ((strcmp(htc_get_bootmode(), "download") == 0)
 		|| (strcmp(htc_get_bootmode(), "RUU") == 0)) {
@@ -4101,13 +4155,19 @@ static void fwu_startup_fw_update_work(struct work_struct *work)
 
 	wake_lock(&fwu->fwu_wake_lock);
 
+	if (mfg_flag && !!strcmp(htc_get_bootmode(), "ftm"))
+		fwu_get_mfg_startup_fw(&fw_source);
+
 	if (bdata->update_feature & SYNAPTICS_RMI4_UPDATE_IMAGE)
-		synaptics_fw_updater(NULL);
+		synaptics_fw_updater(fw_source);
 
 	if (bdata->update_feature & SYNAPTICS_RMI4_UPDATE_CONFIG)
 		synaptics_config_updater(bdata);
 
 	wake_unlock(&fwu->fwu_wake_lock);
+
+	if (fw_source)
+		kfree(fw_source);
 
 	return;
 }
@@ -4577,7 +4637,7 @@ int register_synaptics_fw_update(void)
 static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
-	unsigned char attr_count;
+	int attr_count;
 	struct pdt_properties pdt_props;
 
 	pr_info("%s\n", __func__);
@@ -4701,7 +4761,7 @@ exit:
 
 static void synaptics_rmi4_fwu_remove(struct synaptics_rmi4_data *rmi4_data)
 {
-	unsigned char attr_count;
+	int attr_count;
 
 	if (!fwu)
 		goto exit;
@@ -4798,6 +4858,14 @@ static void __exit rmi4_fw_update_module_exit(void)
 
 late_initcall(rmi4_fw_update_module_init);
 module_exit(rmi4_fw_update_module_exit);
+
+static int __init mfg_update_enable_flag(char *str)
+{
+    int ret = 0;
+    mfg_flag = 1;
+    pr_info("\n[TP] MFG_BUILD flag enable: %d from %s\n", mfg_flag, str);
+    return ret;
+} early_param("androidboot.mfg.tpupdate", mfg_update_enable_flag);
 
 MODULE_AUTHOR("Synaptics, Inc.");
 MODULE_DESCRIPTION("Synaptics DSX FW Update Module");

@@ -52,7 +52,6 @@ extern void debug_htc_dump_pon_reg(void);
 #endif
 extern void msm_watchdog_bark(void);
 extern int cable_source;
-extern void pn548_power_off_sequence(void);
 
 static int restart_mode;
 static bool scm_pmic_arbiter_disable_supported;
@@ -360,7 +359,6 @@ static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 	};
 
 	printk(KERN_EMERG "[K] Going down for restart now\n");
-	pn548_power_off_sequence();
 	msm_restart_prepare((char)reboot_mode, cmd);
 
 #ifdef CONFIG_MSM_FORCE_WDOG_BITE_ON_PANIC 
@@ -396,7 +394,6 @@ static void do_msm_poweroff(void)
 	};
 
 	pr_notice("[K] Powering off the SoC\n");
-        pn548_power_off_sequence();
 #ifdef CONFIG_MSM_DLOAD_MODE
 	set_dload_mode(0);
 #endif
@@ -409,7 +406,6 @@ static void do_msm_poweroff(void)
 		set_restart_action(RESTART_REASON_POWEROFF, NULL);
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);
 	}
-
 	
 	if (!is_scm_armv8())
 		ret = scm_call_atomic2(SCM_SVC_BOOT,
