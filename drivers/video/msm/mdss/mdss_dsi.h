@@ -332,6 +332,14 @@ struct dsi_pinctrl_res {
 	struct pinctrl_state *gpio_state_suspend;
 };
 
+struct mdss_dsi_pwrctrl {
+	int (*dsi_regulator_init) (struct platform_device *pdev);
+	int (*dsi_regulator_deinit) (struct platform_device *pdev);
+	int (*dsi_power_on) (struct mdss_panel_data *pdata, int enable);
+	void (*dsi_panel_reset) (struct mdss_panel_data *pdata, int enable);
+	void (*bkl_config) (struct mdss_panel_data *pdata, int enable);
+};
+
 struct panel_horizontal_idle {
 	int min;
 	int max;
@@ -428,6 +436,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct dsi_panel_cmds post_dms_on_cmds;
 	struct dsi_panel_cmds post_panel_on_cmds;
 	struct dsi_panel_cmds off_cmds;
+	struct dsi_panel_cmds display_on_cmds;
 	struct dsi_panel_cmds status_cmds;
 	u32 status_cmds_rlen;
 	u32 *status_value;
@@ -467,6 +476,26 @@ struct mdss_dsi_ctrl_pdata {
 	int rx_len;
 
 	struct dsi_pinctrl_res pin_res;
+
+	
+	void (*display_on) (struct mdss_panel_data *pdata);
+	void *dsi_pwrctrl_data;
+
+	int pwm_min;
+	int pwm_default;
+	int pwm_max;
+
+	struct dsi_panel_cmds cabc_off_cmds;
+	struct dsi_panel_cmds cabc_ui_cmds;
+	struct dsi_panel_cmds cabc_video_cmds;
+	struct dsi_panel_cmds dimming_on_cmds;
+	struct dsi_panel_cmds dimming_off_cmds;
+	struct dsi_panel_cmds dimming_switch_cmds;
+	struct dsi_panel_cmds burst_on_cmds;
+	struct dsi_panel_cmds burst_off_cmds;
+
+	int burst_on_level;
+	int burst_off_level;
 
 	unsigned long dma_size;
 	dma_addr_t dma_addr;

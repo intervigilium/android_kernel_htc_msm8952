@@ -72,7 +72,7 @@ static ssize_t core_info_read(struct file *file, char __user *buf,
 {
 	struct msm_vidc_core *core = file->private_data;
 	struct hfi_device *hdev;
-	struct hal_fw_info fw_info;
+	struct hal_fw_info fw_info = {{0}};
 	int i = 0, rc = 0;
 
 	if (!core || !core->device) {

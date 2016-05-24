@@ -25,6 +25,7 @@
 #include <linux/clk.h>
 #include <linux/uaccess.h>
 #include <linux/pm_qos.h>
+#include <asm/debug_display.h>
 
 #include "mdss.h"
 #include "mdss_panel.h"
@@ -35,8 +36,14 @@
 
 #define XO_CLK_RATE	19200000
 
+struct mdss_dsi_pwrctrl pwrctrl_pdata;
 /* Master structure to hold all the information about the DSI/panel */
 static struct mdss_dsi_data *mdss_dsi_res;
+static bool panel_connected = true;
+
+bool htc_check_panel_connection(void){
+	return panel_connected;
+}
 
 #define DSI_DISABLE_PC_LATENCY 100
 #define DSI_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
@@ -275,21 +282,34 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	ret = mdss_dsi_panel_reset(pdata, 0);
-	if (ret) {
-		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
-		ret = 0;
+	
+	if (pwrctrl_pdata.dsi_panel_reset) {
+		pwrctrl_pdata.dsi_panel_reset(pdata, 0);
+	} else {
+		pr_info("%s: no dsi_panel_reset function is specified\n", __func__);
+		ret = mdss_dsi_panel_reset(pdata, 0);
+		if (ret) {
+			pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
+			ret = 0;
+		}
 	}
 
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
 
-	ret = msm_dss_enable_vreg(
-		ctrl_pdata->panel_power_data.vreg_config,
-		ctrl_pdata->panel_power_data.num_vreg, 0);
-	if (ret)
-		pr_err("%s: failed to disable vregs for %s\n",
-			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+	
+	if (pwrctrl_pdata.dsi_power_on) {
+		pwrctrl_pdata.dsi_power_on(pdata, 0);
+	} else {
+		pr_info("%s: no dsi_power_on function is specified\n", __func__);
+		ret = msm_dss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 0);
+		if (ret)
+			pr_err("%s: failed to disable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+
+	}
 
 end:
 	return ret;
@@ -308,13 +328,19 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	ret = msm_dss_enable_vreg(
-		ctrl_pdata->panel_power_data.vreg_config,
-		ctrl_pdata->panel_power_data.num_vreg, 1);
-	if (ret) {
-		pr_err("%s: failed to enable vregs for %s\n",
-			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
-		return ret;
+	
+	if (pwrctrl_pdata.dsi_power_on) {
+		pwrctrl_pdata.dsi_power_on(pdata, 1);
+	} else {
+		pr_info("%s: no dsi_power_on function is specified\n", __func__);
+		ret = msm_dss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 1);
+		if (ret) {
+			pr_err("%s: failed to enable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+			return ret;
+		}
 	}
 
 	/*
@@ -328,10 +354,16 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
 
-		ret = mdss_dsi_panel_reset(pdata, 1);
-		if (ret)
-			pr_err("%s: Panel reset failed. rc=%d\n",
-					__func__, ret);
+		
+		if (pwrctrl_pdata.dsi_panel_reset) {
+			pwrctrl_pdata.dsi_panel_reset(pdata, 1);
+		} else {
+			pr_info("%s: no dsi_panel_reset function is specified\n", __func__);
+			ret = mdss_dsi_panel_reset(pdata, 1);
+			if (ret)
+				pr_err("%s: Panel reset failed. rc=%d\n",
+						__func__, ret);
+		}
 	}
 
 	return ret;
@@ -1120,6 +1152,9 @@ panel_power_ctrl:
 		goto end;
 	}
 
+	if (pdata->panel_info.first_power_on == 1)
+		pdata->panel_info.first_power_on = 0;
+
 	if (panel_info->dynamic_fps
 	    && (panel_info->dfps_update == DFPS_SUSPEND_RESUME_MODE)
 	    && (panel_info->new_fps != panel_info->mipi.frame_rate))
@@ -1311,7 +1346,11 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	if (mipi->lp11_init) {
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
-		mdss_dsi_panel_reset(pdata, 1);
+		
+		if (pwrctrl_pdata.dsi_panel_reset)
+			pwrctrl_pdata.dsi_panel_reset(pdata, 1);
+		else if (!pdata->panel_info.first_power_on)
+			mdss_dsi_panel_reset(pdata, 1);
 	}
 
 	if (mipi->init_delay)
@@ -2330,7 +2369,7 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 {
 	int len, i;
 	int ctrl_id = pdev->id - 1;
-	char panel_name[MDSS_MAX_PANEL_LEN];
+	char panel_name[MDSS_MAX_PANEL_LEN] = {0};
 	char ctrl_id_stream[3] =  "0:";
 	char *stream = NULL, *pan = NULL;
 	struct device_node *dsi_pan_node = NULL, *mdss_node = NULL;
@@ -2377,6 +2416,8 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 		if (!dsi_pan_node) {
 			pr_err("%s: invalid pan node, selecting prim panel\n",
 			       __func__);
+			panel_connected = false;
+			memset(&pwrctrl_pdata, 0, sizeof(pwrctrl_pdata));
 			goto end;
 		}
 		return dsi_pan_node;
@@ -3252,23 +3293,29 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 		return rc;
 	}
 
-	rc = mdss_dsi_get_dt_vreg_data(&ctrl_pdev->dev, pan_node,
-		&ctrl_pdata->panel_power_data, DSI_PANEL_PM);
-	if (rc) {
-		DEV_ERR("%s: '%s' get_dt_vreg_data failed.rc=%d\n",
-			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM), rc);
-		return rc;
-	}
+	
+	if (pwrctrl_pdata.dsi_regulator_init)
+		pwrctrl_pdata.dsi_regulator_init(ctrl_pdev);
+	else {
+		PR_DISP_INFO("%s: not use HTC pwrctrl hook\n", __func__);
 
-	rc = msm_dss_config_vreg(&ctrl_pdev->dev,
-		ctrl_pdata->panel_power_data.vreg_config,
-		ctrl_pdata->panel_power_data.num_vreg, 1);
-	if (rc) {
-		pr_err("%s: failed to init regulator, rc=%d\n",
-						__func__, rc);
-		return rc;
-	}
+		rc = mdss_dsi_get_dt_vreg_data(&ctrl_pdev->dev, pan_node,
+			&ctrl_pdata->panel_power_data, DSI_PANEL_PM);
+		if (rc) {
+			DEV_ERR("%s: '%s' get_dt_vreg_data failed.rc=%d\n",
+				__func__, __mdss_dsi_pm_name(DSI_PANEL_PM), rc);
+			return rc;
+		}
 
+		rc = msm_dss_config_vreg(&ctrl_pdev->dev,
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 1);
+		if (rc) {
+			pr_err("%s: failed to init regulator, rc=%d\n",
+							__func__, rc);
+			return rc;
+		}
+	}
 	rc = mdss_dsi_parse_ctrl_params(ctrl_pdev, pan_node, ctrl_pdata);
 	if (rc) {
 		pr_err("%s: failed to parse ctrl settings, rc=%d\n",
@@ -3371,6 +3418,8 @@ int dsi_panel_device_register(struct platform_device *ctrl_pdev,
 	pr_info("%s: Continuous splash %s\n", __func__,
 		pinfo->cont_splash_enabled ? "enabled" : "disabled");
 
+	ctrl_pdata->panel_data.panel_info.first_power_on = pinfo->cont_splash_enabled;
+
 	if (pinfo->cont_splash_enabled) {
 		rc = mdss_dsi_panel_power_ctrl(&(ctrl_pdata->panel_data),
 			MDSS_PANEL_POWER_ON);
@@ -3464,6 +3513,26 @@ static struct platform_driver mdss_dsi_ctrl_driver = {
 	},
 };
 
+static int mdss_dsi_pwrctrl_probe(struct platform_device *pdev)
+{
+	int rc = 0;
+
+	pr_info("%s:%d, debug info id=%d", __func__, __LINE__, pdev->id);
+
+	if (pdev->dev.platform_data)
+		memcpy(&pwrctrl_pdata, pdev->dev.platform_data, sizeof(pwrctrl_pdata));
+	pr_info("%s: %p\n", __func__, pdev->dev.platform_data);
+
+	return rc;
+}
+
+static struct platform_driver mdss_dsi_pwrctrl_driver = {
+	.probe = mdss_dsi_pwrctrl_probe,
+	.driver = {
+		.name = "mdss_dsi_pwrctrl",
+	},
+};
+
 static int mdss_dsi_register_driver(void)
 {
 	return platform_driver_register(&mdss_dsi_driver);
@@ -3472,6 +3541,12 @@ static int mdss_dsi_register_driver(void)
 static int __init mdss_dsi_driver_init(void)
 {
 	int ret;
+
+	ret = platform_driver_register(&mdss_dsi_pwrctrl_driver);
+	if (ret) {
+		pr_err("[DISP] register mdss_dsi_pwrctrl failed!\n");
+		return ret;
+	}
 
 	ret = mdss_dsi_register_driver();
 	if (ret) {

@@ -69,6 +69,11 @@
 #define VAL_BYTES 1
 #define WCD9XXX_PAGE_NUM(reg)    (((reg) >> 8) & 0xff)
 
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+
 struct wcd9xxx_i2c {
 	struct i2c_client *client;
 	struct i2c_msg xfer_msg[2];
@@ -2855,6 +2860,10 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	if (ret) {
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_info("%s:trigger ramdump to keep status\n",__func__);
+		BUG();
+#endif
 		goto err_reset;
 	}
 	wcd9xxx->read_dev = wcd9xxx_slim_read_device;
@@ -2878,6 +2887,10 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	if (ret) {
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_info("%s:trigger ramdump to keep status\n",__func__);
+		BUG();
+#endif
 		goto err_slim_add;
 	}
 	wcd9xxx_inf_la = wcd9xxx->slim_slave->laddr;
@@ -2991,7 +3004,7 @@ static int wcd9xxx_slim_device_up(struct slim_device *sldev)
 		pr_err("%s: wcd9xxx is NULL\n", __func__);
 		return -EINVAL;
 	}
-	dev_info(wcd9xxx->dev, "%s: slim device up\n", __func__);
+	pr_info("%s: slim device up\n", __func__);
 	return wcd9xxx_device_up(wcd9xxx);
 }
 

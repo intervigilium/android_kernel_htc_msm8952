@@ -1447,6 +1447,7 @@ static const struct reg_default wcd9335_defaults[] = {
 int wcd9335_regmap_register_patch(struct regmap *regmap, int version)
 {
 	int rc;
+	int i;
 
 	if (!regmap) {
 		pr_err("%s: regmap struct is NULL\n", __func__);
@@ -1457,14 +1458,16 @@ int wcd9335_regmap_register_patch(struct regmap *regmap, int version)
 	case TASHA_VERSION_1_0:
 	case TASHA_VERSION_1_1:
 		regcache_cache_only(regmap, true);
-		rc = regmap_multi_reg_write(regmap, wcd9335_1_x_defaults,
-					ARRAY_SIZE(wcd9335_1_x_defaults));
+		for (i = 0; i < ARRAY_SIZE(wcd9335_1_x_defaults); i++)
+			rc = regmap_write(regmap, wcd9335_1_x_defaults[i].reg,
+					wcd9335_1_x_defaults[i].def);
 		regcache_cache_only(regmap, false);
 		break;
 	case TASHA_VERSION_2_0:
 		regcache_cache_only(regmap, true);
-		rc = regmap_multi_reg_write(regmap, wcd9335_2_0_defaults,
-					ARRAY_SIZE(wcd9335_2_0_defaults));
+		for (i = 0; i < ARRAY_SIZE(wcd9335_2_0_defaults); i++)
+			rc = regmap_write(regmap, wcd9335_2_0_defaults[i].reg,
+					wcd9335_2_0_defaults[i].def);
 		regcache_cache_only(regmap, false);
 		break;
 	default:

@@ -537,6 +537,16 @@ struct mdss_panel_info {
 	bool is_dba_panel;
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
+
+	int first_power_on;
+	int camera_blk;
+	u32 mdss_pp_hue;
+	
+	u32 skip_frame;
+	u32 pcc_r;
+	u32 pcc_g;
+	u32 pcc_b;
+	bool blk_pending_display_on;
 };
 
 struct mdss_panel_data {
@@ -557,6 +567,8 @@ struct mdss_panel_data {
 	 * and teardown.
 	 */
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
+
+	void (*display_on) (struct mdss_panel_data *pdata);
 
 	struct mdss_panel_data *next;
 };

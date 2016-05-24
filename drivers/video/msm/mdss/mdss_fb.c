@@ -28,6 +28,7 @@
 #include <linux/ioport.h>
 #include <linux/kernel.h>
 #include <linux/memory.h>
+#include <linux/minifb.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -50,6 +51,7 @@
 
 #include <linux/qcom_iommu.h>
 #include <linux/msm_iommu_domains.h>
+#include "mdss_htc_util.h"
 
 #include "mdss_fb.h"
 #include "mdss_mdp_splash_logo.h"
@@ -82,6 +84,7 @@ static u32 mdss_fb_pseudo_palette[16] = {
 };
 
 static struct msm_mdp_interface *mdp_instance;
+extern struct msm_fb_data_type *mfd_instance;
 
 static int mdss_fb_register(struct msm_fb_data_type *mfd);
 static int mdss_fb_open(struct fb_info *info, int user);
@@ -132,8 +135,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 	/* This maps android backlight level 0 to 255 into
 	   driver backlight level 0 to bl_max with rounding */
-	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
-				mfd->panel_info->brightness_max);
+	bl_lvl = shrink_pwm(mfd, value);
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -960,6 +962,10 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("led_classdev_register failed\n");
 		else
 			lcd_backlight_registered = 1;
+
+		
+		htc_register_attrs(&backlight_led.dev->kobj, mfd);
+		htc_debugfs_init(mfd);
 	}
 
 	mdss_fb_create_sysfs(mfd);
@@ -990,6 +996,9 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("failed to register input handler\n");
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
+
+	if (mfd->panel_info->pdest == DISPLAY_1)
+		mfd_instance = mfd;
 
 	return rc;
 }
@@ -1288,7 +1297,14 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	u32 temp = bkl_lvl;
 	bool bl_notify_needed = false;
 
-	if ((((mdss_fb_is_power_off(mfd) && mfd->dcm_state != DCM_ENTER)
+	if (mdss_fb_is_power_on(mfd) && !mfd->bl_updated && !mfd->request_display_on) {
+		mfd->unset_bl_level = 0;
+		mfd->bl_updated = 1;
+	} else if( mfd->panel_info->blk_pending_display_on && mfd->request_display_on) {
+		mfd->unset_bl_level = bkl_lvl;
+		pr_debug("%s: Not set backlight berfore display on, unset_bl_level %d\n",__func__,mfd->unset_bl_level);
+		return;
+	} else if ((((mdss_fb_is_power_off(mfd) && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->bl_updated) && !IS_CALIB_MODE_BL(mfd)) ||
 		mfd->panel_info->cont_splash_enabled) {
 		mfd->unset_bl_level = bkl_lvl;
@@ -1331,11 +1347,39 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	}
 }
 
+static void mdss_fb_display_on(struct msm_fb_data_type *mfd)
+{
+	static bool ignore_bkl_zero = false;
+
+	if (mfd->request_display_on && !mfd->panel_info->cont_splash_enabled) {
+		if (mfd->mdp.display_on)
+			mfd->mdp.display_on(mfd);
+
+		
+		if (!ignore_bkl_zero) {
+			if (mfd->unset_bl_level == 0) {
+				MDSS_BRIGHT_TO_BL(mfd->unset_bl_level, DEFAULT_BRIGHTNESS, mfd->panel_info->bl_max,
+						MDSS_MAX_BL_BRIGHTNESS);
+			}
+			ignore_bkl_zero = true;
+		}
+		mfd->request_display_on = false;
+		mfd->bl_updated = 0;
+
+		
+		if (mfd->panel_info->pdest == DISPLAY_1) {
+			htc_dimming_on(mfd);
+		}
+	}
+}
+
 void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 {
 	struct mdss_panel_data *pdata;
 	u32 temp;
 	bool bl_notify = false;
+
+	mdss_fb_display_on(mfd);
 
 	if (!mfd->unset_bl_level)
 		return;
@@ -1445,6 +1489,11 @@ static int mdss_fb_blank_blank(struct msm_fb_data_type *mfd,
 	mfd->op_enable = false;
 	if (mdss_panel_is_power_off(req_power_state)) {
 		int current_bl = mfd->bl_level;
+		
+		if (mfd->panel_info->pdest == DISPLAY_1) {
+			htc_reset_status();
+		}
+		
 		/* Stop Display thread */
 		if (mfd->disp_thread)
 			mdss_fb_stop_disp_thread(mfd);
@@ -1503,6 +1552,7 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 		}
 
 		mfd->panel_power_state = MDSS_PANEL_POWER_ON;
+		mfd->request_display_on = true;
 		mfd->panel_info->panel_dead = false;
 
 		/* Start the work thread to signal idle time */
@@ -1737,11 +1787,18 @@ int mdss_fb_alloc_fb_ion_memory(struct msm_fb_data_type *mfd, size_t fb_size)
 
 	pr_debug("size for mmap = %zu\n", fb_size);
 	mfd->fb_ion_handle = ion_alloc(mfd->fb_ion_client, fb_size, SZ_4K,
-			ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
+			ION_HEAP(ION_FBMEM_HEAP_ID), 0);
 	if (IS_ERR_OR_NULL(mfd->fb_ion_handle)) {
-		pr_err("unable to alloc fbmem from ion - %ld\n",
+		pr_warn("unable to alloc fbmem from ion FB heap - %ld\n",
 				PTR_ERR(mfd->fb_ion_handle));
-		return PTR_ERR(mfd->fb_ion_handle);
+		
+		mfd->fb_ion_handle = ion_alloc(mfd->fb_ion_client, fb_size, SZ_4K,
+				ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
+		if (IS_ERR_OR_NULL(mfd->fb_ion_handle)) {
+			pr_err("unable to alloc fbmem from ion system heap - %ld\n",
+				PTR_ERR(mfd->fb_ion_handle));
+			return PTR_ERR(mfd->fb_ion_handle);
+		}
 	}
 
 	if (mfd->mdp.fb_mem_get_iommu_domain) {
@@ -1786,6 +1843,8 @@ fb_mmap_failed:
 	return rc;
 }
 
+#define USE_FB_ION_HEAP
+
 /**
  * mdss_fb_fbmem_ion_mmap() -  Custom fb  mmap() function for MSM driver.
  *
@@ -1804,13 +1863,14 @@ static int mdss_fb_fbmem_ion_mmap(struct fb_info *info,
 	int rc = 0;
 	size_t req_size, fb_size;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+#ifndef USE_FB_ION_HEAP
 	struct sg_table *table;
 	unsigned long addr = vma->vm_start;
 	unsigned long offset = vma->vm_pgoff * PAGE_SIZE;
 	struct scatterlist *sg;
 	unsigned int i;
 	struct page *page;
-
+#endif
 	if (!mfd || !mfd->pdev || !mfd->pdev->dev.of_node) {
 		pr_err("Invalid device node\n");
 		return -ENODEV;
@@ -1830,7 +1890,16 @@ static int mdss_fb_fbmem_ion_mmap(struct fb_info *info,
 			return rc;
 		}
 	}
-
+#ifdef USE_FB_ION_HEAP
+	if (mfd->fbmem_buf->ops->mmap) {
+		rc = mfd->fbmem_buf->ops->mmap(mfd->fbmem_buf, vma);
+		if (rc < 0)
+			pr_err("%s: fb ion_mmap failed!\n", __func__);
+		else
+			pr_debug("%s: fb ion_mmap successfully!\n", __func__);
+		return rc;
+	}
+#else
 	table = ion_sg_table(mfd->fb_ion_client, mfd->fb_ion_handle);
 	if (IS_ERR(table)) {
 		pr_err("Unable to get sg_table from ion:%ld\n", PTR_ERR(table));
@@ -1883,7 +1952,7 @@ static int mdss_fb_fbmem_ion_mmap(struct fb_info *info,
 		mdss_fb_free_fb_ion_memory(mfd);
 		return -ENOMEM;
 	}
-
+#endif
 	return rc;
 }
 
@@ -2227,6 +2296,9 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	var->hsync_len = panel_info->lcdc.h_pulse_width;
 	var->pixclock = panel_info->clk_rate / 1000;
 
+	if (panel_info->camera_blk) {
+		htc_register_camera_bkl(panel_info->camera_blk);
+	}
 	/*
 	 * Store the cont splash state in the var reserved[3] field.
 	 * The continuous splash is considered to be active if either
@@ -3062,8 +3134,14 @@ static int __mdss_fb_perform_commit(struct msm_fb_data_type *mfd)
 			pr_err("pan display failed %x on fb%d\n", ret,
 					mfd->index);
 	}
-	if (!ret)
+	if (!ret) {
+		
+		if (mfd->panel_info->pdest == DISPLAY_1) {
+			htc_set_cabc(mfd);
+			htc_set_enable_backlight_when_flashlight(mfd);
+		}
 		mdss_fb_update_backlight(mfd);
+	}
 
 	if (IS_ERR_VALUE(ret) || !sync_pt_data->flushed) {
 		mdss_fb_release_kickoff(mfd);
@@ -3848,6 +3926,19 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		}
 
 		ret = mdss_fb_mode_switch(mfd, dsi_mode);
+		break;
+
+	case MSMFB_USBFB_INIT:
+		ret = minifb_ioctl_handler(MINIFB_INIT, argp);
+		break;
+	case MSMFB_USBFB_TERMINATE:
+		ret = minifb_ioctl_handler(MINIFB_TERMINATE, argp);
+		break;
+	case MSMFB_USBFB_QUEUE_BUFFER:
+		ret = minifb_ioctl_handler(MINIFB_QUEUE_BUFFER, argp);
+		break;
+	case MSMFB_USBFB_DEQUEUE_BUFFER:
+		ret = minifb_ioctl_handler(MINIFB_DEQUEUE_BUFFER, argp);
 		break;
 
 	default:

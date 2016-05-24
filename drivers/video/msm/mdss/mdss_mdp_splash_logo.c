@@ -280,6 +280,7 @@ int mdss_mdp_splash_cleanup(struct msm_fb_data_type *mfd,
 	mfd->fbi->var.reserved[3] = mfd->panel_info->cont_splash_enabled |
 					mfd->splash_info.splash_pipe_allocated;
 
+#if 0
 	if (mdp5_data->splash_mem_addr) {
 		/* Give back the reserved memory to the system */
 		memblock_free(mdp5_data->splash_mem_addr,
@@ -287,7 +288,7 @@ int mdss_mdp_splash_cleanup(struct msm_fb_data_type *mfd,
 		mdss_free_bootmem(mdp5_data->splash_mem_addr,
 					mdp5_data->splash_mem_size);
 	}
-
+#endif
 	mdss_mdp_footswitch_ctrl_splash(0);
 end:
 	return rc;
@@ -655,7 +656,7 @@ static __ref int mdss_mdp_splash_parse_dt(struct msm_fb_data_type *mfd)
 
 	mdp5_mdata->splash_mem_addr = offsets[0];
 	mdp5_mdata->splash_mem_size = offsets[1];
-	pr_debug("memaddr=%x size=%x\n", mdp5_mdata->splash_mem_addr,
+	pr_info("memaddr=%x size=%x\n", mdp5_mdata->splash_mem_addr,
 		mdp5_mdata->splash_mem_size);
 
 error:

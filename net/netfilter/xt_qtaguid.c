@@ -2265,6 +2265,16 @@ static int ctrl_cmd_tag(const char *input)
 			 "st@%p ...->f_count=%ld\n",
 			 input, el_socket->sk, sock_tag_entry,
 			 atomic_long_read(&el_socket->file->f_count));
+
+		
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		if(likely(sock_tag_entry->socket->file))
+			sockfd_put(sock_tag_entry->socket);
+		else{
+			pr_warn("qtaguid:%s: socket->file is freed, so put el_socket.\n", __func__);
+			sockfd_put(el_socket);
+		}
+#else
 		/*
 		 * This is a re-tagging, so release the sock_fd that was
 		 * locked at the time of the 1st tagging.
@@ -2272,6 +2282,9 @@ static int ctrl_cmd_tag(const char *input)
 		 * it can be done within the spinlock.
 		 */
 		sockfd_put(sock_tag_entry->socket);
+#endif
+		
+
 		prev_tag_ref_entry = lookup_tag_ref(sock_tag_entry->tag,
 						    &uid_tag_data_entry);
 		BUG_ON(IS_ERR_OR_NULL(prev_tag_ref_entry));
@@ -2409,11 +2422,24 @@ static int ctrl_cmd_untag(const char *input)
 	 */
 	tag_ref_entry->num_sock_tags--;
 	spin_unlock_bh(&sock_tag_list_lock);
+
+	
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+	if(likely(sock_tag_entry->socket->file))
+		sockfd_put(sock_tag_entry->socket);
+	else{
+		pr_warn("qtaguid:%s: socket->file is freed, so put el_socket.\n", __func__);
+		sockfd_put(el_socket);
+	}
+#else
 	/*
 	 * Release the sock_fd that was grabbed at tag time,
 	 * and once more for the sockfd_lookup() here.
 	 */
 	sockfd_put(sock_tag_entry->socket);
+#endif
+	
+
 	CT_DEBUG("qtaguid: ctrl_untag(%s): done. st@%p ...->f_count=%ld\n",
 		 input, sock_tag_entry,
 		 atomic_long_read(&el_socket->file->f_count) - 1);

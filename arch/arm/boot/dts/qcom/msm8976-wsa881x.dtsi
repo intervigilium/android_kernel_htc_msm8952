@@ -13,14 +13,15 @@
 &slim_msm {
 	tasha_codec {
 		swr_master {
-			compatible = "qcom,swr-wcd";
+			status = "disable"; //HTC_AUDIO
+//HTC_AUDIO_START
+			/*compatible = "qcom,swr-wcd";
 			#address-cells = <2>;
 			#size-cells = <0>;
 
 			wsa881x@20170211 {
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x20170211>;
-
 				pinctrl-names = "wsa_spkr_sd_act",
 						"wsa_spkr_sd_sus";
 				pinctrl-0 = <&wsa_spkr_sd_act>;
@@ -30,7 +31,6 @@
 			wsa881x@20170212 {
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x20170212>;
-
 				pinctrl-names = "wsa_spkr_sd_act",
 						"wsa_spkr_sd_sus";
 				pinctrl-0 = <&wsa_spkr_sd_act>;
@@ -40,7 +40,6 @@
 			wsa881x@21170213 {
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x21170213>;
-
 				pinctrl-names = "wsa_spkr_sd_act",
 						"wsa_spkr_sd_sus";
 				pinctrl-0 = <&wsa_spkr_sd_act>;
@@ -50,12 +49,12 @@
 			wsa881x@21170214 {
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x21170214>;
-
 				pinctrl-names = "wsa_spkr_sd_act",
 						"wsa_spkr_sd_sus";
 				pinctrl-0 = <&wsa_spkr_sd_act>;
 				pinctrl-1 = <&wsa_spkr_sd_sus>;
-			};
+			};*/
+//HTC_AUDIO_END
 		};
 	};
 };

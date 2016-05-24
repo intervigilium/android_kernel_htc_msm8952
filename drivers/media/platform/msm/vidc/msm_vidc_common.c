@@ -449,6 +449,10 @@ static void handle_sys_init_done(enum command_response cmd, void *data)
 		dprintk(VIDC_ERR, "Wrong device_id received\n");
 		return;
 	}
+	if (!core->capabilities) {
+		dprintk(VIDC_ERR, "NULL core capabilities\n");
+		return;
+	}
 	sys_init_msg = response->data;
 	if (!sys_init_msg || !sys_init_msg->capabilities) {
 		dprintk(VIDC_ERR, "sys_init_done message not proper\n");

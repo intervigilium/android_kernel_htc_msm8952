@@ -564,7 +564,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			if (!tzbuf)
 				return -ENOMEM;
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_generate_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_GEN_KEY_ID;
 			desc.arginfo = TZ_OS_KS_GEN_KEY_ID_PARAM_ID;
@@ -585,7 +587,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_delete_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_DEL_KEY_ID;
 			desc.arginfo = TZ_OS_KS_DEL_KEY_ID_PARAM_ID;
@@ -606,7 +610,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_select_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_SET_PIPE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_SET_PIPE_KEY_ID_PARAM_ID;
@@ -627,7 +633,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_userinfo_update_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_UPDATE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_UPDATE_KEY_ID_PARAM_ID;
@@ -5903,12 +5911,14 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		data->released = true;
+		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_create_key(data, argp);
 		if (ret)
 			pr_err("failed to create encryption key: %d\n", ret);
 
 		atomic_dec(&data->ioctl_count);
+		mutex_unlock(&app_access_lock);
 		break;
 	}
 	case QSEECOM_IOCTL_WIPE_KEY_REQ: {
@@ -5926,11 +5936,13 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		data->released = true;
+		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_wipe_key(data, argp);
 		if (ret)
 			pr_err("failed to wipe encryption key: %d\n", ret);
 		atomic_dec(&data->ioctl_count);
+		mutex_unlock(&app_access_lock);
 		break;
 	}
 	case QSEECOM_IOCTL_UPDATE_KEY_USER_INFO_REQ: {
@@ -5948,11 +5960,13 @@ long qseecom_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		data->released = true;
+		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
 		ret = qseecom_update_key_user_info(data, argp);
 		if (ret)
 			pr_err("failed to update key user info: %d\n", ret);
 		atomic_dec(&data->ioctl_count);
+		mutex_unlock(&app_access_lock);
 		break;
 	}
 	case QSEECOM_IOCTL_SAVE_PARTITION_HASH_REQ: {

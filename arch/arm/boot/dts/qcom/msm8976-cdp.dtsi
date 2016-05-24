@@ -261,7 +261,8 @@
 	pinctrl-7 = <&qdsd_clk_spmi &qdsd_cmd_spmi
 		    &qdsd_data0_spmi &qdsd_data3_spmi>;
 };
-
+//HTC_AUDIO_START
+/*
 &slim_msm {
 	tasha_codec {
 		swr_master {
@@ -288,6 +289,8 @@
 		};
 	};
 };
+*/
+//HTC_AUDIO_END
 
 &pm8950_cajon_dig {
 	status = "disabled";

@@ -12,39 +12,12 @@
  */
 
 #include "msm8976-pinctrl.dtsi"
-#include "msm8976-camera-sensor-mtp.dtsi"
-#include "msm8976-mdss-mtp.dtsi"
+/*#include "msm8976-mdss-mtp.dtsi"*/
 #include "msm8976-wsa881x.dtsi"
 
 &i2c_4 { /* BLSP1 QUP4 */
 	synaptics@20 {
-		compatible = "synaptics,dsx";
-		reg = <0x20>;
-		interrupt-parent = <&msm_gpio>;
-		interrupts = <65 0x2008>;
-		avdd-supply = <&pm8950_l10>;
-		vdd-supply = <&pm8950_l6>;
-		clock-names = "iface_clk", "core_clk";
-		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
-			<&clock_gcc clk_gcc_blsp1_qup4_i2c_apps_clk>;
-		/* pins used by touchscreen */
-		pinctrl-names = "pmx_ts_active","pmx_ts_suspend","pmx_ts_release";
-		pinctrl-0 = <&ts_int_active &ts_reset_active>;
-		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
-		pinctrl-2 = <&ts_release>;
-		synaptics,irq-gpio = <&msm_gpio 65 0x2008>;
-		synaptics,reset-gpio = <&msm_gpio 64 0x0>;
-		synaptics,i2c-pull-up;
-		synaptics,power-down;
-		synaptics,disable-gpios;
-		synaptics,detect-device;
-		synaptics,bypass-packrat-id-check;
-		synaptics,device1 {
-			synaptics,package-id = <3528>;
-			synaptics,bypass-sensor-coords-check;
-			synaptics,display-coords = <0 0 1439 2559>;
-			synaptics,panel-coords = <0 0 1439 2559>;
-		};
+		status = "disable";
 	};
 };
 
@@ -79,39 +52,9 @@
 		qcom,recharge-mv = <100>;
 	};
 };
-
+//HTC_AUD++
+/*
 &soc {
-	gpio_keys {
-		compatible = "gpio-keys";
-		input-name = "gpio-keys";
-		pinctrl-names = "tlmm_gpio_key_active","tlmm_gpio_key_suspend";
-		pinctrl-0 = <&gpio_key_active>;
-		pinctrl-1 = <&gpio_key_suspend>;
-
-		camera_focus {
-			label = "camera_focus";
-			gpios = <&msm_gpio 115 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x210>;
-			debounce-interval = <15>;
-		};
-
-		camera_snapshot {
-			label = "camera_snapshot";
-			gpios = <&msm_gpio 114 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x2fe>;
-			debounce-interval = <15>;
-		};
-
-		vol_up {
-			label = "volume_up";
-			gpios = <&msm_gpio 113 0x1>;
-			linux,input-type = <1>;
-			linux,code = <115>;
-			debounce-interval = <15>;
-		};
-	};
 
 	sound-9335 {
 		qcom,msm-gpios =
@@ -127,6 +70,8 @@
 		qcom,cdc-us-euro-gpios = <&msm_gpio 144 0>;
 	};
 };
+*/
+//HTC_AUD--
 
 &blsp1_uart2 {
 	status = "ok";
@@ -203,9 +148,10 @@
 	qcom,vdd-io-voltage-level = <1800000 2950000>;
 	qcom,vdd-io-current-level = <200 22000>;
 
-	pinctrl-names = "active", "sleep";
+	pinctrl-names = "active", "active_sdr104", "sleep";
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
-	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
+	pinctrl-1 = <&sdc2_clk_on &sdc2_cmd_on_sdr104 &sdc2_data_on_sdr104 &sdc2_cd_on>;
+	pinctrl-2 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
 
 	#address-cells = <0>;
 	interrupt-parent = <&sdhc_2>;
@@ -221,6 +167,8 @@
 	status = "ok";
 };
 
+/* htc_battery_porting +++ */
+/*
 /{
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
@@ -238,6 +186,8 @@
 	qcom,chg-led-support;
 	qcom,chg-led-sw-controls;
 };
+*/
+/* htc_battery_porting --- */
 
 /* CoreSight */
 &tpiu {
@@ -262,8 +212,8 @@
 	pinctrl-5 = <&qdsd_clk_spmi &qdsd_cmd_spmi
 		     &qdsd_data0_spmi &qdsd_data3_spmi>;
 };
-
-&slim_msm {
+//HTC_AUD_START
+/*&slim_msm {
 	tasha_codec {
 		swr_master {
 			compatible = "qcom,swr-wcd";
@@ -289,6 +239,8 @@
 		};
 	};
 };
+*/
+//HTC_AUD_END
 
 &pm8950_cajon_dig {
 	status = "disabled";
@@ -297,3 +249,4 @@
 &pm8950_cajon_analog {
 	status = "disabled";
 };
+

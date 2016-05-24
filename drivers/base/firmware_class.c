@@ -299,6 +299,7 @@ static const char * const fw_path[] = {
 	"/lib/firmware/" UTS_RELEASE,
 	"/lib/firmware",
 	"/firmware/image"
+        ,"/firmware/cradio"
 };
 
 /*
@@ -362,15 +363,46 @@ static bool fw_get_filesystem_firmware(struct device *device,
 	int i;
 	bool success = false;
 	char *path = __getname();
-	if (!path)
-		return false;
 
-	for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
+        
+        const char* radio_image_select_path = "/dev/block/bootdevice/by-name/fsc";
+        const int fsc_offset = 532; 
+        static char radio_image_info[4] = "";
+        static bool is_first = true;
+        struct file *fsc_file;
+        
+
+        if (!path)
+                return false;
+
+        
+        if ( is_first ) {
+          fsc_file = filp_open( radio_image_select_path, O_RDONLY, 0);
+          if ( !IS_ERR(fsc_file) ) {
+            kernel_read( fsc_file, fsc_offset, radio_image_info, 4*sizeof(char) );
+            filp_close( fsc_file, NULL );
+          }
+          else {
+            dev_err(device,"firmware: fsc_file open fail, err value = %ld\n", IS_ERR(fsc_file));
+          }
+          is_first = false;
+	}
+        
+
+        for (i = 0; i < ARRAY_SIZE(fw_path); i++) {
 		struct file *file;
 
 		/* skip the unset customized path */
 		if (!fw_path[i][0])
 			continue;
+
+                
+                if ( !strcmp( radio_image_info, "CDMA" ) && !strcmp( fw_path[i], "/firmware/image" )
+                  && ( !strncmp( buf->fw_id, "modem", 5 ) || !strncmp( buf->fw_id, "mba", 3 ) || !strncmp( buf->fw_id, "msadp", 5)) ) {
+                  dev_err(device,"firmware: look up FW device: %s, radio select = %s, skip path = %s\n", buf->fw_id, radio_image_info, fw_path[i]);
+                  continue;
+                }
+                
 
 		snprintf(path, PATH_MAX, "%s/%s", fw_path[i], buf->fw_id);
 

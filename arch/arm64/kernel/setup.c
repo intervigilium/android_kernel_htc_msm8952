@@ -462,6 +462,92 @@ static const char *hwcap_str[] = {
 	NULL
 };
 
+u64 fuse_data;
+static int htc_read_fuse(void){
+	void __iomem *addr;
+	struct device_node *dn = of_find_compatible_node(NULL, NULL, "qcom,cpufuse-8952");
+	if (dn) {
+		addr = of_iomap(dn, 0);
+		if (!addr) {
+			pr_err("%s: Cannot get fuse address.\n", __func__);
+			return -ENOMEM;
+		}
+		fuse_data = readl_relaxed(addr);
+		pr_debug("%s: 0x%llX\n", __func__, fuse_data);
+		iounmap(addr);
+	} else {
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+#define __MX_MAX__ 4
+#define __CX_MAX__ 8
+
+static const u32 vddcx_pvs_retention_data[__CX_MAX__] =
+{
+     650000,
+     500000,
+     650000,
+     650000,
+     650000,
+     650000,
+     650000,
+     650000
+};
+
+static const u32 vddmx_pvs_retention_data[__MX_MAX__] =
+{
+	 750000,
+	 650000,
+	 750000,
+	 750000
+};
+
+#define __MX_RETENTION_BMSK__	0x3
+#define __MX_RETENTION_SHFT__	0x0
+#define __CX_RETENTION_BMSK__	0xe
+#define __CX_RETENTION_SHFT__	0x5
+
+static int read_cx_fuse_setting(void){
+	if(htc_read_fuse() == 0)
+		return ((fuse_data & __CX_RETENTION_BMSK__) >> __CX_RETENTION_SHFT__);
+	else
+		return -ENOMEM;
+}
+
+static int read_mx_fuse_setting(void){
+	if(htc_read_fuse() == 0)
+		return ((fuse_data & __MX_RETENTION_BMSK__) >> __MX_RETENTION_SHFT__);
+	else
+		return -ENOMEM;
+}
+
+static u32 get_min_cx(void) {
+	u32 lookup_val = 0;
+	int mapping_data;
+
+	mapping_data = read_cx_fuse_setting();
+	if((mapping_data >= 0) && (mapping_data < __CX_MAX__))
+		lookup_val = vddcx_pvs_retention_data[mapping_data];
+
+	return lookup_val;
+}
+
+static u32 get_min_mx(void) {
+	u32 lookup_val = 0;
+	int mapping_data;
+
+	mapping_data = read_mx_fuse_setting();
+	if((mapping_data >= 0) && (mapping_data < __MX_MAX__))
+		lookup_val = vddmx_pvs_retention_data[mapping_data];
+
+	return lookup_val;
+}
+
+extern int *htc_target_quot;
+extern int htc_target_quot_len;
+
 static int c_show(struct seq_file *m, void *v)
 {
 	int i;
@@ -479,7 +565,16 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
 	}
-
+	seq_printf(m, "min_vddcx\t: %d\n", get_min_cx());
+	seq_printf(m, "min_vddmx\t: %d\n", get_min_mx());
+	if(htc_target_quot) {
+		seq_printf(m, "CPU param\t: ");
+		for(i = 1; i < htc_target_quot_len; i++) {
+			seq_printf(m, "%d ", htc_target_quot[i]);
+		}
+		seq_printf(m, "\n");
+	}
+	
 	/* dump out the processor features */
 	seq_puts(m, "Features\t: ");
 

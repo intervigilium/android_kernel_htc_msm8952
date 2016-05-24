@@ -16,6 +16,8 @@
 
 #include "smpboot.h"
 
+#include <linux/htc_flags.h>
+
 enum {
 	CSD_FLAG_LOCK		= 0x01,
 };
@@ -36,8 +38,12 @@ struct call_single_queue {
 /* CPU mask indicating which CPUs to bring online during smp_init() */
 static bool have_boot_cpu_mask;
 static cpumask_var_t boot_cpu_mask;
+int have_cpu_mask;
+struct cpumask cpu_mask;
 
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct call_single_queue, call_single_queue);
+
+static void flush_smp_call_function_queue(bool warn_cpu_offline);
 
 static int
 hotplug_cfd(struct notifier_block *nfb, unsigned long action, void *hcpu)
@@ -70,6 +76,11 @@ hotplug_cfd(struct notifier_block *nfb, unsigned long action, void *hcpu)
 		free_cpumask_var(cfd->cpumask);
 		free_cpumask_var(cfd->cpumask_ipi);
 		free_percpu(cfd->csd);
+		break;
+
+	case CPU_DYING:
+	case CPU_DYING_FROZEN:
+		flush_smp_call_function_queue(false);
 		break;
 #endif
 	};
@@ -176,17 +187,30 @@ void generic_exec_single(int cpu, struct call_single_data *csd, int wait)
  */
 void generic_smp_call_function_single_interrupt(void)
 {
+	flush_smp_call_function_queue(true);
+}
+
+static void flush_smp_call_function_queue(bool warn_cpu_offline)
+{
 	struct call_single_queue *q = &__get_cpu_var(call_single_queue);
 	LIST_HEAD(list);
+	static bool warned;
 
 	/*
 	 * Shouldn't receive this interrupt on a cpu that is not yet online.
 	 */
-	WARN_ON_ONCE(!cpu_online(smp_processor_id()));
+	WARN_ON(!irqs_disabled());
 
 	raw_spin_lock(&q->lock);
 	list_replace_init(&q->list, &list);
 	raw_spin_unlock(&q->lock);
+
+	
+	if (unlikely(warn_cpu_offline && !cpu_online(smp_processor_id()) &&
+		     !warned && !list_empty(&q->list))) {
+		warned = true;
+		WARN(1, "IPI on offline CPU %d\n", smp_processor_id());
+	}
 
 	while (!list_empty(&list)) {
 		struct call_single_data *csd;
@@ -578,6 +602,18 @@ static inline void free_boot_cpu_mask(void)
 void __init smp_init(void)
 {
 	unsigned int cpu;
+	int mask;
+
+	mask = get_cpumask_flag();
+	if (mask) {
+		struct cpumask dest;
+
+		*cpu_mask.bits = (long)mask;
+		if (!cpumask_test_cpu(0, &cpu_mask) && !cpumask_andnot(&dest, &cpu_mask, cpu_possible_mask))
+			have_cpu_mask = 1;
+		else
+			printk(KERN_ERR "cpumask error : 0x%X\n", mask);
+	}
 
 	idle_threads_init();
 

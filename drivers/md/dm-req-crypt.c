@@ -42,7 +42,7 @@
 #define MAX_SG_LIST	1024
 #define REQ_DM_512_KB (512*1024)
 #define MAX_ENCRYPTION_BUFFERS 1
-#define MIN_IOS 16
+#define MIN_IOS 128
 #define MIN_POOL_PAGES 32
 #define KEY_SIZE_XTS 32
 #define AES_XTS_IV_LEN 16

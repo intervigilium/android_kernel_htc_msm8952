@@ -118,6 +118,7 @@ static void process_lpm_workarounds(struct work_struct *w)
 		put_cpu();
 
 		HOTPLUG_NO_MITIGATION(&curr_req.offline_mask);
+		pr_info("%s: Start to request hotplug: 0x%x\n", __func__, (uint32_t)*cpumask_bits(&curr_req.offline_mask));
 		ret = devmgr_client_request_mitigation(
 				hotplug_handle,
 				HOTPLUG_MITIGATION_REQ,
@@ -151,6 +152,7 @@ static ssize_t store_clock_gating_enabled(struct kobject *kobj,
 	}
 
 	cpumask_copy(&curr_req.offline_mask, &l1_l2_offline_mask);
+	pr_info("%s: Start to request hotplug: 0x%x\n", __func__, (uint32_t)*cpumask_bits(&curr_req.offline_mask));
 	ret = devmgr_client_request_mitigation(
 			hotplug_handle,
 			HOTPLUG_MITIGATION_REQ,
@@ -258,9 +260,8 @@ static int lpm_wa_probe(struct platform_device *pdev)
 		pr_err("%s: cannot create kobject for module %s\n",
 			__func__, KBUILD_MODNAME);
 		ret = -ENOENT;
-	}
-
-	ret = sysfs_create_file(module_lpm_wa,
+	} else
+		ret = sysfs_create_file(module_lpm_wa,
 					&clock_gating_enabled_attr.attr);
 	if (ret) {
 		pr_err("cannot create attr group. err:%d\n", ret);

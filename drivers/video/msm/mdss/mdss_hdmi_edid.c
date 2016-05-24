@@ -1675,7 +1675,7 @@ int hdmi_edid_parser(void *input)
 	if (!edid_ctrl) {
 		DEV_ERR("%s: invalid input\n", __func__);
 		status = -EINVAL;
-		goto error;
+		goto input_error;
 	}
 
 	/* reset edid data for new hdmi connection */
@@ -1748,6 +1748,7 @@ error:
 	edid_ctrl->sink_data.num_of_elements = 1;
 	edid_ctrl->sink_data.disp_mode_list[0] = edid_ctrl->video_resolution;
 
+input_error:
 	return status;
 } /* hdmi_edid_read */
 

@@ -76,7 +76,7 @@ void *hashtab_search(struct hashtab *h, const void *key)
 	u32 hvalue;
 	struct hashtab_node *cur;
 
-	if (!h)
+	if (!h || !key)
 		return NULL;
 
 	hvalue = h->hash_value(h, key);
