@@ -21,6 +21,7 @@
 #include <linux/ipc_logging.h>
 #endif
 
+#ifdef CONFIG_HTC_NET_DEBUG
 extern int htc_net_debug_dump;
 extern int htc_net_debug_print;
 extern int htc_net_debug_enable;
@@ -32,5 +33,8 @@ do{ \
 	if(htc_net_debug_enable) \
 		net_dbg_log_event("[NET]" fmt, ##args); \
 } while(0)
+#else
+#define NET_DEBUG(fmt, args...)
+#endif /* CONFIG_HTC_NET_DEBUG */
 
 #endif /* end of _HTC_NET_DEBUG_H */
