@@ -970,7 +970,6 @@ void gic_set_irq_secure(unsigned int irq)
 {
 	unsigned int gicd_isr_reg, gicd_pri_reg;
 	unsigned int mask = 0xFFFFFF00;
-	struct gic_chip_data *gic_data = &gic_data[0];
 	struct irq_data *d = irq_get_irq_data(irq);
 
 	if (is_cpu_secure()) {
@@ -1209,7 +1208,6 @@ IRQCHIP_DECLARE(msm_qgic2, "qcom,msm-qgic2", msm_gic_of_init);
 bool gic_is_irq_pending(unsigned int irq)
 {
     struct irq_data *d = irq_get_irq_data(irq);
-    struct gic_chip_data *gic_data = &gic_data[0];
     u32 mask, val;
 
     WARN_ON(!irqs_disabled());

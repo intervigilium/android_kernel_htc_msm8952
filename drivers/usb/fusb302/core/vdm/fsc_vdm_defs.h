@@ -27,23 +27,25 @@
  * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
  *
  *****************************************************************************/
+#ifdef FSC_HAVE_VDM
 
 #ifndef __FSC_VDM_DEFS_H__
 #define __FSC_VDM_DEFS_H__
 
 #include "vdm_types.h"
 
+// definition/configuration object - these are all the things that the system needs to configure.
 typedef struct {
-	BOOL 							data_capable_as_usb_host	: 1;
-	BOOL 							data_capable_as_usb_device	: 1;
+	FSC_BOOL 						data_capable_as_usb_host	: 1;
+	FSC_BOOL 						data_capable_as_usb_device	: 1;
 	ProductType						product_type				: 3;
-	BOOL							modal_operation_supported	: 1;
-	UINT16							usb_vendor_id				: 16;
-	UINT32							test_id						: 20; 
-	UINT16							usb_product_id				: 16;
-	UINT16							bcd_device					: 16;
-	UINT8							cable_hw_version			: 4;
-	UINT8							cable_fw_version			: 4;
+	FSC_BOOL						modal_operation_supported	: 1;
+	FSC_U16							usb_vendor_id				: 16;
+	FSC_U32							test_id						: 20; // for Cert Stat VDO, "allocated by USB-IF during certification"
+	FSC_U16							usb_product_id				: 16;
+	FSC_U16							bcd_device					: 16;
+	FSC_U8							cable_hw_version			: 4;
+	FSC_U8							cable_fw_version			: 4;
 	CableToType						cable_to_type				: 2;
 	CableToPr						cable_to_pr					: 1;
 	CableLatency					cable_latency				: 4;
@@ -63,13 +65,15 @@ typedef struct {
 	UsbSsSupport					usb_ss_supp					: 3;
 	AmaUsbSsSupport					ama_usb_ss_supp				: 3;
 
-	UINT32                      	num_svids;
-	UINT16							svids[MAX_NUM_SVIDS];
-	UINT32                      	num_modes_for_svid[MAX_NUM_SVIDS];
+	FSC_U32                      	num_svids;
+	FSC_U16							svids[MAX_NUM_SVIDS];
+	FSC_U32                      	num_modes_for_svid[MAX_NUM_SVIDS];
 
-	
-	UINT32							modes[MAX_NUM_SVIDS][MAX_MODES_PER_SVID];
+	// TODO: A lot of potential wasted memory here...
+	FSC_U32							modes[MAX_NUM_SVIDS][MAX_MODES_PER_SVID];
 
 } VendorDefinition;
 
-#endif 
+#endif // header guard
+
+#endif // FSC_HAVE_VDM

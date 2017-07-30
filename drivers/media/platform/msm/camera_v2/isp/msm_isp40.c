@@ -1109,7 +1109,7 @@ static int msm_vfe40_start_fetch_engine(struct vfe_device *vfe_dev,
 		rc = vfe_dev->buf_mgr->ops->get_buf_by_index(
 			vfe_dev->buf_mgr, bufq_handle, fe_cfg->buf_idx, &buf);
 		if (rc < 0 || !buf) {
-			pr_err("%s: No fetch buffer rc= %d buf= %p\n",
+			pr_err("%s: No fetch buffer rc= %d buf= %pK\n",
 				__func__, rc, buf);
 			return -EINVAL;
 		}
@@ -1509,7 +1509,8 @@ static void msm_vfe40_axi_cfg_wm_reg(
 	}
 
 	if (!stream_info->frame_based) {
-		msm_camera_io_w(0x0, vfe_dev->vfe_base + wm_base);
+		if (!vfe_dev->hw_info->runtime_axi_update)
+			msm_camera_io_w(0x0, vfe_dev->vfe_base + wm_base);
 		/*WR_IMAGE_SIZE*/
 		val =
 			((msm_isp_cal_word_per_line(
@@ -2261,6 +2262,7 @@ struct msm_vfe_hardware_info vfe40_hw_info = {
 	.num_iommu_ctx = 1,
 	.num_iommu_secure_ctx = 1,
 	.vfe_clk_idx = VFE40_CLK_IDX,
+	.runtime_axi_update = 1,
 	.vfe_ops = {
 		.irq_ops = {
 			.read_irq_status = msm_vfe40_read_irq_status,

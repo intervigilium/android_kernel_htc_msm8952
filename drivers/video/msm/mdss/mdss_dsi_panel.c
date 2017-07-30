@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -150,7 +150,7 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 	return 0;
 }
 
-static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
+void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds)
 {
 	struct dcs_cmd_req cmdreq;
@@ -667,7 +667,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -680,7 +680,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 			(pinfo->mipi.boot_mode != pinfo->mipi.mode))
 		on_cmds = &ctrl->post_dms_on_cmds;
 
-	pr_debug("%s: ctrl=%p cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
+	pr_debug("%s: ctrl=%pK cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
 
 	if (pdata->panel_info.first_power_on == 1) {
 		pr_info("panel on already\n");
@@ -710,7 +710,7 @@ static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	pinfo = &pdata->panel_info;
 	if (pinfo->dcs_cmd_by_left) {
@@ -720,7 +720,7 @@ static int mdss_dsi_post_panel_on(struct mdss_panel_data *pdata)
 
 	on_cmds = &ctrl->post_panel_on_cmds;
 
-	pr_debug("%s: ctrl=%p cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
+	pr_debug("%s: ctrl=%pK cmd_cnt=%d\n", __func__, ctrl, on_cmds->cmd_cnt);
 
 	if (on_cmds->cmd_cnt) {
 		msleep(50);	
@@ -753,7 +753,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+	pr_debug("%s: ctrl=%pK ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
@@ -791,7 +791,7 @@ static int mdss_dsi_panel_low_power_config(struct mdss_panel_data *pdata,
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	pr_debug("%s: ctrl=%p ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
+	pr_debug("%s: ctrl=%pK ndx=%d enable=%d\n", __func__, ctrl, ctrl->ndx,
 		enable);
 
 	
@@ -1558,6 +1558,7 @@ static void mdss_dsi_parse_esd_params(struct device_node *np,
 			ctrl->check_read_status =
 				mdss_dsi_nt35596_read_status;
 		} else if (!strcmp(string, "te_signal_check")) {
+			pr_info("ESD workaround for TE\n");
 			if (pinfo->mipi.mode == DSI_CMD_MODE) {
 				ctrl->status_mode = ESD_TE;
 			} else {
@@ -1843,6 +1844,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	int rc, i, len;
 	const char *data;
 	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
+	char cmd[128];
+	struct device_node *color_temp_np = NULL;
 
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-panel-width", &tmp);
 	if (rc) {
@@ -2201,6 +2204,15 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	rc = of_property_read_u32(np, "htc,mdp-pcc-b", &tmp);
 	pinfo->pcc_b = (!rc ? tmp : 0);
 
+	rc = of_property_read_u32(np, "htc,lab-voltage", &tmp);
+	pinfo->mdss_lab_voltage = (!rc ? tmp : 5000000);
+
+	rc = of_property_read_u32(np, "htc,ibb-voltage", &tmp);
+	pinfo->mdss_ibb_voltage = (!rc ? tmp : 5000000);
+
+	pinfo->mipi.deferred_rst_off = of_property_read_bool(np,
+					"htc,panel-deferred-rst-off");
+
 #ifdef CONFIG_HTC_POWER_HACK
 	rc = of_property_read_u32_array(np, "qcom,mdss-shrink-pwm-power-hack", res, 3);
 	if (rc) {
@@ -2236,6 +2248,38 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	pinfo->is_dba_panel = of_property_read_bool(np,
 			"qcom,dba-panel");
+
+	if (of_find_property(np, "htc,color-temp-cmds", NULL)) {
+		color_temp_np = of_parse_phandle(np, "htc,color-temp-cmds", 0);
+
+		if (!color_temp_np) {
+			pr_err("%s:err parsing htc,color-temp-cmds\n", __func__);
+		} else {
+			ctrl_pdata->color_temp_cnt = 0;
+			for (i = 0; i < COLOR_TEMP_MODE; i++) {
+				snprintf(cmd, sizeof(cmd),"htc,color-temp%d-cmds", i);
+				mdss_dsi_parse_dcs_cmds(color_temp_np, &ctrl_pdata->color_temp_cmds[i],
+						cmd, "qcom,mdss-dsi-default-command-state");
+				if (!ctrl_pdata->color_temp_cmds[i].cmds)
+					break;
+				else
+					ctrl_pdata->color_temp_cnt++;
+			}
+			for (i = 0; i < ctrl_pdata->color_temp_cnt ; i++) {
+				if (!ctrl_pdata->color_temp_cmds[i].cmds)
+					ctrl_pdata->color_temp_cnt = 0;
+			}
+			if (ctrl_pdata->color_temp_cnt != 0) {
+				rc = of_property_read_u32(np, "htc,color-temp-default", &tmp);
+				ctrl_pdata->color_temp_default  = (!rc ? tmp : (ctrl_pdata->color_temp_cnt/4));
+			}
+		}
+	}
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->color_default_cmds,
+			"htc,color-default-cmds", "qcom,mdss-dsi-default-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->color_srgb_cmds,
+			"htc,color-srgb-cmds", "qcom,mdss-dsi-default-command-state");
 
 	return 0;
 

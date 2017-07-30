@@ -59,7 +59,7 @@ module_param_named(debug_mask, msm_ipc_router_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 #ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
-static int msm_ipc_router_delete_unread_data;
+static int msm_ipc_router_delete_unread_data = 1;
 module_param_named(delete_unread_data, msm_ipc_router_delete_unread_data,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 #endif
@@ -1140,6 +1140,15 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 
 	mutex_lock(&port_ptr->port_rx_q_lock_lhc3);
 	__pm_stay_awake(port_ptr->port_rx_ws);
+
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
+	do {
+		port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME;
+		cancel_delayed_work(&port_ptr->rx_data_check_wq);
+		schedule_delayed_work(&port_ptr->rx_data_check_wq, msecs_to_jiffies(IPC_RX_DATA_CHECK_WQ_DELAY_TIME));
+	} while ( 0 );
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
+
 #ifdef CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
 	if ( port_ptr->port_rx_ws->event_count % 1000 == 0 ) {
 		//dump log message every 1000 times
@@ -1169,20 +1178,8 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 	mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 	if (notify)
 		notify(pkt->hdr.type, NULL, 0, port_ptr->priv);
-#ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
-	else if (sk && data_ready) {
-		do {
-			IPC_RTR_INFO(NULL, "[RX DATA CHECK]%s: ipc: [%s], data_ready=[[<%p>] %pS]\n", __func__, port_ptr->port_rx_ws->name, (void *) data_ready, (void *) data_ready);
-			port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME;
-			cancel_delayed_work(&port_ptr->rx_data_check_wq);
-			schedule_delayed_work(&port_ptr->rx_data_check_wq, msecs_to_jiffies(IPC_RX_DATA_CHECK_WQ_DELAY_TIME));
-		} while ( 0 );
-		data_ready(sk, pkt->hdr.size);
-	}
-#else
 	else if (sk && data_ready)
 		data_ready(sk, pkt->hdr.size);
-#endif//CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
 
 	return 0;
 }
@@ -1339,8 +1336,13 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 	struct sock *sk;
 	void (*data_ready)(struct sock *sk, int bytes) = NULL;
 
+	int can_delete_data = 0;
+
+	mutex_lock(&port_ptr->port_rx_q_lock_lhc3);
+
 	if ( port_ptr == NULL ) {
 		pr_info("[RX DATA CHECK]%s: port_ptr is NULL\n", __func__);
+		mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 		return;
 	}
 
@@ -1366,22 +1368,26 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 		IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: ipc: [%s], data_ready is null\n", __func__, port_ptr->port_rx_ws->name);
 	}
 
+	//check if we can delete unused data
+	if ( msm_ipc_router_delete_unread_data
+		&& port_ptr->rx_data_check_wq_delay_time >= IPC_RX_DATA_CHECK_WQ_DELAY_TIME_MAX ) {
+		can_delete_data = 1;
+	}
+
 	do {
 		int rx_list_empty = 0;
 
-		mutex_lock(&port_ptr->port_rx_q_lock_lhc3);
 		rx_list_empty = list_empty(&port_ptr->port_rx_q);
 		IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: Check ipc rx list is %s\n", __func__, rx_list_empty ? "empty" : "not empty");
 
 		if ( rx_list_empty ) {
 			port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME;
-			mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 			break;
 		}
 
 {
 		struct rr_packet *pkt, *temp_pkt;
-		//try clear list
+		//try dump and clear list
 		list_for_each_entry_safe(pkt, temp_pkt, &port_ptr->port_rx_q, list) {
 			struct rr_header_v1 *hdr = &pkt->hdr;
 			uint32_t svcId = 0;
@@ -1434,7 +1440,7 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 					IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: UNKNOWN cmd:0x%x\n", __func__,
 					msg->cmd);
 			}
-			if ( msm_ipc_router_delete_unread_data ) {
+			if ( can_delete_data == 1 ) {
 				list_del(&pkt->list);
 				release_pkt(pkt);
 				IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: data deleted\n", __func__);
@@ -1444,7 +1450,7 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 
 		//check ws state and relax ws
 		if ( port_ptr->port_rx_ws->active ) {
-			if ( msm_ipc_router_delete_unread_data ) {
+			if ( can_delete_data == 1 ) {//data cleared, release wake source
 				IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: relax wake source %s\n", __func__, port_ptr->port_rx_ws->name);
 				__pm_relax(port_ptr->port_rx_ws);
 			} else {
@@ -1459,9 +1465,9 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 			port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME;
 		}
 
-		mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 	} while (0);
 
+	mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 }
 #endif//#ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
 
@@ -1593,10 +1599,21 @@ void ipc_router_release_port(struct kref *ref)
 		list_del(&pkt->list);
 		release_pkt(pkt);
 	}
+
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
+	cancel_delayed_work(&port_ptr->rx_data_check_wq);
+	__pm_relax(port_ptr->port_rx_ws);
+#endif
+
 	mutex_unlock(&port_ptr->port_rx_q_lock_lhc3);
 	wakeup_source_unregister(port_ptr->port_rx_ws);
 	if (port_ptr->endpoint)
 		sock_put(ipc_port_sk(port_ptr->endpoint));
+
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
+	pr_info("%s: release raw port id=[0x%08x], ws=[%s], current=[(%s)%p], endpoint=[%p]\n", __func__, port_ptr->this_port.port_id, port_ptr->rx_ws_name, current->comm, current, (port_ptr->endpoint ? port_ptr->endpoint : 0 ));
+#endif
+
 	kfree(port_ptr);
 }
 
@@ -2969,6 +2986,9 @@ int msm_ipc_router_register_server(struct msm_ipc_port *port_ptr,
 	struct msm_ipc_router_remote_port *rport_ptr;
 
 	if (!port_ptr || !name)
+		return -EINVAL;
+
+	if (port_ptr->type != CLIENT_PORT)
 		return -EINVAL;
 
 	if (name->addrtype != MSM_IPC_ADDR_NAME)

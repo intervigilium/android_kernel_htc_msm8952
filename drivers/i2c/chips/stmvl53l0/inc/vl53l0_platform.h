@@ -1,5 +1,5 @@
 /*******************************************************************************
-Copyright ?2015, STMicroelectronics International N.V.
+Copyright © 2015, STMicroelectronics International N.V.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -27,19 +27,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ********************************************************************************/
 
 
- 
-
-
 #ifndef _VL53L0_PLATFORM_H_
 #define _VL53L0_PLATFORM_H_
 
 #include "vl53l0_def.h"
 #include "vl53l0_i2c.h"
 
+#include <linux/delay.h>
+#include <linux/kernel.h>
+#include <linux/string.h>
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+ 
 
 typedef struct {
     VL53L0_DevData_t Data;               
@@ -54,10 +57,16 @@ typedef struct {
 
 typedef VL53L0_Dev_t* VL53L0_DEV;
 
-
 #define PALDevDataGet(Dev, field) (Dev->Data.field)
 
 #define PALDevDataSet(Dev, field, data) (Dev->Data.field)=(data)
+
+
+
+VL53L0_Error VL53L0_LockSequenceAccess(VL53L0_DEV Dev);
+
+VL53L0_Error VL53L0_UnlockSequenceAccess(VL53L0_DEV Dev);
+
 
 /**
  * Writes the supplied byte buffer to the device
@@ -68,7 +77,9 @@ typedef VL53L0_Dev_t* VL53L0_DEV;
  * @return  VL53L0_ERROR_NONE        Success
  * @return  "Other error code"    See ::VL53L0_Error
  */
+VL53L0_Error VL53L0_WriteMulti(VL53L0_DEV Dev, uint8_t index, uint8_t *pdata, uint32_t count);
 
+VL53L0_Error VL53L0_ReadMulti(VL53L0_DEV Dev, uint8_t index, uint8_t *pdata, uint32_t count);
 
 VL53L0_Error VL53L0_WrByte(VL53L0_DEV Dev, uint8_t index, uint8_t data);
 
@@ -84,13 +95,16 @@ VL53L0_Error VL53L0_RdDWord(VL53L0_DEV Dev, uint8_t index, uint32_t *data);
 
 VL53L0_Error VL53L0_UpdateByte(VL53L0_DEV Dev, uint8_t index, uint8_t AndData, uint8_t OrData);
 
-VL53L0_Error VL53L0_PollingDelay(VL53L0_DEV Dev); 
 
+    
+VL53L0_Error VL53L0_PollingDelay(VL53L0_DEV Dev); 
 
 
 #ifdef __cplusplus
 }
 #endif
 
+#endif  
 
-#endif 
+
+

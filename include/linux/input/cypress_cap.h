@@ -12,7 +12,7 @@
 #define CS_SET_SLEEP			(uint8_t) 0x04
 #define CS_ENTER_BL			(uint8_t) 0x06
 
-#define CS_COMMON_REGISTER		7
+#define CS_COMMON_REGISTER		12
 #define CS_CP_START_REG			0x11
 #define CS_RAW_START_REG		0x20
 #define CS_BL_START_REG			0x2C
@@ -93,6 +93,9 @@ struct cypress_cap_platform_data {
 	uint16_t gpio_irq;
 	uint16_t gpio_ind;
 	uint16_t gpio_pwr_en;
+	uint16_t gpio_pwr_3v3_en;
+	uint16_t gpio_id;
+	uint16_t gpio_id_active_low;
 	int     (*power)(int on);
 	int     (*reset)(struct i2c_client *client);
 	uint8_t cap_num;
@@ -100,9 +103,11 @@ struct cypress_cap_platform_data {
 	int     keycode[4];
 	int     update_feature;
 	void    (*gpio_init)(void);
+	uint32_t cap_regulator_volt;
+	struct regulator *cap_regulator;
 	struct pinctrl *cap_pinctrl;
 	struct pinctrl_state *gpio_state_active;
 	struct pinctrl_state *gpio_state_suspend;
 };
 
-#endif 
+#endif //CYPRESS_CAP_I2C_H

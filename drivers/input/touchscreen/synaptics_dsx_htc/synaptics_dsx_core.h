@@ -177,6 +177,8 @@
 #define SYNAPTICS_RMI4_UPDATE_CONFIG	2
 #define SYNAPTICS_RMI4_UPDATE_BOTH	3
 
+#define LCM_VENDER_SIZE 16
+
 enum exp_fn {
 	RMI_DEV = 0,
 	RMI_FW_UPDATER,
@@ -313,7 +315,7 @@ struct synaptics_rmi4_device_info {
 struct synaptics_rmi4_noise_state {
 	uint16_t im;
 	uint16_t cidim;
-	uint16_t freq;
+	uint8_t freq;
 	uint8_t ns;
 };
 
@@ -325,6 +327,15 @@ struct synaptics_rmi4_report_points {
 	int w;
 };
 
+struct synaptics_rmi4_log_report_points {
+	int finger_ind;
+	int dnup;
+	int x;
+	int y;
+	int wx;
+	int wy;
+	int z;
+};
 /*
  * struct synaptics_rmi4_data - RMI4 device instance data
  * @pdev: pointer to platform device
@@ -448,6 +459,7 @@ struct synaptics_rmi4_data {
 	//uint32_t config_version;
 	char config_version[65];
 	uint16_t  tw_vendor;
+	char lcm_vendor[LCM_VENDER_SIZE];
 	unsigned char  diag_command;
 	atomic_t data_ready;
 	int16_t *report_data;

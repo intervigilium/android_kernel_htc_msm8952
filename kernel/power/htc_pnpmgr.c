@@ -118,6 +118,7 @@ extern void set_bcl_freq_limit(uint32_t freq_limit);
 
 static char activity_buf[MAX_BUF];
 static char non_activity_buf[MAX_BUF];
+static char profile_buf[MAX_BUF];
 static char media_mode_buf[MAX_BUF];
 static char virtual_display_buf[MAX_BUF];
 static int app_timeout_expired;
@@ -142,6 +143,10 @@ power_attr(activity_trigger);
 define_string_show(non_activity_trigger, non_activity_buf);
 define_string_store(non_activity_trigger, non_activity_buf, null_cb);
 power_attr(non_activity_trigger);
+
+define_string_show(profile, profile_buf);
+define_string_store(profile, profile_buf, null_cb);
+power_attr(profile);
 
 define_string_show(media_mode, media_mode_buf);
 define_string_store(media_mode, media_mode_buf, null_cb);
@@ -453,7 +458,7 @@ long_duration_touch_boost_store(struct kobject *kobj, struct kobj_attribute *att
 }
 power_attr(long_duration_touch_boost);
 
-static int launch_event_enabled = 0;
+int launch_event_enabled = 0;
 define_int_show(launch_event, launch_event_enabled);
 define_int_store(launch_event, launch_event_enabled, null_cb);
 power_attr(launch_event);
@@ -1048,6 +1053,7 @@ static struct attribute *thermal_g[] = {
 static struct attribute *apps_g[] = {
 	&activity_trigger_attr.attr,
 	&non_activity_trigger_attr.attr,
+	&profile_attr.attr,
 	&media_mode_attr.attr,
 	&app_timeout_attr.attr,
 	&trace_trigger_attr.attr,

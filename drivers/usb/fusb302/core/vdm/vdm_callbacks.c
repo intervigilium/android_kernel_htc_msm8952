@@ -27,22 +27,28 @@
  * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
  *
  *****************************************************************************/
+#ifdef FSC_HAVE_VDM
 
 #include "vdm_callbacks.h"
 #include "vdm_types.h"
+
+#ifdef FSC_HAVE_DP
 #include "DisplayPort/dp.h"
+#include "DisplayPort/interface_dp.h"
+#endif // FSC_HAVE_DP
 
-BOOL svid_enable;
-BOOL mode_enable;
-UINT16 my_svid;
-UINT32 my_mode;
 
-BOOL mode_entered;
+FSC_BOOL svid_enable;
+FSC_BOOL mode_enable;
+FSC_U16 my_svid;
+FSC_U32 my_mode;
+
+FSC_BOOL mode_entered;
 SvidInfo core_svid_info;
 
-extern unsigned int DpModeEntered;
-
+#ifdef FSC_HAVE_DP
 int AutoDpModeEntryObjPos;
+#endif // FSC_HAVE_DP
 
 Identity vdmRequestIdentityInfo() {
     Identity id = {0};
@@ -53,6 +59,7 @@ Identity vdmRequestIdentityInfo() {
         id.id_header.modal_op_supported = 0;
     }
     id.nack = FALSE;
+    id.id_header.usb_vid = my_svid;
     return id;
 }
 
@@ -72,7 +79,7 @@ SvidInfo vdmRequestSvidInfo() {
 	return svid_info;
 }
 
-ModesInfo vdmRequestModesInfo(UINT16 svid) {
+ModesInfo vdmRequestModesInfo(FSC_U16 svid) {
 	ModesInfo modes_info = {0};
 
     if (svid_enable && mode_enable && (svid == my_svid) ) {
@@ -89,30 +96,38 @@ ModesInfo vdmRequestModesInfo(UINT16 svid) {
 	return modes_info;
 }
 
-BOOL vdmModeEntryRequest(UINT16 svid, UINT32 mode_index) {
+FSC_BOOL vdmModeEntryRequest(FSC_U16 svid, FSC_U32 mode_index) {
     if (svid_enable && mode_enable && (svid == my_svid) && (mode_index == 1)) {
         mode_entered = TRUE;
+
+#ifdef FSC_HAVE_DP
         if (my_svid == DP_SID) {
             DpModeEntered = mode_index;
         }
+#endif // FSC_HAVE_DP
         return TRUE;
     }
 
 	return FALSE;
 }
 
-BOOL vdmModeExitRequest(UINT16 svid, UINT32 mode_index) {
+FSC_BOOL vdmModeExitRequest(FSC_U16 svid, FSC_U32 mode_index) {
     if (mode_entered && (svid == my_svid) && (mode_index == 1)) {
         mode_entered = FALSE;
+
+#ifdef FSC_HAVE_DP
         if (DpModeEntered && (DpModeEntered == mode_index) && (svid == DP_SID)) {
             DpModeEntered = 0;
         }
+#endif // FSC_HAVE_DP
+
         return TRUE;
     }
 	return FALSE;
 }
 
-BOOL vdmEnterModeResult(BOOL success, UINT16 svid, UINT32 mode_index) {
+FSC_BOOL vdmEnterModeResult(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index) {
+#ifdef FSC_HAVE_DP
     if (AutoDpModeEntryObjPos > 0) {
         AutoDpModeEntryObjPos = 0;
     }
@@ -120,23 +135,26 @@ BOOL vdmEnterModeResult(BOOL success, UINT16 svid, UINT32 mode_index) {
     if (svid == DP_SID) {
         DpModeEntered = mode_index;
     }
+#endif // FSC_HAVE_DP
 
 	return TRUE;
 }
 
-void vdmExitModeResult(BOOL success, UINT16 svid, UINT32 mode_index) {
+void vdmExitModeResult(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index) {
+#ifdef FSC_HAVE_DP
     if (svid == DP_SID && DpModeEntered == mode_index) {
         DpModeEntered = 0;
     }
+#endif // FSC_HAVE_DP
 }
 
-void vdmInformIdentity(BOOL success, SopType sop, Identity id) {
+void vdmInformIdentity(FSC_BOOL success, SopType sop, Identity id) {
 
 }
 
-void vdmInformSvids(BOOL success, SopType sop, SvidInfo svid_info) {
+void vdmInformSvids(FSC_BOOL success, SopType sop, SvidInfo svid_info) {
     if (success) {
-        INT32 i;
+        FSC_U32 i;
         core_svid_info.num_svids = svid_info.num_svids;
         for (i = 0; (i < svid_info.num_svids) && (i < MAX_NUM_SVIDS); i++) {
             core_svid_info.svids[i] = svid_info.svids[i];
@@ -144,8 +162,9 @@ void vdmInformSvids(BOOL success, SopType sop, SvidInfo svid_info) {
     }
 }
 
-void vdmInformModes(BOOL success, SopType sop, ModesInfo modes_info) {
-    INT32 i;
+void vdmInformModes(FSC_BOOL success, SopType sop, ModesInfo modes_info) {
+#ifdef FSC_HAVE_DP
+    FSC_U32 i;
 
     if (modes_info.svid == DP_SID && modes_info.nack == FALSE) {
         for (i = 0; i < modes_info.num_modes; i++) {
@@ -154,17 +173,22 @@ void vdmInformModes(BOOL success, SopType sop, ModesInfo modes_info) {
             }
         }
     }
+#endif // FSC_HAVE_DP
 }
 
-void vdmInformAttention(UINT16 svid, UINT8 mode_index) {
+void vdmInformAttention(FSC_U16 svid, FSC_U8 mode_index) {
 
 }
 
 void vdmInitDpm() {
-    svid_enable = FALSE;
-    mode_enable = FALSE;
-    my_svid = 0x0779; 
+
+    svid_enable = TRUE;
+    mode_enable = TRUE;
+
+    my_svid = 0x0779; // 0x0779 = FC VID
     my_mode = 0x0001;
 
     mode_entered = FALSE;
 }
+
+#endif // FSC_HAVE_VDM

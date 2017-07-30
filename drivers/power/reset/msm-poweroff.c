@@ -302,6 +302,15 @@ static void msm_restart_prepare(char mode, const char *cmd)
 			set_restart_action(RESTART_REASON_RAMDUMP, "force-dog-bark");
 		} else if (!strncmp(cmd, "power-key-force-hard", 20)) {
 			set_restart_action(RESTART_REASON_RAMDUMP, "power-key-force-hard");
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			qpnp_pon_set_restart_reason(PON_RESTART_REASON_DMVERITY_CORRUPTED);
+			set_restart_action(RESTART_REASON_DM_VERITY_DEVICE_CORRUPTED, "DM verity device corrupted");
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			qpnp_pon_set_restart_reason(PON_RESTART_REASON_DMVERITY_ENFORCE);
+			set_restart_action(RESTART_REASON_DM_VERITY_ENFORCING, "DM verity enforcing");
+		} else if (!strcmp(cmd, "keys clear")) {
+			qpnp_pon_set_restart_reason(PON_RESTART_REASON_KEYS_CLEAR);
+			set_restart_action(RESTART_REASON_KEYS_CLEAR, "Keys clear");
 		} else {
 			set_restart_action(RESTART_REASON_REBOOT, NULL);
 		}

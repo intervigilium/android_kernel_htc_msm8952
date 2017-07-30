@@ -1,33 +1,29 @@
+#ifdef FSC_HAVE_VDM
+
 #ifndef __FSC_VDM_CONFIG_H__
 #define __FSC_VDM_CONFIG_H__
 #include "../platform.h"
-#include "DisplayPort/dp_types.h"
 
-extern BOOL svid_enable;
-extern BOOL mode_enable;
-extern UINT16 my_svid;
-extern UINT32 my_mode;
-extern BOOL mode_entered;
+/* General VDM Things */
+extern FSC_BOOL svid_enable;
+extern FSC_BOOL mode_enable;
+extern FSC_U16 my_svid;
+extern FSC_U32 my_mode;
+extern FSC_BOOL mode_entered;
 
-extern BOOL DpEnabled;
-extern BOOL DpAutoModeEntryEnabled;
-extern DisplayPortCaps_t DpModeEntryMask;
-extern DisplayPortCaps_t DpModeEntryValue;
-extern DisplayPortCaps_t DpCaps;
-extern DisplayPortStatus_t DpStatus;
-extern DisplayPortConfig_t DpConfig;
-extern DisplayPortStatus_t DpPpStatus;
-extern DisplayPortConfig_t DpPpRequestedConfig;
-extern DisplayPortConfig_t DpPpConfig;
-extern UINT32 DpModeEntered;
+/* Functions to configure VDM code! */
+void ConfigureVdmResponses(FSC_U8* bytes);
+void ReadVdmConfiguration(FSC_U8* data);
 
-void ConfigureVdmResponses(UINT8* bytes);
-void ReadVdmConfiguration(UINT8* data);
+/* Functions specifically to configure DisplayPort code! */
+#ifdef FSC_HAVE_DP
+void configDp (FSC_BOOL enabled, FSC_U32 status);
+void configAutoDpModeEntry (FSC_BOOL enabled, FSC_U32 mask, FSC_U32 value);
+void WriteDpControls(FSC_U8* data);
+void ReadDpControls(FSC_U8* data);
+void ReadDpStatus(FSC_U8* data);
+#endif // FSC_HAVE_DP
 
-void configDp (BOOL enabled, UINT32 status);
-void configAutoDpModeEntry (BOOL enabled, UINT32 mask, UINT32 value);
-void WriteDpControls(UINT8* data);
-void ReadDpControls(UINT8* data);
-void ReadDpStatus(UINT8* data);
+#endif // __FSC_VDM_CONFIG_H__
 
-#endif 
+#endif // FSC_HAVE_VDM

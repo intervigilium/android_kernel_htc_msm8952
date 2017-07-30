@@ -31,6 +31,10 @@
 #include <asm/system_misc.h>
 #include <asm/suspend.h>
 
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+#include <htc_mnemosyne/htc_footprint.h>
+#endif
+
 #define PSCI_POWER_STATE_TYPE_STANDBY		0
 #define PSCI_POWER_STATE_TYPE_POWER_DOWN	1
 
@@ -144,8 +148,16 @@ static int psci_cpu_suspend(unsigned long  state_id,
 	int err;
 	u32 fn;
 
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	int cpu;
+	cpu = smp_processor_id();
+	set_cpu_foot_print(cpu, 0x1);
+#endif
 	fn = psci_function_id[PSCI_FN_CPU_SUSPEND];
 	err = invoke_psci_fn(fn, state_id, entry_point, 0);
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	set_cpu_foot_print(cpu, 0xa);
+#endif
 	return psci_to_linux_errno(err);
 }
 
@@ -436,6 +448,16 @@ static int cpu_psci_cpu_boot(unsigned int cpu)
 	if (err)
 		pr_err("failed to boot CPU%d (%d)\n", cpu, err);
 
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	init_cpu_hotplug_foot_print(cpu);
+	if (err)
+		set_cpu_foot_print(cpu, 0xfa);
+	else {
+		set_cpu_foot_print(cpu, 0xb);
+		inc_kernel_exit_counter_from_pc(cpu);
+	}
+#endif
+
 	return err;
 }
 
@@ -459,7 +481,16 @@ static void cpu_psci_cpu_die(unsigned int cpu)
 		.type = PSCI_POWER_STATE_TYPE_POWER_DOWN,
 	};
 
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	init_cpu_hotplug_foot_print(cpu);
+	set_cpu_foot_print(cpu, 0x1);
+#endif
+
 	ret = psci_ops.cpu_off(state);
+
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	set_cpu_foot_print(cpu, 0xfe);
+#endif
 
 	pr_crit("unable to power off CPU%u (%d)\n", cpu, ret);
 }

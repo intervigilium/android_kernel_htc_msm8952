@@ -50,7 +50,7 @@ enum {
 };
 
 static int os_type;
-static bool connect2pc;
+bool connect2pc;
 
 static int first_dt_w_length = 0;
 static int first_string_w_length = 0;
@@ -2071,6 +2071,14 @@ static int serial_function_bind_config(struct android_usb_function *f,
 			}
 		}
 	}
+	if ((config->instances_on == 1) && !serial_initialized) {
+		err = gserial_init_port(ports, "tty", "serial_tty");
+		if (err) {
+			pr_err("serial: Cannot open port '%s'", "tty");
+			goto out;
+		}
+		config->instances_on++;
+	}
 
 	
 	if (ports > config->instances_on)
@@ -2085,8 +2093,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 		goto out;
 	}
 
-	config->instances_on = ports;
-	for (i = 0; i < ports; i++) {
+	for (i = 0; i < config->instances_on; i++) {
 		config->f_serial_inst[i] = usb_get_function_instance("gser");
 		if (IS_ERR(config->f_serial_inst[i])) {
 			err = PTR_ERR(config->f_serial_inst[i]);
@@ -3832,6 +3839,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	struct android_usb_function_holder *f_holder;
 	char *name;
 	char buf[256], *b;
+	const char *buffer;
 	char aliases[256], *a;
 	int err;
 	int is_ffs;
@@ -3858,18 +3866,20 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 		INIT_LIST_HEAD(&conf->enabled_functions);
 	}
 
-	if (get_radio_flag() & 0x20000 || (get_debug_flag() & 0x100)) {
-		buff = change_charging_to_ums(buff);
-		size = strlen(buff);
+	USB_INFO("switch function to : %s\n", buff);
+	buffer = buff;
+
+	if (get_radio_flag() & 0x20000 || (get_debug_flag() & 0x101)) {
+		buffer = change_charging_to_ums(buff);
+		USB_INFO("In debug mode, convert function to : %s\n", buffer);
 	}
 
 	if (get_radio_flag() & 0x20000) {
-		buff = add_usb_radio_debug_function(buff);
-		size = strlen(buff);
+		buffer = add_usb_radio_debug_function(buffer);
+		USB_INFO("In debug mode, convert to radio debug function : %s\n", buffer);
 	}
-	USB_INFO("switch function to : %s\n", buff);
 
-	strlcpy(buf, buff, sizeof(buf));
+	strlcpy(buf, buffer, sizeof(buf));
 	b = strim(buf);
 
 	dev->cdev->gadget->streaming_enabled = false;
@@ -3982,7 +3992,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		cdev->desc.bDeviceSubClass = device_desc.bDeviceSubClass;
 		cdev->desc.bDeviceProtocol = device_desc.bDeviceProtocol;
 
-		if (get_radio_flag() & 0x20000 || get_debug_flag() & 0x100){
+		if (get_radio_flag() & 0x20000 || get_debug_flag() & 0x101){
 			change_charging_pid_to_ums(cdev);
 		}
 
@@ -4294,7 +4304,8 @@ static int android_bind(struct usb_composite_dev *cdev)
 	ret = switch_dev_register(&cdev->sw_function_switch_on);
 	cdev->sw_function_switch_off.name = "function_switch_off";
 	ret = switch_dev_register(&cdev->sw_function_switch_off);
-
+	cdev->usb_nonstandard_cable.name = "usb_nonstandard_cable";
+	ret = switch_dev_register(&cdev->usb_nonstandard_cable);
 	return 0;
 }
 
@@ -4311,6 +4322,7 @@ static int android_usb_unbind(struct usb_composite_dev *cdev)
 	switch_dev_unregister(&cdev->sw_connect2pc);	
 	switch_dev_unregister(&cdev->sw_function_switch_on);
 	switch_dev_unregister(&cdev->sw_function_switch_off);
+	switch_dev_unregister(&cdev->usb_nonstandard_cable);
 	return 0;
 }
 

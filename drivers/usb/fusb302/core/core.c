@@ -3,167 +3,244 @@
 #include "TypeC.h"
 #include "PDProtocol.h"
 #include "PDPolicy.h"
+
+#ifdef FSC_DEBUG
 #include "version.h"
+#endif // FSC_DEBUG
 
-VOID core_initialize(VOID)
+extern FSC_BOOL         PolicyHasContract;
+extern doDataObject_t   USBPDContract;
+extern SourceOrSink     sourceOrSink;
+extern USBTypeCCurrent  SinkCurrent;
+
+/*
+ * Call this function to initialize the core.
+ */
+void core_initialize(void)
 {
-    InitializeTypeCVariables();                     
-    InitializePDProtocolVariables();                
-    InitializePDPolicyVariables();                  
+    InitializeTypeCVariables();                     // Initialize the TypeC variables for the state machine
+    InitializePDProtocolVariables();                // Initialize the USB PD variables
+    InitializePDPolicyVariables();                  // Initialize the USB PD variables
     InitializeTypeC();
-    core_enable_pd(false);
 }
 
-VOID core_initialize_config(VOID)
-{
-    InitializeTypeCVariables();                     
-    InitializePDProtocolVariables();                
-    InitializePDPolicyVariables();                  
-    InitializeTypeC();
-
-    
-}
-
-VOID core_enable_typec(BOOL enable)
+/*
+ * Call this function to enable or disable the core Type-C State Machine.
+ * TRUE  -> enable the core state machine
+ * FALSE -> disable the core state machine
+ */
+void core_enable_typec(FSC_BOOL enable)
 {
     if (enable == TRUE) EnableTypeCStateMachine();
     else                DisableTypeCStateMachine();
 }
 
-VOID core_state_machine(VOID)
+/*
+ * Call this function to run the state machines.
+ */
+void core_state_machine(void)
 {
     StateMachineTypeC();
 }
 
-VOID core_tick_at_100us(VOID)
+/*
+ * Call this function every 100us for the core's timers.
+ */
+void core_tick(void)
 {
-    TypeCTickAt100us();
-    ProtocolTickAt100us();
-    PolicyTickAt100us();
+    TypeCTick();
+    ProtocolTick();
+    PolicyTick();
+
+#ifdef FSC_DEBUG
     LogTickAt100us();
+#endif // FSC_DEBUG
 }
 
-UINT8 core_get_rev_lower(VOID)
+#ifdef FSC_DEBUG
+/*
+ * Call this function to get the lower 8-bits of the core revision number.
+ */
+FSC_U8 core_get_rev_lower(void)
 {
     return FSC_TYPEC_CORE_FW_REV_LOWER;
 }
 
-UINT8 core_get_rev_middle(VOID)
+/*
+ * Call this function to get the middle 8-bits of the core revision number.
+ */
+FSC_U8 core_get_rev_middle(void)
 {
     return FSC_TYPEC_CORE_FW_REV_MIDDLE;
 }
 
-UINT8 core_get_rev_upper(VOID)
+/*
+ * Call this function to get the upper 8-bits of the core revision number.
+ */
+FSC_U8 core_get_rev_upper(void)
 {
     return FSC_TYPEC_CORE_FW_REV_UPPER;
 }
+#endif // FSC_DEBUG
 
-VOID core_set_vbus_transition_time(UINT32 time_ms)
+void core_set_vbus_transition_time(FSC_U32 time_ms)
 {
     SetVbusTransitionTime(time_ms);
 }
 
-VOID core_configure_port_type(UINT8 config)
+void core_enable_pd(FSC_BOOL enable)
 {
-    ConfigurePortType(config);
-}
-
-VOID core_enable_pd(BOOL enable)
-{
-	printk("FUSB  %s : PD detection enable: %d\n", __func__, enable);
+	printk("FUSB  %s : PD detection enable: %d\n", __func__, enable);/*++ 2015/11/16, USB Team, PCN00001 ++*/
     if (enable == TRUE) EnableUSBPD();
     else                DisableUSBPD();
 }
 
-VOID core_set_source_caps(UINT8* buf)
+#ifdef FSC_DEBUG
+void core_configure_port_type(FSC_U8 config)
+{
+    ConfigurePortType(config);
+}
+
+#ifdef FSC_HAVE_SRC
+void core_set_source_caps(FSC_U8* buf)
 {
     WriteSourceCapabilities(buf);
 }
 
-VOID core_get_source_caps(UINT8* buf)
+void core_get_source_caps(FSC_U8* buf)
 {
     ReadSourceCapabilities(buf);
 }
+#endif // FSC_HAVE_SRC
 
-VOID core_set_sink_caps(UINT8* buf)
+#ifdef FSC_HAVE_SNK
+void core_set_sink_caps(FSC_U8* buf)
 {
     WriteSinkCapabilities(buf);
 }
 
-VOID core_get_sink_caps(UINT8* buf)
+void core_get_sink_caps(FSC_U8* buf)
 {
     ReadSinkCapabilities(buf);
 }
 
-VOID core_set_sink_req(UINT8* buf)
+void core_set_sink_req(FSC_U8* buf)
 {
     WriteSinkRequestSettings(buf);
 }
-VOID core_get_sink_req(UINT8* buf)
+
+void core_get_sink_req(FSC_U8* buf)
 {
     ReadSinkRequestSettings(buf);
 }
-VOID core_send_hard_reset(VOID)
+#endif // FSC_HAVE_SNK
+
+void core_send_hard_reset(void)
 {
     SendUSBPDHardReset();
 }
 
-VOID core_process_pd_buffer_read(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_pd_buffer_read(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessPDBufferRead(InBuffer, OutBuffer);
 }
 
-VOID core_process_typec_pd_status(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_typec_pd_status(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessTypeCPDStatus(InBuffer, OutBuffer);
 }
 
-VOID core_process_typec_pd_control(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_typec_pd_control(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessTypeCPDControl(InBuffer, OutBuffer);
 }
 
-VOID core_process_local_register_request(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_local_register_request(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessLocalRegisterRequest(InBuffer, OutBuffer);
 }
 
-VOID core_process_set_typec_state(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_set_typec_state(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessSetTypeCState(InBuffer, OutBuffer);
 }
 
-VOID core_process_read_typec_state_log(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_read_typec_state_log(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
    ProcessReadTypeCStateLog(InBuffer, OutBuffer);
 }
 
-VOID core_process_read_pd_state_log(UINT8* InBuffer, UINT8* OutBuffer)
+void core_process_read_pd_state_log(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     ProcessReadPDStateLog(InBuffer, OutBuffer);
 }
 
-VOID core_set_alternate_modes(UINT8* InBuffer, UINT8* OutBuffer)
+void core_set_alternate_modes(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     setAlternateModes(InBuffer[3]);
 }
 
-VOID core_set_manual_retries(UINT8* InBuffer, UINT8* OutBuffer)
+void core_set_manual_retries(FSC_U8* InBuffer, FSC_U8* OutBuffer)
 {
     setManualRetries(InBuffer[4]);
 }
 
-UINT8 core_get_alternate_modes(VOID)
+FSC_U8 core_get_alternate_modes(void)
 {
     return getAlternateModes();
 }
 
-UINT8 core_get_manual_retries(VOID)
+FSC_U8 core_get_manual_retries(void)
 {
     return getManualRetries();
 }
 
-VOID core_set_state_unattached(VOID)
+void core_set_state_unattached(void)
 {
     SetStateUnattached();
 }
+
+FSC_U16 core_get_advertised_current(void)
+{
+    FSC_U16 current = 0;                                                        // Current advertisement in mA
+    if(sourceOrSink == SINK)
+    {
+        if(PolicyHasContract)                                                   // If there is a PD contract
+        {
+            current = USBPDContract.FVRDO.OpCurrent * 10;                       // Return contracted current in mA
+        }
+        else                                                                    // We check Type-C current
+        {
+            switch(SinkCurrent)
+            {
+                /* Note for Default: This can be
+                 * 500mA for USB 2.0
+                 * 900mA for USB 3.1
+                 * Up to 1.5A for USB BC 1.2
+                 */
+                case utccDefault:
+                    current = 500;
+                    break;
+                case utcc1p5A:
+                    current = 1500;
+                    break;
+                case utcc3p0A:
+                    current = 3000;
+                    break;
+                case utccNone:
+                default:
+                    current = 0;
+                    break;
+            }
+        }
+    }
+    return current;
+}
+
+void core_reset_pd(void)
+{
+    EnableUSBPD();
+    USBPDEnable(TRUE, sourceOrSink);
+}
+
+#endif // FSC_DEBUG

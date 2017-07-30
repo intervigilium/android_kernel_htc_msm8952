@@ -28,136 +28,176 @@
 #ifndef _PDPOLICY_H_
 #define	_PDPOLICY_H_
 
+/////////////////////////////////////////////////////////////////////////////
+//                              Required headers
+/////////////////////////////////////////////////////////////////////////////
 #include "platform.h"
 #include "PD_Types.h"
-#include "vdm/vdm.h"
 
-extern BOOL                     USBPDTxFlag;                                    
-extern sopMainHeader_t          PDTransmitHeader;                               
-extern sopMainHeader_t          CapsHeaderSink;                                 
-extern sopMainHeader_t          CapsHeaderSource;                               
-extern sopMainHeader_t          CapsHeaderReceived;                             
-extern doDataObject_t           PDTransmitObjects[7];                           
-extern doDataObject_t           CapsSink[7];                                    
-extern doDataObject_t           CapsSource[7];                                  
-extern doDataObject_t           CapsReceived[7];                                
-extern doDataObject_t           USBPDContract;                                  
-extern doDataObject_t           SinkRequest;                                    
-extern UINT32                   SinkRequestMaxVoltage;                          
-extern UINT32                   SinkRequestMaxPower;                            
-extern UINT32                   SinkRequestOpPower;                             
-extern BOOL                     SinkGotoMinCompatible;                          
-extern BOOL                     SinkUSBSuspendOperation;                        
-extern BOOL                     SinkUSBCommCapable;                             
-extern BOOL                     SourceCapsUpdated;                              
+// EXTERNS
+extern FSC_BOOL                 USBPDTxFlag;                                    // Flag to indicate that we need to send a message (set by device policy manager)
+extern sopMainHeader_t          PDTransmitHeader;                               // Definition of the PD packet to send
 
-extern PolicyState_t            PolicyState;                                    
-extern UINT8                    PolicySubIndex;                                 
-extern BOOL                     PolicyIsSource;                                 
-extern BOOL                     PolicyIsDFP;                                    
-extern BOOL                     PolicyHasContract;                              
-extern UINT32                   VbusTransitionTime;                             
+#ifdef FSC_HAVE_SNK
+extern sopMainHeader_t          CapsHeaderSink;                                 // Definition of the sink capabilities of the device
+extern doDataObject_t           CapsSink[7];                                    // Power object definitions of the sink capabilities of the device
 
-extern sopMainHeader_t          PolicyRxHeader;                                 
-extern sopMainHeader_t          PolicyTxHeader;                                 
-extern doDataObject_t           PolicyRxDataObj[7];                             
-extern doDataObject_t           PolicyTxDataObj[7];                             
+extern doDataObject_t           SinkRequest;                                    // Sink request message
+extern FSC_U32                  SinkRequestMaxVoltage;                          // Maximum voltage that the sink will request
+extern FSC_U32                  SinkRequestMaxPower;                            // Maximum power the sink will request (used to calculate current as well)
+extern FSC_U32                  SinkRequestOpPower;                             // Operating power the sink will request (used to calculate current as well)
+extern FSC_BOOL                 SinkGotoMinCompatible;                          // Whether the sink will respond to the GotoMin command
+extern FSC_BOOL                 SinkUSBSuspendOperation;                        // Whether the sink wants to continue operation during USB suspend
+extern FSC_BOOL                 SinkUSBCommCapable;                             // Whether the sink is USB communications capable
+#endif // FSC_HAVE_SNK
 
-extern UINT32                   NoResponseTimer;                                
+#ifdef FSC_HAVE_SRC
+extern sopMainHeader_t          CapsHeaderSource;                               // Definition of the source capabilities of the device
+extern doDataObject_t           CapsSource[7];                                  // Power object definitions of the source capabilities of the device
+#endif // FSC_HAVE_SRC
 
-extern UINT32                   VdmTimer;
-extern BOOL                     VdmTimerStarted;
+extern sopMainHeader_t          CapsHeaderReceived;                             // Last capabilities header received (source or sink)
+extern doDataObject_t           PDTransmitObjects[7];                           // Data objects to send
+extern doDataObject_t           CapsReceived[7];                                // Last power objects received (source or sink)
+extern doDataObject_t           USBPDContract;                                  // Current USB PD contract (request object)
 
+#ifdef FSC_DEBUG
+extern FSC_BOOL                 SourceCapsUpdated;                              // Flag to indicate whether we have updated the source caps (for the GUI)
+#endif // FSC_DEBUG
 
-VOID InitializePDPolicyVariables(VOID);
-VOID USBPDEnable(BOOL DeviceUpdate, BOOL TypeCDFP);
-VOID USBPDDisable(BOOL DeviceUpdate);
-VOID EnableUSBPD(VOID);
-VOID DisableUSBPD(VOID);
-VOID USBPDPolicyEngine(VOID);
-VOID PolicyErrorRecovery(VOID);
-VOID PolicySourceSendHardReset(VOID);
-VOID PolicySourceSoftReset(VOID);
-VOID PolicySourceSendSoftReset(VOID);
-VOID PolicySourceStartup(VOID);
-VOID PolicySourceDiscovery(VOID);
-VOID PolicySourceSendCaps(VOID);
-VOID PolicySourceDisabled(VOID);
-VOID PolicySourceTransitionDefault(VOID);
-VOID PolicySourceNegotiateCap(VOID);
-VOID PolicySourceTransitionSupply(VOID);
-VOID PolicySourceCapabilityResponse(VOID);
-VOID PolicySourceReady(VOID);
-VOID PolicySourceGiveSourceCap(VOID);
-VOID PolicySourceGetSourceCap(VOID);
-VOID PolicySourceGetSinkCap(VOID);
-VOID PolicySourceGetSinkCap(VOID);
-VOID PolicySourceSendPing(VOID);
-VOID PolicySourceGotoMin(VOID);
-VOID PolicySourceGiveSinkCap(VOID);
-VOID PolicySourceSendDRSwap(VOID);
-VOID PolicySourceEvaluateDRSwap(VOID);
-VOID PolicySourceSendVCONNSwap(VOID);
-VOID PolicySourceSendPRSwap(VOID);
-VOID PolicySourceEvaluatePRSwap(VOID);
+extern PolicyState_t            PolicyState;                                    // State variable for Policy Engine
+extern FSC_U8                   PolicySubIndex;                                 // Sub index for policy states
+extern FSC_BOOL                 PolicyIsSource;                                 // Flag to indicate whether we are acting as a source or a sink
+extern FSC_BOOL                 PolicyIsDFP;                                    // Flag to indicate whether we are acting as a UFP or DFP
+extern FSC_BOOL                 PolicyHasContract;                              // Flag to indicate whether there is a contract in place
+extern FSC_U32                  VbusTransitionTime;                             // Time to wait for VBUS switch to transition
+
+extern sopMainHeader_t          PolicyRxHeader;                                 // Header object for USB PD messages received
+extern sopMainHeader_t          PolicyTxHeader;                                 // Header object for USB PD messages to send
+extern doDataObject_t           PolicyRxDataObj[7];                             // Buffer for data objects received
+extern doDataObject_t           PolicyTxDataObj[7];                             // Buffer for data objects to send
+
+volatile extern FSC_U32                  NoResponseTimer;                                // Policy engine no response timer
+
+#ifdef FSC_HAVE_VDM
+volatile extern FSC_U32                  VdmTimer;
+extern FSC_BOOL                 VdmTimerStarted;
+#endif // FSC_HAVE_VDM
+
+/////////////////////////////////////////////////////////////////////////////
+//                            LOCAL PROTOTYPES
+/////////////////////////////////////////////////////////////////////////////
+void PolicyTick(void);
+void InitializePDPolicyVariables(void);
+void USBPDEnable(FSC_BOOL DeviceUpdate, SourceOrSink TypeCDFP);
+void USBPDDisable(FSC_BOOL DeviceUpdate);
+void USBPDPolicyEngine(void);
+void PolicyErrorRecovery(void);
+
+#ifdef FSC_HAVE_SRC
+void PolicySourceSendHardReset(void);
+void PolicySourceSoftReset(void);
+void PolicySourceSendSoftReset(void);
+void PolicySourceStartup(void);
+void PolicySourceDiscovery(void);
+void PolicySourceSendCaps(void);
+void PolicySourceDisabled(void);
+void PolicySourceTransitionDefault(void);
+void PolicySourceNegotiateCap(void);
+void PolicySourceTransitionSupply(void);
+void PolicySourceCapabilityResponse(void);
+void PolicySourceReady(void);
+void PolicySourceGiveSourceCap(void);
+void PolicySourceGetSourceCap(void);
+void PolicySourceGetSinkCap(void);
+void PolicySourceSendPing(void);
+void PolicySourceGotoMin(void);
+void PolicySourceGiveSinkCap(void);
+void PolicySourceSendDRSwap(void);
+void PolicySourceEvaluateDRSwap(void);
+void PolicySourceSendVCONNSwap(void);
+void PolicySourceSendPRSwap(void);
+void PolicySourceEvaluatePRSwap(void);
 void PolicySourceWaitNewCapabilities(void);
-VOID PolicySinkSendHardReset(VOID);
-VOID PolicySinkSoftReset(VOID);
-VOID PolicySinkSendSoftReset(VOID);
-VOID PolicySinkTransitionDefault(VOID);
-VOID PolicySinkStartup(VOID);
-VOID PolicySinkDiscovery(VOID);
-VOID PolicySinkWaitCaps(VOID);
-VOID PolicySinkEvaluateCaps(VOID);
-VOID PolicySinkSelectCapability(VOID);
-VOID PolicySinkTransitionSink(VOID);
-VOID PolicySinkReady(VOID);
-VOID PolicySinkGiveSinkCap(VOID);
-VOID PolicySinkGetSinkCap(VOID);
-VOID PolicySinkGiveSourceCap(VOID);
-VOID PolicySinkGetSourceCap(VOID);
-VOID PolicySinkSendDRSwap(VOID);
-VOID PolicySinkEvaluateDRSwap(VOID);
-VOID PolicySinkEvaluateVCONNSwap(VOID);
-VOID PolicySinkSendPRSwap(VOID);
-VOID PolicySinkEvaluatePRSwap(VOID);
-VOID PolicyGiveVdm(VOID);
-VOID PolicyVdm(VOID);
-VOID PolicyInvalidState(VOID);
-VOID policyBISTReceiveMode(VOID);
-VOID policyBISTFrameReceived(VOID);
-VOID policyBISTCarrierMode2(VOID);
-BOOL PolicySendHardReset(PolicyState_t nextState, UINT32 delay);
-UINT8 PolicySendCommand(UINT8 Command, PolicyState_t nextState, UINT8 subIndex);
-UINT8 PolicySendCommandNoReset(UINT8 Command, PolicyState_t nextState, UINT8 subIndex);
-UINT8 PolicySendData(UINT8 MessageType, UINT8 NumDataObjects, doDataObject_t* DataObjects, PolicyState_t nextState, UINT8 subIndex, SopType sop);
-UINT8 PolicySendDataNoReset(UINT8 MessageType, UINT8 NumDataObjects, doDataObject_t* DataObjects, PolicyState_t nextState, UINT8 subIndex);
-VOID UpdateCapabilitiesRx(BOOL IsSourceCaps);
+void PolicySourceEvaluateVCONNSwap(void);
+#endif // FSC_HAVE_SRC
 
-VOID WriteSourceCapabilities(UINT8* abytData);
-VOID ReadSourceCapabilities(UINT8* abytData);
-VOID WriteSinkCapabilities(UINT8* abytData);
-VOID ReadSinkCapabilities(UINT8* abytData);
-VOID WriteSinkRequestSettings(UINT8* abytData);
-VOID ReadSinkRequestSettings(UINT8* abytData);
-VOID processDMTBIST(VOID);
+#ifdef FSC_HAVE_SNK
+void PolicySinkSendHardReset(void);
+void PolicySinkSoftReset(void);
+void PolicySinkSendSoftReset(void);
+void PolicySinkTransitionDefault(void);
+void PolicySinkStartup(void);
+void PolicySinkDiscovery(void);
+void PolicySinkWaitCaps(void);
+void PolicySinkEvaluateCaps(void);
+void PolicySinkSelectCapability(void);
+void PolicySinkTransitionSink(void);
+void PolicySinkReady(void);
+void PolicySinkGiveSinkCap(void);
+void PolicySinkGetSinkCap(void);
+void PolicySinkGiveSourceCap(void);
+void PolicySinkGetSourceCap(void);
+void PolicySinkSendDRSwap(void);
+void PolicySinkEvaluateDRSwap(void);
+void PolicySinkEvaluateVCONNSwap(void);
+void PolicySinkSendPRSwap(void);
+void PolicySinkEvaluatePRSwap(void);
+#endif
 
-VOID InitializeVdmManager(VOID);
-VOID convertAndProcessVdmMessage(SopType sop);
-BOOL sendVdmMessage(SopType sop, UINT32 * arr, UINT32 length, PolicyState_t next_ps);
-VOID doVdmCommand(VOID);
-VOID doDiscoverIdentity(VOID);
-VOID doDiscoverSvids(VOID);
+void PolicyInvalidState(void);
+void policyBISTReceiveMode(void);
+void policyBISTFrameReceived(void);
+void policyBISTCarrierMode2(void);
+void policyBISTTestData(void);
 
-SopType TokenToSopType(UINT8 data);
-VOID autoVdmDiscovery(VOID);
+FSC_BOOL PolicySendHardReset(PolicyState_t nextState, FSC_U32 delay);
+FSC_U8 PolicySendCommand(FSC_U8 Command, PolicyState_t nextState, FSC_U8 subIndex);
+FSC_U8 PolicySendCommandNoReset(FSC_U8 Command, PolicyState_t nextState, FSC_U8 subIndex);
+FSC_U8 PolicySendData(FSC_U8 MessageType, FSC_U8 NumDataObjects, doDataObject_t* DataObjects, PolicyState_t nextState, FSC_U8 subIndex, SopType sop);
+FSC_U8 PolicySendDataNoReset(FSC_U8 MessageType, FSC_U8 NumDataObjects, doDataObject_t* DataObjects, PolicyState_t nextState, FSC_U8 subIndex);
+void UpdateCapabilitiesRx(FSC_BOOL IsSourceCaps);
 
-BOOL GetPDStateLog(UINT8 * data);
-VOID PolicyTickAt100us(VOID);
+void processDMTBIST(void);
 
-VOID ProcessReadPDStateLog(UINT8* MsgBuffer, UINT8* retBuffer);
-VOID ProcessPDBufferRead(UINT8* MsgBuffer, UINT8* retBuffer);
+#ifdef FSC_HAVE_VDM
+// shim functions for VDM code
+void InitializeVdmManager(void);
+void convertAndProcessVdmMessage(SopType sop);
+void sendVdmMessage(SopType sop, FSC_U32 * arr, FSC_U32 length, PolicyState_t next_ps);
+void doVdmCommand(void);
+void doDiscoverIdentity(void);
+void doDiscoverSvids(void);
+void PolicyGiveVdm(void);
+void PolicyVdm(void);
+void autoVdmDiscovery(void);
+#endif // FSC_HAVE_VDM
 
-VOID SetVbusTransitionTime(UINT32 time_ms);
+SopType TokenToSopType(FSC_U8 data);
 
-#endif	
+#ifdef FSC_DEBUG
+#ifdef FSC_HAVE_SRC
+void WriteSourceCapabilities(FSC_U8* abytData);
+void ReadSourceCapabilities(FSC_U8* abytData);
+#endif // FSC_HAVE_SRC
+
+#ifdef FSC_HAVE_SNK
+void WriteSinkCapabilities(FSC_U8* abytData);
+void ReadSinkCapabilities(FSC_U8* abytData);
+void WriteSinkRequestSettings(FSC_U8* abytData);
+void ReadSinkRequestSettings(FSC_U8* abytData);
+
+#endif // FSC_HAVE_SNK
+
+FSC_BOOL GetPDStateLog(FSC_U8 * data);
+void ProcessReadPDStateLog(FSC_U8* MsgBuffer, FSC_U8* retBuffer);
+void ProcessPDBufferRead(FSC_U8* MsgBuffer, FSC_U8* retBuffer);
+
+#endif // FSC_DEBUG
+
+void EnableUSBPD(void);
+void DisableUSBPD(void);
+
+void SetVbusTransitionTime(FSC_U32 time_ms);
+
+#endif	/* _PDPOLICY_H_ */

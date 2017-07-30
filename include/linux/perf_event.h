@@ -306,14 +306,8 @@ struct perf_event {
 #endif 
 };
 
-enum perf_event_context_type {
-	task_context,
-	cpu_context,
-};
-
 struct perf_event_context {
 	struct pmu			*pmu;
-	enum perf_event_context_type	type;
 	raw_spinlock_t			lock;
 	struct mutex			mutex;
 

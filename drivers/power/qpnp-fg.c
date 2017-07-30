@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -90,6 +90,7 @@
 
 #define QPNP_FG_DEV_NAME "qcom,qpnp-fg"
 #define MEM_IF_TIMEOUT_MS	5000
+#define FG_CYCLE_MS		1500
 #define BUCKET_COUNT		8
 #define BUCKET_SOC_PCT		(256 / BUCKET_COUNT)
 
@@ -602,6 +603,7 @@ struct fg_trans {
 	struct fg_chip *chip;
 	struct fg_log_buffer *log; 
 	u8 *data;	
+	struct mutex memif_dfs_lock; 
 };
 
 struct fg_dbgfs {
@@ -637,7 +639,8 @@ static const struct of_device_id fg_match_table[] = {
 static char *fg_supplicants[] = {
 	"battery",
 	"bcl",
-	"fg_adc"
+	"fg_adc",
+	"lpm"
 };
 
 #ifdef CONFIG_HTC_BATT_8960
@@ -2730,6 +2733,11 @@ static int fg_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_NOW_RAW:
 		val->intval = get_sram_prop_now(chip, FG_DATA_CC_CHARGE);
 		break;
+#ifdef CONFIG_HTC_BATT_8960
+	case POWER_SUPPLY_PROP_SYSTEM_SOC:
+		val->intval = get_system_soc(chip);
+		break;
+#endif 
 	default:
 		return -EINVAL;
 	}
@@ -2875,21 +2883,11 @@ static void fg_cap_learning_work(struct work_struct *work)
 		goto fail;
 	if (!fg_is_temperature_ok_for_learning(chip)) {
 		fg_cap_learning_stop(chip);
-#ifdef CONFIG_HTC_BATT_8960
-		if (chip->wa_flag & USE_CC_SOC_REG)
-			goto wa_use_cc_soc_reg;
-#endif
 		goto fail;
 	}
 
-	if (chip->wa_flag & USE_CC_SOC_REG) {
-#ifdef CONFIG_HTC_BATT_8960
-wa_use_cc_soc_reg:
-#endif
-		mutex_unlock(&chip->learning_data.learning_lock);
-		fg_relax(&chip->capacity_learning_wakeup_source);
-		return;
-	}
+	if (chip->wa_flag & USE_CC_SOC_REG)
+		goto fail;
 
 	fg_mem_lock(chip);
 
@@ -2920,6 +2918,8 @@ wa_use_cc_soc_reg:
 		pr_info("total_cc_uah = %lld\n", chip->learning_data.cc_uah);
 
 fail:
+	if (chip->wa_flag & USE_CC_SOC_REG)
+		fg_relax(&chip->capacity_learning_wakeup_source);
 	mutex_unlock(&chip->learning_data.learning_lock);
 	return;
 
@@ -3529,6 +3529,9 @@ int emmc_misc_write(int val, int offset)
 	ssize_t nread;
 	int pnum = get_partition_num_by_name("misc");
 
+#if 1   
+	return -1;
+#endif
 	if (pnum < 0) {
 		pr_warn("unknown partition number for misc partition\n");
 		return 0;
@@ -3730,7 +3733,7 @@ int pmi8994_fg_store_battery_gauge_data_emmc(void)
 		pr_err("called before init\n");
 		return -EINVAL;
 	}
-
+#if 0   
 	
 	if (the_chip->store_batt_data_soc_thre > 0
 		&& store_emmc.store_soc > 0
@@ -3744,7 +3747,7 @@ int pmi8994_fg_store_battery_gauge_data_emmc(void)
 		pr_info("Stored soc=%d,currtime_s=%lu, stored_temp=%d\n",
 			store_emmc.store_soc, store_emmc.store_currtime_s, store_emmc.store_temperature);
 	}
-
+#endif
 	return 0;
 }
 
@@ -5235,6 +5238,7 @@ static void check_empty_work(struct work_struct *work)
 		chip->soc_empty = true;
 		if (chip->power_supply_registered)
 			power_supply_changed(&chip->bms_psy);
+		htc_gauge_event_notify(HTC_GAUGE_EVENT_EMPTY_SOC);
 	}
 	fg_relax(&chip->empty_check_wakeup_source);
 }
@@ -5875,6 +5879,7 @@ static int fg_memif_data_open(struct inode *inode, struct file *file)
 	trans->addr = dbgfs_data.addr;
 	trans->chip = dbgfs_data.chip;
 	trans->offset = trans->addr;
+	mutex_init(&trans->memif_dfs_lock);
 
 	file->private_data = trans;
 	return 0;
@@ -5886,6 +5891,7 @@ static int fg_memif_dfs_close(struct inode *inode, struct file *file)
 
 	if (trans && trans->log && trans->data) {
 		file->private_data = NULL;
+		mutex_destroy(&trans->memif_dfs_lock);
 		kfree(trans->log);
 		kfree(trans->data);
 		kfree(trans);
@@ -6016,10 +6022,13 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 	size_t ret;
 	size_t len;
 
+	mutex_lock(&trans->memif_dfs_lock);
 	
 	if (log->rpos >= log->wpos) {
-		if (get_log_data(trans) <= 0)
-			return 0;
+		if (get_log_data(trans) <= 0) {
+			len = 0;
+			goto unlock_mutex;
+		}
 	}
 
 	len = min(count, log->wpos - log->rpos);
@@ -6027,7 +6036,8 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 	ret = copy_to_user(buf, &log->data[log->rpos], len);
 	if (ret == len) {
 		pr_err("error copy sram register values to user\n");
-		return -EFAULT;
+		len = -EFAULT;
+		goto unlock_mutex;
 	}
 
 	
@@ -6035,6 +6045,9 @@ static ssize_t fg_memif_dfs_reg_read(struct file *file, char __user *buf,
 
 	*ppos += len;
 	log->rpos += len;
+
+unlock_mutex:
+	mutex_unlock(&trans->memif_dfs_lock);
 	return len;
 }
 
@@ -6055,14 +6068,20 @@ static ssize_t fg_memif_dfs_reg_write(struct file *file, const char __user *buf,
 	int cnt = 0;
 	u8  *values;
 	size_t ret = 0;
+	char *kbuf;
+	u32 offset;
 
 	struct fg_trans *trans = file->private_data;
-	u32 offset = trans->offset;
+
+	mutex_lock(&trans->memif_dfs_lock);
+	offset = trans->offset;
 
 	
-	char *kbuf = kmalloc(count + 1, GFP_KERNEL);
-	if (!kbuf)
-		return -ENOMEM;
+	kbuf = kmalloc(count + 1, GFP_KERNEL);
+	if (!kbuf) {
+		ret = -ENOMEM;
+		goto unlock_mutex;
+	}
 
 	ret = copy_from_user(kbuf, buf, count);
 	if (ret == count) {
@@ -6101,6 +6120,8 @@ static ssize_t fg_memif_dfs_reg_write(struct file *file, const char __user *buf,
 
 free_buf:
 	kfree(kbuf);
+unlock_mutex:
+	mutex_unlock(&trans->memif_dfs_lock);
 	return ret;
 }
 
@@ -6233,19 +6254,23 @@ static int bcl_trim_workaround(struct fg_chip *chip)
 	return 0;
 }
 
-#define FG_ALG_SYSCTL_1	0x4B0
-#define SOC_CNFG	0x450
-#define SOC_DELTA_OFFSET	3
-#define DELTA_SOC_PERCENT	1
-#define I_TERM_QUAL_BIT		BIT(1)
-#define PATCH_NEG_CURRENT_BIT	BIT(3)
+#define FG_ALG_SYSCTL_1			0x4B0
 #define KI_COEFF_PRED_FULL_ADDR		0x408
-#define KI_COEFF_PRED_FULL_4_0_MSB	0x88
-#define KI_COEFF_PRED_FULL_4_0_LSB	0x00
 #define TEMP_FRAC_SHIFT_REG		0x4A4
 #define FG_ADC_CONFIG_REG		0x4B8
+#define KI_COEFF_PRED_FULL_4_0_MSB	0x88
+#define KI_COEFF_PRED_FULL_4_0_LSB	0x00
 #define FG_BCL_CONFIG_OFFSET		0x3
+#define ALERT_CFG_OFFSET		3
+#define I_TERM_QUAL_BIT			BIT(1)
+#define PATCH_NEG_CURRENT_BIT		BIT(3)
 #define BCL_FORCED_HPM_IN_CHARGE	BIT(2)
+#define IRQ_USE_VOLTAGE_HYST_BIT	BIT(0)
+#define EMPTY_FROM_VOLTAGE_BIT		BIT(1)
+#define EMPTY_FROM_SOC_BIT		BIT(2)
+#define EMPTY_SOC_IRQ_MASK		(IRQ_USE_VOLTAGE_HYST_BIT | \
+					EMPTY_FROM_SOC_BIT | \
+					EMPTY_FROM_VOLTAGE_BIT)
 static int fg_common_hw_init(struct fg_chip *chip)
 {
 	int rc;
@@ -6325,6 +6350,23 @@ static int fg_common_hw_init(struct fg_chip *chip)
 			pr_err("failed to write BATT_TEMP_OFFSET rc=%d\n", rc);
 			return rc;
 		}
+	}
+
+	rc = fg_mem_masked_write(chip, FG_ALG_SYSCTL_1, EMPTY_SOC_IRQ_MASK,
+			0, ALERT_CFG_OFFSET);
+	if (rc) {
+		pr_err("failed to write to 0x4B3 rc=%d\n", rc);
+		return rc;
+	}
+
+	
+	msleep(FG_CYCLE_MS);
+
+	rc = fg_mem_masked_write(chip, FG_ALG_SYSCTL_1, EMPTY_SOC_IRQ_MASK,
+			EMPTY_SOC_IRQ_MASK, ALERT_CFG_OFFSET);
+	if (rc) {
+		pr_err("failed to write to 0x4B3 rc=%d\n", rc);
+		return rc;
 	}
 
 	return 0;

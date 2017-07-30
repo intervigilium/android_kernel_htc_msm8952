@@ -1235,10 +1235,10 @@ void edac_mc_handle_error(const enum hw_event_mc_err_type type,
 			}
 			n_labels++;
 			if (p != e->label) {
-				strcpy(p, OTHER_LABEL);
+				strncpy(p, OTHER_LABEL, sizeof(e->label) - (p - e->label) - 1);
 				p += strlen(OTHER_LABEL);
 			}
-			strcpy(p, dimm->label);
+			strncpy(p, dimm->label, sizeof(e->label) - (p - e->label) - 1);
 			p += strlen(p);
 			*p = '\0';
 
@@ -1262,11 +1262,11 @@ void edac_mc_handle_error(const enum hw_event_mc_err_type type,
 	}
 
 	if (!e->enable_per_layer_report) {
-		strcpy(e->label, "any memory");
+		strncpy(e->label, "any memory", sizeof(e->label) - 1);
 	} else {
 		edac_dbg(4, "csrow/channel to increment: (%d,%d)\n", row, chan);
 		if (p == e->label)
-			strcpy(e->label, "unknown memory");
+			strncpy(e->label, "unknown memory", sizeof(e->label) - 1);
 		if (type == HW_EVENT_ERR_CORRECTED) {
 			if (row >= 0) {
 				mci->csrows[row]->ce_count += error_count;
@@ -1285,7 +1285,7 @@ void edac_mc_handle_error(const enum hw_event_mc_err_type type,
 		if (pos[i] < 0)
 			continue;
 
-		p += sprintf(p, "%s:%d ",
+		p += snprintf(p, sizeof(e->location) - (p - e->location), "%s:%d ",
 			     edac_layer_name[mci->layers[i].type],
 			     pos[i]);
 	}

@@ -47,12 +47,12 @@ static struct workqueue_struct *ipa_clnt_resp_workqueue;
 static void *curr_conn;
 static bool qmi_modem_init_fin, qmi_indication_fin;
 static struct work_struct ipa_qmi_service_init_work;
-static bool is_load_uc;
 static uint32_t ipa_wan_platform;
 struct ipa_qmi_context *ipa_qmi_ctx;
 static atomic_t workqueues_stopped;
 static atomic_t ipa_qmi_initialized;
 struct mutex ipa_qmi_lock;
+static bool first_time_handshake;
 
 /* QMI A5 service */
 
@@ -448,7 +448,7 @@ static int qmi_init_modem_send_sync_msg(void)
 		IPA_MEM_PART(modem_comp_decomp_ofst) +
 		IPA_MEM_PART(modem_comp_decomp_size) + smem_restr_bytes - 1;
 
-	if (is_load_uc) {  /* First time boot */
+	if (!ipa_uc_loaded_check()) {  /* First time boot */
 		req.is_ssr_bootup_valid = false;
 		req.is_ssr_bootup = 0;
 	} else {  /* After SSR boot */
@@ -511,7 +511,7 @@ int qmi_filter_request_send(struct ipa_install_fltr_rule_req_msg_v01 *req)
 	if (req->filter_spec_list_len == 0) {
 		IPAWANDBG("IPACM pass zero rules to Q6\n");
 	} else {
-		IPAWANDBG("IPACM pass %d rules to Q6\n",
+		IPAWANDBG("IPACM pass %u rules to Q6\n",
 		req->filter_spec_list_len);
 	}
 
@@ -646,6 +646,11 @@ int qmi_filter_notify_send(struct ipa_fltr_installed_notif_req_msg_v01 *req)
 	if (req->filter_index_list_len == 0) {
 		IPAWANERR(" delete UL filter rule for pipe %d\n",
 		req->source_pipe_index);
+		return -EINVAL;
+	} else if (req->filter_index_list_len > QMI_IPA_MAX_FILTERS_V01) {
+		IPAWANERR(" UL filter rule for pipe %d exceed max (%u)\n",
+		req->source_pipe_index,
+		req->filter_index_list_len);
 		return -EINVAL;
 	} else if (req->filter_index_list[0].filter_index == 0 &&
 		req->source_pipe_index !=
@@ -803,8 +808,10 @@ static void ipa_q6_clnt_svc_arrive(struct work_struct *work)
 	}
 	qmi_modem_init_fin = true;
 	ipa_proxy_clk_unvote();
-	/* is_load_uc=FALSE indicates that SSR has occured */
-	ipa_q6_handshake_complete(!is_load_uc);
+	/* In cold-bootup, first_time_handshake = false */
+	ipa_q6_handshake_complete(first_time_handshake);
+	first_time_handshake = true;
+
 	IPAWANDBG("complete, qmi_modem_init_fin : %d\n",
 		qmi_modem_init_fin);
 
@@ -958,10 +965,9 @@ destroy_ipa_A7_svc_wq:
 	return;
 }
 
-int ipa_qmi_service_init(bool load_uc, uint32_t wan_platform_type)
+int ipa_qmi_service_init(uint32_t wan_platform_type)
 {
 	ipa_wan_platform = wan_platform_type;
-	is_load_uc = load_uc;
 	qmi_modem_init_fin = false;
 	qmi_indication_fin = false;
 	atomic_set(&workqueues_stopped, 0);

@@ -943,6 +943,17 @@ static struct dentry *lookup_real(struct inode *dir, struct dentry *dentry,
 {
 	struct dentry *old;
 
+	if (unlikely(dir == NULL)) {
+		if(dentry->d_name.name) {
+			printk(KERN_ERR "Storage Error Bugcheck: lookup for dentry name = %s %s %d\n",
+				dentry->d_name.name, __FUNCTION__, __LINE__);
+		} else {
+			printk(KERN_ERR "Storage Error Bugcheck: %s %d\n", __FUNCTION__, __LINE__);
+		}
+		dput(dentry);
+		return ERR_PTR(-ENOENT);
+	}
+
 	
 	if (unlikely(IS_DEADDIR(dir))) {
 		dput(dentry);

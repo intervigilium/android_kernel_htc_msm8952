@@ -25,6 +25,7 @@
 #include <linux/of.h>
 #include <linux/poll.h>
 #include <asm/byteorder.h>
+//#include <linux/miscdevice.h>
 #include <linux/platform_device.h>
 #include <linux/input/capsensor_fw_update.h>
 
@@ -68,7 +69,7 @@ static ssize_t debug_show(struct device *dev, struct device_attribute *attr,
 static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
-	if (sscanf(buf, "%ix", &debug_mask) != 1) {
+	if (kstrtou32(buf, 16, &debug_mask) != 0) {
 		pr_err("bad parameter");
 		return -EINVAL;
 	}
@@ -182,7 +183,7 @@ static int capsensor_fwu_release(struct inode *inode, struct file *filp)
 
 static ssize_t capsensor_fwu_read(struct file *file, char __user *buf, size_t count, loff_t *offset)
 {
-	
+	//struct cdev_data *fw_cdev = filp->private_data;
 	pr_info("%s: %zu", __func__, count);
 	return 0;
 }
@@ -194,6 +195,10 @@ static ssize_t capsensor_fwu_write(struct file *file, const char __user *buf, si
 
 	pr_info("%s: %zu", __func__, count);
 	tmp = kzalloc(count, GFP_KERNEL);
+	if (tmp == NULL) {
+		pr_err("%s: allocate tmp failed\n", __func__);
+		return -ENOMEM;
+	}
 	if(copy_from_user(tmp, buf, count)) {
 		pr_err("%s: copy_from_user failed", __func__);
 		kfree(tmp);
@@ -295,7 +300,7 @@ capsensor_fwu_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 }
 #else
 #define capsensor_fwu_compat_ioctl NULL
-#endif 
+#endif /* CONFIG_COMPAT */
 
 static int fw_update_process(struct data *fwu_data, struct firmware *fw)
 {
@@ -404,7 +409,7 @@ int register_cap_fw_update(struct capsensor_fwu_notifier *notifier)
 	snprintf(dev_name, 16, "%s", CAP_DEV_NAME);
 	if (fwu_data->dev_id != 0) {
 		snprintf(buf, 3, "%d", fwu_data->dev_id);
-		strcat(dev_name, buf);
+		strlcat(dev_name, buf, sizeof(dev_name));
 	}
 
 	fwu_data->fwu_dev = device_create(fwu_data->fwu_class, NULL, dev_no,

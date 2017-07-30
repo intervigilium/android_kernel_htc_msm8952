@@ -27,33 +27,42 @@
  * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
  *
  *****************************************************************************/
+#ifdef FSC_HAVE_VDM
 
 #ifndef __FSC_VDM_CALLBACKS_DEFS_H__
 #define __FSC_VDM_CALLBACKS_DEFS_H__
+/*
+ * This file defines types for callbacks that the VDM block will use.
+ * The intention is for the user to define functions that return data
+ * that VDM messages require, ex whether or not to enter a mode.
+ */
 
 #include "vdm_types.h"
 #include "../PD_Types.h"
 
-typedef Identity (*RequestIdentityInfo)(VOID);
+typedef Identity (*RequestIdentityInfo)(void);
 
-typedef SvidInfo (*RequestSvidInfo)(VOID);
+typedef SvidInfo (*RequestSvidInfo)(void);
 
-typedef ModesInfo (*RequestModesInfo)(UINT16);
+typedef ModesInfo (*RequestModesInfo)(FSC_U16);
 
-typedef BOOL (*ModeEntryRequest)(UINT16 svid, UINT32 mode_index);
+typedef FSC_BOOL (*ModeEntryRequest)(FSC_U16 svid, FSC_U32 mode_index);
 
-typedef BOOL (*ModeExitRequest)(UINT16 svid, UINT32 mode_index);
+typedef FSC_BOOL (*ModeExitRequest)(FSC_U16 svid, FSC_U32 mode_index);
 
-typedef BOOL (*EnterModeResult)(BOOL success, UINT16 svid, UINT32 mode_index);
+typedef FSC_BOOL (*EnterModeResult)(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index);
 
-typedef void (*ExitModeResult)(BOOL success, UINT16 svid, UINT32 mode_index);
+typedef void (*ExitModeResult)(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index);
 
-typedef void (*InformIdentity)(BOOL success, SopType sop, Identity id);
+typedef void (*InformIdentity)(FSC_BOOL success, SopType sop, Identity id);
 
-typedef void (*InformSvids)(BOOL success, SopType sop, SvidInfo svid_info);
+typedef void (*InformSvids)(FSC_BOOL success, SopType sop, SvidInfo svid_info);
 
-typedef void (*InformModes)(BOOL success, SopType sop, ModesInfo modes_info);
+typedef void (*InformModes)(FSC_BOOL success, SopType sop, ModesInfo modes_info);
 
-typedef void (*InformAttention)(UINT16 svid, UINT8 mode_index);
+typedef void (*InformAttention)(FSC_U16 svid, FSC_U8 mode_index);
 
-#endif 
+#endif // __FSC_VDM_CALLBACKS_DEFS_H__
+
+#endif // FSC_HAVE_VDM
+

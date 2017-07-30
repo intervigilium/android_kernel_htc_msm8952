@@ -1281,6 +1281,11 @@ static int _request_firmware(struct fw_desc *desc)
 		if (WARN_ON(ret)) {
 			dev_err(desc->device, "firmware: %s will not be loaded\n",
 				desc->name);
+			//++ Modem BSP, debug firmware not loaded
+			if  ( !strncmp( desc->name, "modem", 5 )) {
+			  BUG_ON(ret);
+			}
+			//-- Modem BSP
 			goto out;
 		}
 	}

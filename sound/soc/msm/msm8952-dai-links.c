@@ -41,6 +41,11 @@ static struct snd_soc_ops msm_pri_auxpcm_be_ops = {
 	.startup = msm_prim_auxpcm_startup,
 	.shutdown = msm_prim_auxpcm_shutdown,
 };
+
+static struct snd_soc_ops msm_sec_auxpcm_be_ops = {
+	.startup = msm_sec_auxpcm_startup,
+	.shutdown = msm_sec_auxpcm_shutdown,
+};
 #endif 
 
 static struct snd_soc_ops msm8952_slimbus_be_ops = {
@@ -1081,6 +1086,35 @@ static struct snd_soc_dai_link msm8952_common_be_dai[] = {
 		.ops = &msm_pri_auxpcm_be_ops,
 		.ignore_suspend = 1,
 	},
+	
+	{
+		.name = LPASS_BE_SEC_AUXPCM_RX,
+		.stream_name = "Sec AUX PCM Playback",
+		.cpu_dai_name = "msm-dai-q6-auxpcm.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SEC_AUXPCM_RX,
+		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
+		.ops = &msm_sec_auxpcm_be_ops,
+		.ignore_pmdown_time = 1,
+		.ignore_suspend = 1,
+		
+	},
+	{
+		.name = LPASS_BE_SEC_AUXPCM_TX,
+		.stream_name = "Sec AUX PCM Capture",
+		.cpu_dai_name = "msm-dai-q6-auxpcm.2",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SEC_AUXPCM_TX,
+		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
+		.ops = &msm_sec_auxpcm_be_ops,
+		.ignore_suspend = 1,
+	},
 #endif 
 	{
 		.name = LPASS_BE_QUAT_MI2S_TX,
@@ -1230,8 +1264,13 @@ static struct snd_soc_dai_link msm8952_common_be_dai[] = {
 		.stream_name = "Quinary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.5",
 		.platform_name = "msm-pcm-routing",
+#ifdef CONFIG_SND_SOC_TFA98XX
+		.codec_dai_name = "tfa98xx-aif-8-34",
+		.codec_name = "tfa98xx.8-0034",
+#else
 		.codec_dai_name = "msm_htc_mi2s_codec", 
 		.codec_name = "msm-stub-codec.1", 
+#endif
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_QUINARY_MI2S_RX,
 		.be_hw_params_fixup = htc_msm_be_hw_params_fixup, 
@@ -1311,7 +1350,7 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 {
 	struct snd_soc_card *card = &snd_soc_card_msm_card;
 	struct snd_soc_dai_link *msm8952_dai_links = NULL;
-	int num_links, ret, len1, len2, len3, i;
+	int num_links = 0, ret, len1, len2, len3, i; 
 	const char *wsa = "qcom,aux-codec";
 	const char *wsa_prefix = "qcom,aux-codec-prefix";
 	int num_strings;

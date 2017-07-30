@@ -1727,13 +1727,13 @@ static int do_mode_select(struct fsg_common *common, struct fsg_buffhd *bh)
 
 /*++ 2015/06/17, USB Team, PCN00036 ++*/
 int htc_usb_enable_function(char *name, int ebl);
-struct work_struct	ums_do_reserve_work;
+//struct work_struct	ums_do_reserve_work;
 struct work_struct	ums_adb_state_change_work;
-static char usb_function_ebl;
+/*static char usb_function_ebl;
 static void handle_reserve_cmd(struct work_struct *work)
 {
 	htc_usb_enable_function("adb", usb_function_ebl);
-}
+}*/
 
 char *switch_adb_off_state[3] = { "SWITCH_NAME=scsi_cmd", "SWITCH_STATE=0", NULL };
 char *switch_adb_on_state[3] = { "SWITCH_NAME=scsi_cmd", "SWITCH_STATE=1", NULL };
@@ -1746,7 +1746,7 @@ static void handle_reserve_cmd_scsi(struct work_struct *work)
 
 static int do_reserve(struct fsg_common *common, struct fsg_buffhd *bh)
 {
-	int	call_us_ret = -1;
+	/*int	call_us_ret = -1;
 	char *envp[] = {
 		"HOME=/",
 		"PATH=/sbin:/system/sbin:/system/bin:/system/xbin",
@@ -1754,7 +1754,7 @@ static int do_reserve(struct fsg_common *common, struct fsg_buffhd *bh)
 	};
 	char *exec_path[2] = {"/system/bin/stop", "/system/bin/start" };
 	char *argv_stop[] = { exec_path[0], "adbd", NULL, };
-	char *argv_start[] = { exec_path[1], "adbd", NULL, };
+	char *argv_start[] = { exec_path[1], "adbd", NULL, };*/
 
 
 	if (common->cmnd[1] == ('h'&0x1f) && common->cmnd[2] == 't'
@@ -1762,24 +1762,22 @@ static int do_reserve(struct fsg_common *common, struct fsg_buffhd *bh)
 		/* No special options */
 		switch (common->cmnd[5]) {
 		case 0x01: /* enable adbd */
-			call_us_ret = call_usermodehelper(exec_path[1],
+			/*call_us_ret = call_usermodehelper(exec_path[1],
 				argv_start, envp, UMH_WAIT_PROC);
 			usb_function_ebl = 1;
-			schedule_work(&ums_do_reserve_work);
-			printk(KERN_NOTICE "[USB] Enable adb daemon from mass_storage %s(%d)\n",
-				(call_us_ret == 0) ? "DONE" : "FAIL", call_us_ret);
+			schedule_work(&ums_do_reserve_work);*/
+			printk(KERN_NOTICE "[USB] Enable adb daemon from mass_storage\n");
 
 			/*also send uevent to framework to change persist property*/
 			scsi_adb_state = 1;
 			schedule_work(&ums_adb_state_change_work);
 		break;
 		case 0x02: /*disable adbd */
-			call_us_ret = call_usermodehelper(exec_path[0],
+			/*call_us_ret = call_usermodehelper(exec_path[0],
 				argv_stop, envp, UMH_WAIT_PROC);
 			usb_function_ebl = 0;
-			schedule_work(&ums_do_reserve_work);
-			printk(KERN_NOTICE "[USB] Disable adb daemon from mass_storage %s(%d)\n",
-				(call_us_ret == 0) ? "DONE" : "FAIL", call_us_ret);
+			schedule_work(&ums_do_reserve_work);*/
+			printk(KERN_NOTICE "[USB] Disable adb daemon from mass_storage\n");
 
 			/*also send uevent to framework to change persist property*/
 			scsi_adb_state = 0;
@@ -3331,7 +3329,7 @@ buffhds_first_it:
 	init_waitqueue_head(&common->fsg_wait);
 
 /*++ 2015/06/17, USB Team, PCN00036 ++*/
-	INIT_WORK(&ums_do_reserve_work, handle_reserve_cmd);
+	//INIT_WORK(&ums_do_reserve_work, handle_reserve_cmd);
 	INIT_WORK(&ums_adb_state_change_work, handle_reserve_cmd_scsi);
 
 	ret = switch_dev_register(&scsi_switch);

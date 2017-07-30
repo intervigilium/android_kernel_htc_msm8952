@@ -51,9 +51,24 @@
 #include <trace/events/trace_msm_low_power.h>
 #include "../../drivers/clk/qcom/clock.h"
 #ifdef CONFIG_HTC_POWER_DEBUG
+#include "../soc/qcom/rpm_stats.h"
 #include <linux/qpnp/pin.h>
 #include <linux/pinctrl/pinctrl.h>
 extern int htc_vregs_dump(char *vreg_buffer, int curr_len);
+#endif
+
+#include <soc/qcom/socinfo.h>
+#include <linux/console.h>
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+extern int msm_watchdog_suspend_deferred(void);
+extern int msm_watchdog_resume_deferred(void);
+#else
+static inline int msm_watchdog_suspend_deferred(void) { return 0; }
+static inline int msm_watchdog_resume_deferred(void) { return 0; }
+#endif
+
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+#include <htc_mnemosyne/htc_footprint.h>
 #endif
 
 #define SCLK_HZ (32768)
@@ -144,6 +159,30 @@ static int htc_pm_debug_mask = 0;
 module_param_named(htc_pm_debug_mask, htc_pm_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 #endif
 
+static void htc_lpm_pre_action(bool from_idle)
+{
+	int is_last_core_for_suspend = (!from_idle && cpu_online(smp_processor_id()));
+
+	if (is_last_core_for_suspend) {
+		if (suspend_console_deferred)
+			suspend_console();
+
+		msm_watchdog_suspend_deferred();
+	}
+}
+
+static void htc_lpm_post_action(bool from_idle)
+{
+	int is_last_core_for_suspend = (!from_idle && cpu_online(smp_processor_id()));
+
+	if (is_last_core_for_suspend) {
+		msm_watchdog_resume_deferred();
+
+		if (suspend_console_deferred)
+			resume_console();
+	}
+}
+
 s32 msm_cpuidle_get_deep_idle_latency(void)
 {
 	return 10;
@@ -223,6 +262,44 @@ static int lpm_cpu_callback(struct notifier_block *cpu_nb,
 		break;
 	}
 	return NOTIFY_OK;
+}
+
+void lpm_cluster_mode_disable(void)
+{
+	struct list_head *list;
+	int i;
+
+	 list_for_each(list, &lpm_root_node->child) {
+		struct lpm_cluster *n;
+
+		n = list_entry(list, typeof(*n), list);
+		if (!n)
+			return;
+		for (i = 0; i < n->nlevels; i++) {
+			struct lpm_level_avail *l = &n->levels[i].available;
+
+			l->idle_enabled = 0;
+		}
+	}
+}
+
+void lpm_cluster_mode_enable(void)
+{
+	struct list_head *list;
+	int i;
+
+	 list_for_each(list, &lpm_root_node->child) {
+		struct lpm_cluster *n;
+
+		n = list_entry(list, typeof(*n), list);
+		if (!n)
+			return;
+		for (i = 0; i < n->nlevels; i++) {
+			struct lpm_level_avail *l = &n->levels[i].available;
+
+			l->idle_enabled = 1;
+		}
+	}
 }
 
 static enum hrtimer_restart lpm_hrtimer_cb(struct hrtimer *h)
@@ -855,6 +932,9 @@ bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
 	int affinity_level = 0;
 	int state_id = get_cluster_id(cluster, &affinity_level);
 	int power_state = PSCI_POWER_STATE(cluster->cpu->levels[idx].is_reset);
+	int cpu;
+	bool success = false;
+	bool is_pc = false;
 #ifdef CONFIG_HTC_POWER_DEBUG
 	int curr_len = 0;
 #endif
@@ -898,14 +978,41 @@ bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
 
 			pr_info("The MSM_PM_DEBUG_VREGS turn on");
 		}
-		pr_info("[R] suspend end\n");
 	}
 #endif
 
 	state_id |= (power_state | affinity_level
 				| cluster->cpu->levels[idx].psci_id);
 
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	cpu = smp_processor_id();
+
+	is_pc = ((cluster->cpu->levels[idx].psci_id == MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)
+			|| (cluster->cpu->levels[idx].psci_id == MSM_PM_SLEEP_MODE_POWER_COLLAPSE));
+
+	init_cpu_foot_print(cpu, from_idle, is_pc);
+
+	if ((!from_idle && cpu_online(cpu))) {
+		msm_rpm_dump_stat(false);
+		pr_info("[R] suspend end\n");
+	}
+
+	htc_lpm_pre_action(from_idle);
+
+	success = !cpu_suspend(state_id);
+
+	set_cpu_foot_print(cpu, 0xb);
+
+	htc_lpm_post_action(from_idle);
+	if ((!from_idle && cpu_online(cpu))) {
+		pr_info("[R] resume start\n");
+		msm_rpm_dump_stat(false);
+	}
+
+	return success;
+#else
 	return !cpu_suspend(state_id);
+#endif
 }
 #elif defined(CONFIG_ARM_PSCI)
 bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
@@ -937,6 +1044,9 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 		struct cpuidle_driver *drv, int index)
 {
 	struct lpm_cluster *cluster = per_cpu(cpu_cluster, dev->cpu);
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	struct lpm_cpu_level *level;
+#endif
 	int64_t time = ktime_to_ns(ktime_get());
 	bool success = true;
 	int idx = cpu_power_select(dev, cluster->cpu, &index);
@@ -954,6 +1064,10 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 		dev->last_residency = 0;
 		goto exit;
 	}
+
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	level = &cluster->cpu->levels[idx];
+#endif
 
 	pwr_params = &cluster->cpu->levels[idx].pwr;
 	sched_set_cpu_cstate(smp_processor_id(), idx + 1,
@@ -1218,23 +1332,47 @@ static const struct platform_suspend_ops lpm_suspend_ops = {
 	.end = lpm_suspend_end,
 };
 
+static int msm_pm_htc_footprint_init(void)
+{
+#ifdef CONFIG_HTC_DEBUG_FOOTPRINT
+	store_pm_boot_entry_addr();
+
+	clean_reset_vector_debug_info(0);
+	init_cpu_foot_print(0, false, true);
+	set_cpu_foot_print(0, 0xb);
+	set_reset_vector_address_after_pc(0);
+	set_reset_vector_value_after_pc(0);
+#endif
+	return 0;
+}
+
+static int msm_pm_htc_init(void)
+{
+        msm_pm_htc_footprint_init();
+
+        suspend_console_deferred = 1;
+
+        return 0;
+}
+
 static int lpm_probe(struct platform_device *pdev)
 {
 	int ret;
 	int size;
 	struct kobject *module_kobj = NULL;
 
+	get_online_cpus();
 	lpm_root_node = lpm_of_parse_cluster(pdev);
 
 	if (IS_ERR_OR_NULL(lpm_root_node)) {
 		pr_err("%s(): Failed to probe low power modes\n", __func__);
+		put_online_cpus();
 		return PTR_ERR(lpm_root_node);
 	}
 
 	if (print_parsed_dt)
 		cluster_dt_walkthrough(lpm_root_node);
 
-	register_hotcpu_notifier(&lpm_cpu_nblk);
 	get_cpu();
 	on_each_cpu(setup_broadcast_timer, (void *)true, 1);
 	put_cpu();
@@ -1245,6 +1383,7 @@ static int lpm_probe(struct platform_device *pdev)
 	if (ret) {
 		pr_err("%s: Failed initializing scm_handoff_lock (%d)\n",
 			__func__, ret);
+		put_online_cpus();
 		return ret;
 	}
 
@@ -1254,12 +1393,13 @@ static int lpm_probe(struct platform_device *pdev)
 	register_cluster_lpm_stats(lpm_root_node, NULL);
 
 	ret = cluster_cpuidle_register(lpm_root_node);
+	put_online_cpus();
 	if (ret) {
 		pr_err("%s()Failed to register with cpuidle framework\n",
 				__func__);
 		goto failed;
 	}
-
+	register_hotcpu_notifier(&lpm_cpu_nblk);
 	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
 	if (!module_kobj) {
 		pr_err("%s: cannot find kobject for module %s\n",
@@ -1274,6 +1414,8 @@ static int lpm_probe(struct platform_device *pdev)
 				__func__);
 		goto failed;
 	}
+
+	msm_pm_htc_init();
 
 	return 0;
 failed:

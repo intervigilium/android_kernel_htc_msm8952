@@ -27,30 +27,44 @@
  * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
  *
  *****************************************************************************/
+#ifdef FSC_HAVE_VDM
 
 #ifndef __VDM_BITFIELD_TRANSLATORS_H__
 #define __VDM_BITFIELD_TRANSLATORS_H__
 
 #include "../platform.h"
 
-	UnstructuredVdmHeader 	getUnstructuredVdmHeader(UINT32 in);	
-	StructuredVdmHeader 	getStructuredVdmHeader(UINT32 in);		
-	IdHeader 				getIdHeader(UINT32 in);					
-	VdmType 				getVdmTypeOf(UINT32 in);				
+/*
+ * Functions that convert bits into internal header representations...
+ */
+	UnstructuredVdmHeader 	getUnstructuredVdmHeader(FSC_U32 in);	// converts 32 bits into an unstructured vdm header struct
+	StructuredVdmHeader 	getStructuredVdmHeader(FSC_U32 in);		// converts 32 bits into a structured vdm header struct
+	IdHeader 				getIdHeader(FSC_U32 in);					// converts 32 bits into an ID Header struct
+	VdmType 				getVdmTypeOf(FSC_U32 in);				// returns structured/unstructured vdm type
 
-	UINT32 	getBitsForUnstructuredVdmHeader(UnstructuredVdmHeader in);	
-	UINT32 	getBitsForStructuredVdmHeader(StructuredVdmHeader in);		
-	UINT32 	getBitsForIdHeader(IdHeader in);							
+/*
+ * Functions that convert internal header representations into bits...
+ */
+	FSC_U32 	getBitsForUnstructuredVdmHeader(UnstructuredVdmHeader in);	// converts unstructured vdm header struct into 32 bits
+	FSC_U32 	getBitsForStructuredVdmHeader(StructuredVdmHeader in);		// converts structured vdm header struct into 32 bits
+	FSC_U32 	getBitsForIdHeader(IdHeader in);							// converts ID Header struct into 32 bits
 
-	CertStatVdo 			getCertStatVdo(UINT32 in);
-	ProductVdo 				getProductVdo(UINT32 in);
-	CableVdo 				getCableVdo(UINT32 in);
-	AmaVdo 					getAmaVdo(UINT32 in);
+/*
+ * Functions that convert bits into internal VDO representations...
+ */
+	CertStatVdo 			getCertStatVdo(FSC_U32 in);
+	ProductVdo 				getProductVdo(FSC_U32 in);
+	CableVdo 				getCableVdo(FSC_U32 in);
+	AmaVdo 					getAmaVdo(FSC_U32 in);
 
- 	UINT32 	getBitsForProductVdo(ProductVdo in);	
-	UINT32 	getBitsForCertStatVdo(CertStatVdo in);	
-	UINT32	getBitsForCableVdo(CableVdo in);		
-	UINT32	getBitsForAmaVdo(AmaVdo in);			
+/*
+ * Functions that convert internal VDO representations into bits...
+ */
+	FSC_U32 getBitsForProductVdo(ProductVdo in);	// converts Product VDO struct into 32 bits
+	FSC_U32 getBitsForCertStatVdo(CertStatVdo in);	// converts Cert Stat VDO struct into 32 bits
+	FSC_U32	getBitsForCableVdo(CableVdo in);		// converts Cable VDO struct into 32 bits
+	FSC_U32	getBitsForAmaVdo(AmaVdo in);			// converts AMA VDO struct into 32 bits
 
-#endif 
+#endif // header guard
 
+#endif // FSC_HAVE_VDM

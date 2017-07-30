@@ -1034,7 +1034,7 @@ static int bcl_probe(struct spmi_device *spmi)
 		goto bcl_probe_exit;
 	}
 	bcl_psy.name = bcl_psy_name;
-	bcl_psy.type = POWER_SUPPLY_TYPE_BMS;
+	bcl_psy.type = POWER_SUPPLY_TYPE_BATTERY;
 	bcl_psy.get_property     = bcl_psy_get_property;
 	bcl_psy.set_property     = bcl_psy_set_property;
 	bcl_psy.num_properties   = 0;

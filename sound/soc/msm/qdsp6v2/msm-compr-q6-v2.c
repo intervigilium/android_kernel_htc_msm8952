@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, 2016 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -195,7 +195,7 @@ static void compr_event_handler(uint32_t opcode,
 		pr_debug("%s:writing %d bytes of buffer[%d] to dsp 2\n",
 				__func__, prtd->pcm_count, prtd->out_head);
 		temp = buf[0].phys + (prtd->out_head * prtd->pcm_count);
-		pr_debug("%s:writing buffer[%d] from 0x%pa\n",
+		pr_debug("%s:writing buffer[%d] from 0x%pK\n",
 			__func__, prtd->out_head, &temp);
 
 		if (runtime->tstamp_mode == SNDRV_PCM_TSTAMP_ENABLE)
@@ -246,7 +246,7 @@ static void compr_event_handler(uint32_t opcode,
 		break;
 	case ASM_DATA_EVENT_READ_DONE_V2: {
 		pr_debug("ASM_DATA_EVENT_READ_DONE\n");
-		pr_debug("buf = %p, data = 0x%X, *data = %p,\n"
+		pr_debug("buf = %pK, data = 0x%X, *data = %pK,\n"
 			 "prtd->pcm_irq_pos = %d\n",
 				prtd->audio_client->port[OUT].buf,
 			 *(uint32_t *)prtd->audio_client->port[OUT].buf->data,
@@ -256,7 +256,7 @@ static void compr_event_handler(uint32_t opcode,
 		memcpy(prtd->audio_client->port[OUT].buf->data +
 			   prtd->pcm_irq_pos, (ptrmem + READDONE_IDX_SIZE),
 			   COMPRE_CAPTURE_HEADER_SIZE);
-		pr_debug("buf = %p, updated data = 0x%X, *data = %p\n",
+		pr_debug("buf = %pK, updated data = 0x%X, *data = %pK\n",
 				prtd->audio_client->port[OUT].buf,
 			*(uint32_t *)(prtd->audio_client->port[OUT].buf->data +
 				prtd->pcm_irq_pos),
@@ -272,7 +272,7 @@ static void compr_event_handler(uint32_t opcode,
 		}
 		buf = prtd->audio_client->port[OUT].buf;
 
-		pr_debug("pcm_irq_pos=%d, buf[0].phys = 0x%pa\n",
+		pr_debug("pcm_irq_pos=%d, buf[0].phys = 0x%pK\n",
 				prtd->pcm_irq_pos, &buf[0].phys);
 		read_param.len = prtd->pcm_count - COMPRE_CAPTURE_HEADER_SIZE;
 		read_param.paddr = buf[0].phys +
@@ -298,7 +298,7 @@ static void compr_event_handler(uint32_t opcode,
 			pr_debug("%s: writing %d bytes of buffer[%d] to dsp\n",
 				__func__, prtd->pcm_count, prtd->out_head);
 			buf = prtd->audio_client->port[IN].buf;
-			pr_debug("%s: writing buffer[%d] from 0x%pa head %d count %d\n",
+			pr_debug("%s: writing buffer[%d] from 0x%pK head %d count %d\n",
 				__func__, prtd->out_head, &buf[0].phys,
 				prtd->pcm_count, prtd->out_head);
 			if (runtime->tstamp_mode == SNDRV_PCM_TSTAMP_ENABLE)
@@ -605,7 +605,7 @@ static int msm_compr_capture_prepare(struct snd_pcm_substream *substream)
 					- COMPRE_CAPTURE_HEADER_SIZE;
 			read_param.paddr = buf[i].phys
 					+ COMPRE_CAPTURE_HEADER_SIZE;
-			pr_debug("Push buffer [%d] to DSP, paddr: %pa, vaddr: %p\n",
+			pr_debug("Push buffer [%d] to DSP, paddr: %pK, vaddr: %pK\n",
 					i, &read_param.paddr,
 					buf[i].data);
 			q6asm_async_read(prtd->audio_client, &read_param);
@@ -966,7 +966,7 @@ static int msm_compr_hw_params(struct snd_pcm_substream *substream,
 	dma_buf->addr =  buf[0].phys;
 	dma_buf->bytes = runtime->hw.buffer_bytes_max;
 
-	pr_debug("%s: buf[%p]dma_buf->area[%p]dma_buf->addr[%pa]\n"
+	pr_debug("%s: buf[%pK]dma_buf->area[%pK]dma_buf->addr[%pK]\n"
 		 "dma_buf->bytes[%zd]\n", __func__,
 		 (void *)buf, (void *)dma_buf->area,
 		 &dma_buf->addr, dma_buf->bytes);
@@ -984,7 +984,7 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct compr_audio *compr = runtime->private_data;
 	struct msm_audio *prtd = &compr->prtd;
-	uint64_t timestamp;
+	uint64_t timestamp = 0; //HTC_AUD klocwork
 	uint64_t temp;
 
 	switch (cmd) {
@@ -1039,6 +1039,7 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 			struct snd_dec_ddp *ddp =
 				&compr->info.codec_param.codec.options.ddp;
 			uint32_t params_length = 0;
+			memset(params_value, 0, MAX_AC3_PARAM_SIZE);
 			/* check integer overflow */
 			if (ddp->params_length > UINT_MAX/sizeof(int)) {
 				pr_err("%s: Integer overflow ddp->params_length %d\n",
@@ -1079,12 +1080,14 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 			struct snd_dec_ddp *ddp =
 				&compr->info.codec_param.codec.options.ddp;
 			uint32_t params_length = 0;
+			memset(params_value, 0, MAX_AC3_PARAM_SIZE);
 			/* check integer overflow */
 			if (ddp->params_length > UINT_MAX/sizeof(int)) {
 				pr_err("%s: Integer overflow ddp->params_length %d\n",
 				__func__, ddp->params_length);
 				return -EINVAL;
 			}
+			params_length = ddp->params_length*sizeof(int);
 			if (params_length > MAX_AC3_PARAM_SIZE) {
 				/*MAX is 36*sizeof(int) this should not happen*/
 				pr_err("%s: params_length(%d) is greater than %zd\n",
@@ -1229,28 +1232,6 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 						payload);
 			pr_info("[%p] %s: call q6asm_enable_effect, rc %d\n",
 				prtd, __func__, rc);
-		} else { /* COPP */
-			u16 port_id[MSM_BACKEND_DAI_MAX] = {0};
-			int port_num = msm_pcm_routing_get_port(substream,port_id);
-			int i;
-
-			if(port_num > 0) {
-				for(i=0; i<port_num; i++) {
-					if (port_id[i] <= 0) {
-						pr_err("[%p] %s: invalid port_id 0x%x\n",
-							prtd, __func__, port_id[i]);
-					} else {
-						rc = q6adm_enable_effect(port_id[i],
-								     q6_param.module_id,
-								     q6_param.param_id,
-								     q6_param.payload_size,
-								     payload);
-						pr_info("[%p] %s: call q6adm_enable_effect to port 0x%x, rc %d\n",
-							prtd, __func__, port_id[i],rc);
-					}
-				}
-			} else
-				pr_info("%s:no adm port is found\n",__func__);
 		}
 #ifdef Q6_EFFECT_DEBUG
 		{

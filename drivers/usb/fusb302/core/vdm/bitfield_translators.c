@@ -27,17 +27,22 @@
  * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
  *
  *****************************************************************************/
+#ifdef FSC_HAVE_VDM
 
 #include "vdm_types.h"
 #include "bitfield_translators.h"
 
-VdmType getVdmTypeOf(UINT32 in) {
+// determines, based on the 32-bit header, whether a VDM is structured or unstructured.
+VdmType getVdmTypeOf(FSC_U32 in) {
+//	VdmType ret;
 
 	UnstructuredVdmHeader vdm_header = getUnstructuredVdmHeader(in);
 	return vdm_header.vdm_type;
 }
 
-UnstructuredVdmHeader getUnstructuredVdmHeader(UINT32 in) {
+// process a 32 bit field and parses it for VDM Header data
+// returns Unstructured VDM Header struct
+UnstructuredVdmHeader getUnstructuredVdmHeader(FSC_U32 in) {
 	UnstructuredVdmHeader ret;
 
 	ret.svid = 		(in >> 16) & 0x0000FFFF;
@@ -47,9 +52,10 @@ UnstructuredVdmHeader getUnstructuredVdmHeader(UINT32 in) {
 	return ret;
 }
 
-UINT32 	getBitsForUnstructuredVdmHeader(UnstructuredVdmHeader in) {
-	UINT32 ret;
-	UINT32 tmp;	
+// Turn the internal Unstructured VDM Header struct representation into a 32 bit field
+FSC_U32 	getBitsForUnstructuredVdmHeader(UnstructuredVdmHeader in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;	// cast each member to a 32 bit type first so it can be easily ORd in
 
 	ret = 0;
 
@@ -65,7 +71,10 @@ UINT32 	getBitsForUnstructuredVdmHeader(UnstructuredVdmHeader in) {
 	return ret;
 }
 
-StructuredVdmHeader getStructuredVdmHeader(UINT32 in) {
+// process a 32 bit field and return a parsed StructuredVdmHeader
+// assumes that the 32 bits are actually structured and not unstructured.
+// returns parsed Structured VDM Header Struct
+StructuredVdmHeader getStructuredVdmHeader(FSC_U32 in) {
 	StructuredVdmHeader ret;
 
 	ret.svid = 			(in >> 16) & 0x0000FFFF;
@@ -78,9 +87,10 @@ StructuredVdmHeader getStructuredVdmHeader(UINT32 in) {
 	return ret;
 }
 
-UINT32 	getBitsForStructuredVdmHeader(StructuredVdmHeader in) {
-	UINT32 ret;
-	UINT32 tmp;	
+// Turn the internal Structured VDM Header struct representation into a 32 bit field
+FSC_U32 	getBitsForStructuredVdmHeader(StructuredVdmHeader in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;	// cast each member to a 32 bit type first so it can be easily ORd in
 
 	ret = 0;
 
@@ -105,7 +115,9 @@ UINT32 	getBitsForStructuredVdmHeader(StructuredVdmHeader in) {
 	return ret;
 }
 
-IdHeader getIdHeader(UINT32 in) {
+// process a 32 bit field and parses it for ID Header data
+// returns parsed ID Header struct
+IdHeader getIdHeader(FSC_U32 in) {
 	IdHeader ret;
 
 	ret.usb_host_data_capable = 		(in >> 31) & 0x00000001;
@@ -117,9 +129,10 @@ IdHeader getIdHeader(UINT32 in) {
 	return ret;
 }
 
-UINT32 	getBitsForIdHeader(IdHeader in) {
-	UINT32 ret;
-	UINT32 tmp;	
+// Turn the internal Structured VDM Header struct representation into a 32 bit field
+FSC_U32 	getBitsForIdHeader(IdHeader in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;	// cast each member to a 32 bit type first so it can be easily ORd in
 
 	ret = 0;
 
@@ -141,7 +154,9 @@ UINT32 	getBitsForIdHeader(IdHeader in) {
 	return ret;
 }
 
-ProductVdo getProductVdo(UINT32 in) {
+// process a 32 bit field and parses it for Product VDO data
+// returns parsed Product VDO struct
+ProductVdo getProductVdo(FSC_U32 in) {
 	ProductVdo ret;
 
 	ret.usb_product_id = 	(in >> 16) & 0x0000FFFF;
@@ -150,9 +165,10 @@ ProductVdo getProductVdo(UINT32 in) {
 	return ret;
 }
 
-UINT32 	getBitsForProductVdo(ProductVdo in) {
-	UINT32 ret;
-	UINT32 tmp;
+// Turn the internal Product VDO struct representation into a 32 bit field
+FSC_U32 	getBitsForProductVdo(ProductVdo in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;
 
 	ret = 0;
 
@@ -165,7 +181,9 @@ UINT32 	getBitsForProductVdo(ProductVdo in) {
 	return ret;
 }
 
-CertStatVdo getCertStatVdo(UINT32 in) {
+// process a 32 bit field and parses it for Cert Stat VDO data
+// returns parsed Cert Stat VDO struct
+CertStatVdo getCertStatVdo(FSC_U32 in) {
 	CertStatVdo ret;
 
 	ret.test_id = (in >>  0) & 0x000FFFFF;
@@ -173,9 +191,10 @@ CertStatVdo getCertStatVdo(UINT32 in) {
 	return ret;
 }
 
-UINT32 	getBitsForCertStatVdo(CertStatVdo in) {
-	UINT32 ret;
-	UINT32 tmp;
+// Turn the internal Cert Stat VDO struct representation into a 32 bit field
+FSC_U32 	getBitsForCertStatVdo(CertStatVdo in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;
 
 	ret = 0;
 
@@ -185,7 +204,9 @@ UINT32 	getBitsForCertStatVdo(CertStatVdo in) {
 	return ret;
 }
 
-CableVdo getCableVdo(UINT32 in) {
+// process a 32 bit field and parses it for Cable VDO data
+// returns parsed Cable VDO struct
+CableVdo getCableVdo(FSC_U32 in) {
 	CableVdo ret;
 
 	ret.cable_hw_version =			(in >> 28) & 0x0000000F;
@@ -206,9 +227,10 @@ CableVdo getCableVdo(UINT32 in) {
 	return ret;
 }
 
-UINT32 getBitsForCableVdo(CableVdo in) {
-	UINT32 ret;
-	UINT32 tmp;
+// turn the internal Cable VDO representation into a 32 bit field
+FSC_U32 getBitsForCableVdo(CableVdo in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;
 
 	ret = 0;
 
@@ -257,7 +279,9 @@ UINT32 getBitsForCableVdo(CableVdo in) {
 	return ret;
 }
 
-AmaVdo getAmaVdo(UINT32 in) {
+// process a 32 bit field and parses it for AMA VDO data
+// returns parsed AMA VDO struct
+AmaVdo getAmaVdo(FSC_U32 in) {
 	AmaVdo ret;
 
 	ret.cable_hw_version =			(in >> 28) & 0x0000000F;
@@ -274,9 +298,10 @@ AmaVdo getAmaVdo(UINT32 in) {
 	return ret;
 }
 
-UINT32	getBitsForAmaVdo(AmaVdo in) {
-	UINT32 ret;
-	UINT32 tmp;
+// turn the internal AMA VDO representation into a 32 bit field
+FSC_U32	getBitsForAmaVdo(AmaVdo in) {
+	FSC_U32 ret;
+	FSC_U32 tmp;
 
 	ret = 0;
 
@@ -312,3 +337,5 @@ UINT32	getBitsForAmaVdo(AmaVdo in) {
 
 	return ret;
 }
+
+#endif // FSC_HAVE_VDM

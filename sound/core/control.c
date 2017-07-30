@@ -150,6 +150,8 @@ void snd_ctl_notify(struct snd_card *card, unsigned int mask,
 	
 	if (snd_BUG_ON(!card || !id))
 		return;
+	if (card->shutdown)
+		return;
 	read_lock(&card->ctl_files_rwlock);
 #if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
 	card->mixer_oss_change_count++;
@@ -1335,6 +1337,12 @@ static int snd_ctl_tlv_ioctl(struct snd_ctl_file *file,
 		err = -ENXIO;
 		goto __kctl_end;
 	}
+//HTC_AUD_START klocwork
+	if (tlv.numid - kctl->id.numid < 0) {
+		err = -EINVAL;
+		goto __kctl_end;
+	}
+//HTC_AUD_END
 	vd = &kctl->vd[tlv.numid - kctl->id.numid];
 	if ((op_flag == 0 && (vd->access & SNDRV_CTL_ELEM_ACCESS_TLV_READ) == 0) ||
 	    (op_flag > 0 && (vd->access & SNDRV_CTL_ELEM_ACCESS_TLV_WRITE) == 0) ||

@@ -25,7 +25,7 @@
 #define TASHA_SB_PGD_PORT_RX_BASE   0x40
 #define TASHA_SB_PGD_PORT_TX_BASE   0x50
 
-#define TASHA_ZDET_SUPPORTED true
+#define TASHA_ZDET_SUPPORTED false
 /* z value defined in milliohm */
 #define TASHA_ZDET_VAL_32	32000
 #define TASHA_ZDET_VAL_400	400000
@@ -86,6 +86,20 @@ enum wcd9335_codec_event {
 	WCD9335_CODEC_EVENT_CODEC_UP = 0,
 };
 
+enum tasha_on_demand_supply {
+	ON_DEMAND_MICBIAS = 0,
+	ON_DEMAND_SUPPLIES_MAX,
+};
+
+/* structure used to put the defined
+ * ondemand supply for codec
+ * and count being used.
+ */
+struct on_demand_supply {
+	struct regulator *supply;
+	int ondemand_supply_count;
+};
+
 /* Dai data structure holds the
  * dai specific info like rate,
  * channel number etc.
@@ -114,6 +128,13 @@ enum {
 	SPKR_MODE_1,          /* COMP Gain = 12dB, Smartboost Max = 5.5V */
 };
 
+/*
+ * Rx path gain offsets
+ */
+enum {
+	RX_GAIN_OFFSET_M1P5_DB,
+	RX_GAIN_OFFSET_0_DB,
+};
 
 extern void *tasha_get_afe_config(struct snd_soc_codec *codec,
 				  enum afe_config_type config_type);
@@ -137,4 +158,5 @@ extern int tasha_codec_enable_standalone_micbias(struct snd_soc_codec *codec,
 						int micb_num,
 						bool enable);
 extern int tasha_set_spkr_mode(struct snd_soc_codec *codec, int mode);
+extern int tasha_set_spkr_gain_offset(struct snd_soc_codec *codec, int offset);
 #endif

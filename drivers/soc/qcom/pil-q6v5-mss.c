@@ -47,7 +47,7 @@ static void PIL_Show_Time(void)
 	struct timespec ts_rtc;
 	struct rtc_time tm;
 
-	//rtc
+	
 	getnstimeofday(&ts_rtc);
 	rtc_time_to_tm(ts_rtc.tv_sec - (sys_tz.tz_minuteswest * 60), &tm);
 
@@ -78,29 +78,16 @@ static DECLARE_WORK(dump_ipc_router_log_work, dump_ipc_router_log_process);
 
 static void dump_ipc_router_log_process(struct work_struct *work)
 {
-	//disable print local port
-	//print_ipc_router_local_ports();
+	
+	
 	print_ipc_router_modem_log();
 }
-#endif//CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
+#endif
 
 #if defined(CONFIG_HTC_FEATURES_SSR)
 static int htc_skip_ramdump=false;
 static void htc_set_ramdump_mode (struct subsys_device *dev)
 {
-	/*modem restart condition and ramdump rule would follow below
-	1. Modem restart default enable
-	- flag [6] 0,   [8] 0 -> enable restart, no ramdump
-	- flag [6] 800, [8] 0 -> reboot
-	- flag [6] 800, [8] 8 -> disable restart, go DL mode
-	- flag [6] 0,   [8] 8 -> enable restart, online ramdump
-	2. Modem restart default disable
-	- flag [6] 0,   [8] 0 -> reboot
-	- flag [6] 800, [8] 0 -> enable restart, no ramdump
-	- flag [6] 800, [8] 8 -> enable restart, online ramdump
-	- flag [6] 0,   [8] 8 -> disable restart, go DL mode
-	3. Always disable Modem SSR if boot_mode != normal
-	*/
 #if defined(CONFIG_HTC_FEATURES_SSR_MODEM_ENABLE)
 	if (get_kernel_flag() & (KERNEL_FLAG_ENABLE_SSR_MODEM)) {
 		pr_info("%s: CONFIG_HTC_FEATURES_SSR_MODEM_ENABLE, KERNEL_FLAG_ENABLE_SSR_MODEM, RESET_SOC.\n", __func__);
@@ -162,14 +149,14 @@ static void log_modem_sfr(void)
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
 
-       /*+SSD_RIL: show time for debug*/
+       
 	PIL_Show_Time();
-       /*-SSD_RIL: show time for debug*/
+       
 	   
-#if defined(CONFIG_HTC_FEATURES_SSR) /*+SSD_RIL: Set dump mode when modem send specific words in SSR reason*/	
-       if (get_radio_flag() & BIT(3)) //Only enable under Radio flag =8;
+#if defined(CONFIG_HTC_FEATURES_SSR) 	
+       if (get_radio_flag() & BIT(3)) 
        {
-         if (strstr(reason, "[htc_disable_ssr]"))
+         if (strstr(reason, "[htc_disable_ssr]") || strstr(reason, "SFR Init: wdog or kernel error suspected") )
          {
            subsys_set_restart_level(dev, RESET_SOC);
            subsys_set_enable_ramdump(dev, DISABLE_RAMDUMP);
@@ -183,7 +170,7 @@ static void log_modem_sfr(void)
            pr_info("%s: [pil] Modem request skip ramdump.\n", __func__);
          }
 	}
-#endif /*-SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
+#endif 
 
 	subsys_set_restart_reason(dev, reason);
 #endif
@@ -206,7 +193,7 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
 
-	/* Ignore if we're the one that set the force stop GPIO */
+	
 	if (drv->crash_shutdown || subsys_get_crash_status(drv->subsys))
 		return IRQ_HANDLED;
 
@@ -270,23 +257,18 @@ static int modem_powerup(const struct subsys_desc *subsys)
 
 	if (subsys->is_not_loadable)
 		return 0;
-	/*
-	 * At this time, the modem is shutdown. Therefore this function cannot
-	 * run concurrently with the watchdog bite error handler, making it safe
-	 * to unset the flag below.
-	 */
 	INIT_COMPLETION(drv->stop_ack);
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->q6->desc.fw_name = subsys->fw_name;
 
-#if defined(CONFIG_HTC_FEATURES_SSR) /*+SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
+#if defined(CONFIG_HTC_FEATURES_SSR) 
         if (htc_skip_ramdump==true)
         {
           htc_skip_ramdump=false;
           htc_set_ramdump_mode(drv->subsys);		  
           pr_info("%s: [pil] restore htc ramdump mode!!\n",__func__);
         }
-#endif /*-SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
+#endif 
 
 	return pil_boot(&drv->q6->desc);
 }
@@ -483,7 +465,15 @@ static int pil_mss_loadable_init(struct modem_data *drv,
 	if (IS_ERR(q6->rom_clk))
 		return PTR_ERR(q6->rom_clk);
 
-	/* Optional. */
+	ret = of_property_read_u32(pdev->dev.of_node,
+					"qcom,pas-id", &drv->pas_id);
+	if (ret)
+		dev_warn(&pdev->dev, "Failed to find the pas_id.\n");
+
+	drv->subsys_desc.pil_mss_memsetup =
+	of_property_read_bool(pdev->dev.of_node, "qcom,pil-mss-memsetup");
+
+	
 	if (of_property_match_string(pdev->dev.of_node,
 			"qcom,active-clock-names", "gpll0_mss_clk") >= 0)
 		q6->gpll0_mss_clk = devm_clk_get(&pdev->dev, "gpll0_mss_clk");
@@ -514,7 +504,7 @@ static int pil_mss_driver_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
-	/* Create workqueue for ipc router log dump */
+	
 	dump_ipc_router_log_wq = create_singlethread_workqueue("dump_ipc_router_log_work");
 #endif
 

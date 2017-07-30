@@ -14,6 +14,7 @@
 #include <linux/mmc/core.h>
 #include <linux/mod_devicetable.h>
 #include <linux/notifier.h>
+#include <linux/errno.h>
 
 #define MMC_CARD_CMDQ_BLK_SIZE 512
 
@@ -54,6 +55,7 @@ struct mmc_ext_csd {
 	u8			sec_feature_support;
 	u8			rel_sectors;
 	u8			rel_param;
+	bool			enhanced_rpmb_supported;
 	u8			part_config;
 	u8			cache_ctrl;
 	u8			rst_n_function;
@@ -95,6 +97,8 @@ struct mmc_ext_csd {
 	u8			raw_partition_support;	/* 160 */
 	u8			raw_rpmb_size_mult;	/* 168 */
 	u8			raw_erased_mem_count;	/* 181 */
+	u8			raw_strobe_support;	/* 184 */
+#define MMC_STROBE_SUPPORT	(1 << 0)
 	u8			raw_ext_csd_structure;	/* 194 */
 	u8			raw_card_type;		/* 196 */
 	u8			raw_drive_strength;	/* 197 */
@@ -107,12 +111,16 @@ struct mmc_ext_csd {
 	u8			raw_sec_erase_mult;	/* 230 */
 	u8			raw_sec_feature_support;/* 231 */
 	u8			raw_trim_mult;		/* 232 */
+	u8			cache_flush_policy;	/* 240 */
 	u8			raw_bkops_status;	/* 246 */
 	u8			raw_sectors[4];		/* 212 - 4 bytes */
 	u8			cmdq_depth;		/* 307 */
 	u8			cmdq_support;		/* 308 */
+	u8			barrier_support;	/* 486 */
 
 	u8			fw_version;		/* 254 */
+
+    bool		ffu_mode_op;	/* FFU mode operation */
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
 };
@@ -321,6 +329,9 @@ enum mmc_pon_type {
 	MMC_LONG_PON = 1,
 	MMC_SHRT_PON,
 };
+
+#define MMC_QUIRK_CMDQ_DELAY_BEFORE_DCMD 6 /* microseconds */
+
 /*
  * MMC device
  */
@@ -349,6 +360,8 @@ struct mmc_card {
 #define MMC_STATE_NEED_BKOPS	(1<<11)		/* card needs to do BKOPS */
 #define MMC_STATE_CMDQ		(1<<12)         /* card is in cmd queue mode */
 #define MMC_STATE_SUSPENDED     (1<<13)         /* card is suspended */
+#define MMC_STATE_AUTO_BKOPS	(1<<14)		/* card is doing auto BKOPS */
+#define MMC_STATE_HS400_STROBE	(1<<15)         /* card is in strobe mode */
 	unsigned int		quirks; 	/* card quirks */
 #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
 #define MMC_QUIRK_BLKSZ_FOR_BYTE_MODE (1<<1)	/* use func->cur_blksize */
@@ -370,6 +383,10 @@ struct mmc_card {
  /* Skip data-timeout advertised by card */
 #define MMC_QUIRK_BROKEN_DATA_TIMEOUT	(1<<13)
 #define MMC_QUIRK_CACHE_DISABLE (1 << 14)       /* prevent cache enable */
+#define MMC_QUIRK_QCA6574_SETTINGS (1 << 15)	/* QCA6574 card settings*/
+#define MMC_QUIRK_QCA9377_SETTINGS (1 << 16)	/* QCA9377 card settings*/
+/* Make sure CMDQ is empty before queuing DCMD */
+#define MMC_QUIRK_CMDQ_EMPTY_BEFORE_DCMD (1 << 17)
 
 	unsigned int		erase_size;	/* erase size in sectors */
  	unsigned int		erase_shift;	/* if erase unit is power 2 */
@@ -493,6 +510,18 @@ struct mmc_fixup {
 #define CID_MANFID_NUMONYX_MICRON 0xfe
 
 #define END_FIXUP { 0 }
+/* extended CSD mapping to mmc version */
+enum mmc_version_ext_csd_rev {
+	MMC_V4_0,
+	MMC_V4_1,
+	MMC_V4_2,
+	MMC_V4_41 = 5,
+	MMC_V4_5,
+	MMC_V4_51 = MMC_V4_5,
+	MMC_V5_0,
+	MMC_V5_01 = MMC_V5_0,
+	MMC_V5_1
+};
 
 #define _FIXUP_EXT(_name, _manfid, _oemid, _rev_start, _rev_end,	\
 		   _cis_vendor, _cis_device,				\
@@ -544,6 +573,9 @@ struct mmc_fixup {
 		    card->cid.year,	  \
 		    card->cid.month)
 
+#define mmc_card_strobe(c) (((c)->ext_csd).raw_strobe_support & \
+				MMC_STROBE_SUPPORT)
+
 /*
  * Unconditionally quirk add/remove.
  */
@@ -567,6 +599,7 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_highspeed(c)	((c)->state & MMC_STATE_HIGHSPEED)
 #define mmc_card_hs200(c)	((c)->state & MMC_STATE_HIGHSPEED_200)
 #define mmc_card_hs400(c)	((c)->state & MMC_STATE_HIGHSPEED_400)
+#define mmc_card_hs400_strobe(c)	((c)->state & MMC_STATE_HS400_STROBE)
 #define mmc_card_blockaddr(c)	((c)->state & MMC_STATE_BLOCKADDR)
 #define mmc_card_ddr_mode(c)	((c)->state & MMC_STATE_HIGHSPEED_DDR)
 #define mmc_card_uhs(c)		((c)->state & MMC_STATE_ULTRAHIGHSPEED)
@@ -576,6 +609,7 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_doing_bkops(c)	((c)->state & MMC_STATE_DOING_BKOPS)
 #define mmc_card_need_bkops(c)	((c)->state & MMC_STATE_NEED_BKOPS)
 #define mmc_card_cmdq(c)       ((c)->state & MMC_STATE_CMDQ)
+#define mmc_card_doing_auto_bkops(c)	((c)->state & MMC_STATE_AUTO_BKOPS)
 #define mmc_card_suspended(c)  ((c)->state & MMC_STATE_SUSPENDED)
 
 #define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
@@ -586,6 +620,8 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_clr_hs200(c)	((c)->state &= ~MMC_STATE_HIGHSPEED_200)
 #define mmc_card_set_hs400(c)	((c)->state |= MMC_STATE_HIGHSPEED_400)
 #define mmc_card_clr_hs400(c)	((c)->state &= ~MMC_STATE_HIGHSPEED_400)
+#define mmc_card_set_hs400_strobe(c)	((c)->state |= MMC_STATE_HS400_STROBE)
+#define mmc_card_clr_hs400_strobe(c)	((c)->state &= ~MMC_STATE_HS400_STROBE)
 #define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
 #define mmc_card_set_ddr_mode(c) ((c)->state |= MMC_STATE_HIGHSPEED_DDR)
 #define mmc_card_clr_ddr_mode(c) ((c)->state &= ~MMC_STATE_HIGHSPEED_DDR)
@@ -601,6 +637,25 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_clr_cmdq(c)           ((c)->state &= ~MMC_STATE_CMDQ)
 #define mmc_card_set_suspended(c) ((c)->state |= MMC_STATE_SUSPENDED)
 #define mmc_card_clr_suspended(c) ((c)->state &= ~MMC_STATE_SUSPENDED)
+#define mmc_card_set_auto_bkops(c)	((c)->state |= MMC_STATE_AUTO_BKOPS)
+#define mmc_card_clr_auto_bkops(c)	((c)->state &= ~MMC_STATE_AUTO_BKOPS)
+
+static inline int get_mmc_fw_version(struct mmc_card *card)
+{
+	if (card)
+		return card->ext_csd.fw_version;
+	else
+		return -EINVAL;
+}
+
+static inline int get_mmc_manfid(struct mmc_card *card)
+{
+	if (card)
+		return card->cid.manfid;
+	else
+		return -EINVAL;
+}
+
 /*
  * Quirk add/remove for MMC products.
  */
@@ -663,6 +718,21 @@ static inline int mmc_card_broken_byte_mode_512(const struct mmc_card *c)
 static inline int mmc_card_long_read_time(const struct mmc_card *c)
 {
 	return c->quirks & MMC_QUIRK_LONG_READ_TIME;
+}
+
+static inline bool mmc_card_support_auto_bkops(const struct mmc_card *c)
+{
+	return c->ext_csd.rev >= MMC_V5_1;
+}
+
+static inline bool mmc_enable_qca6574_settings(const struct mmc_card *c)
+{
+	return c->quirks & MMC_QUIRK_QCA6574_SETTINGS;
+}
+
+static inline bool mmc_enable_qca9377_settings(const struct mmc_card *c)
+{
+	return c->quirks & MMC_QUIRK_QCA9377_SETTINGS;
 }
 
 #define mmc_card_name(c)	((c)->cid.prod_name)

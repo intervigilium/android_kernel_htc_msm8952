@@ -402,6 +402,7 @@ struct usb_composite_dev {
 	struct switch_dev		sw_function_switch_on;
 	struct switch_dev		sw_function_switch_off;
 /*-- 2015/6/1, USB Team, PCN00015 --*/
+	struct switch_dev		usb_nonstandard_cable;/*++ 2016/3/9, USB Team, PCN00020 ++*/
 
 	u8				next_string_id;
 	char				*def_manufacturer;

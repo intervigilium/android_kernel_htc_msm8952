@@ -118,8 +118,7 @@ struct mmc_cmdq_req;
 extern int mmc_cmdq_discard_queue(struct mmc_host *host, u32 tasks);
 extern int mmc_cmdq_halt(struct mmc_host *host, bool enable);
 extern int mmc_cmdq_halt_on_empty_queue(struct mmc_host *host);
-extern void mmc_cmdq_post_req(struct mmc_host *host, struct mmc_request *mrq,
-			      int err);
+extern void mmc_cmdq_post_req(struct mmc_host *host, int tag, int err);
 extern int mmc_cmdq_start_req(struct mmc_host *host,
 			      struct mmc_cmdq_req *cmdq_req);
 extern int mmc_cmdq_prepare_flush(struct mmc_command *cmd);
@@ -152,6 +151,7 @@ extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
 extern int mmc_switch_ignore_timeout(struct mmc_card *, u8, u8, u8,
 				     unsigned int);
 extern int mmc_send_ext_csd(struct mmc_card *card, u8 *ext_csd);
+extern int mmc_set_auto_bkops(struct mmc_card *card, bool enable);
 extern void mmc_clk_scaling(struct mmc_host *host, bool from_wq);
 extern void mmc_update_clk_scaling(struct mmc_host *host, bool is_cmdq_dcmd);
 
@@ -183,6 +183,7 @@ extern int mmc_set_blocklen(struct mmc_card *card, unsigned int blocklen);
 extern int mmc_set_blockcount(struct mmc_card *card, unsigned int blockcount,
 			      bool is_rel_write);
 extern int mmc_hw_reset(struct mmc_host *host);
+extern int mmc_cmdq_hw_reset(struct mmc_host *host);
 extern int mmc_hw_reset_check(struct mmc_host *host);
 extern int mmc_can_reset(struct mmc_card *card);
 
@@ -191,6 +192,11 @@ extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
 
 extern int __mmc_claim_host(struct mmc_host *host, atomic_t *abort);
 extern void mmc_release_host(struct mmc_host *host);
+
+extern void mmc_get_card(struct mmc_card *card);
+extern void mmc_put_card(struct mmc_card *card);
+extern void __mmc_put_card(struct mmc_card *card);
+
 extern int mmc_try_claim_host(struct mmc_host *host);
 extern void mmc_set_ios(struct mmc_host *host);
 extern int mmc_flush_cache(struct mmc_card *);
@@ -200,6 +206,31 @@ extern int mmc_detect_card_removed(struct mmc_host *host);
 extern void mmc_blk_init_bkops_statistics(struct mmc_card *card);
 extern void mmc_rpm_hold(struct mmc_host *host, struct device *dev);
 extern void mmc_rpm_release(struct mmc_host *host, struct device *dev);
+
+extern void mmc_prepare_mrq(struct mmc_card *card,
+	struct mmc_request *mrq, struct scatterlist *sg, unsigned sg_len,
+	unsigned dev_addr, unsigned blocks, unsigned blksz, int write);
+extern int mmc_wait_busy(struct mmc_card *card);
+extern int mmc_check_result(struct mmc_request *mrq);
+extern int mmc_simple_transfer(struct mmc_card *card,
+	struct scatterlist *sg, unsigned sg_len, unsigned dev_addr,
+	unsigned blocks, unsigned blksz, int write);
+
+/*
+ * eMMC5.0 Field Firmware Update (FFU) opcodes
+ */
+#define MMC_FFU_INVOKE_OP 302
+
+#define MMC_FFU_MODE_SET 0x1
+#define MMC_FFU_MODE_NORMAL 0x0
+#define MMC_FFU_INSTALL_SET 0x2
+
+
+#define MMC_FFU_FEATURES 0x1
+#define FFU_FEATURES(ffu_features) (ffu_features & MMC_FFU_FEATURES)
+
+int mmc_ffu_invoke(struct mmc_card *card, const char *name);
+
 
 /**
  *	mmc_claim_host - exclusively claim a host
@@ -213,5 +244,22 @@ static inline void mmc_claim_host(struct mmc_host *host)
 }
 
 extern u32 mmc_vddrange_to_ocrmask(int vdd_min, int vdd_max);
+
+/*
+ * eMMC5.0 Field Firmware Update (FFU) opcodes
+ */
+#define MMC_FFU_INVOKE_OP 302
+
+#define MMC_FFU_MODE_SET 0x1
+#define MMC_FFU_MODE_NORMAL 0x0
+#define MMC_FFU_INSTALL_SET 0x2
+
+
+#define MMC_FFU_FEATURES 0x1
+#define FFU_FEATURES(ffu_features) (ffu_features & MMC_FFU_FEATURES)
+
+int mmc_ffu_invoke(struct mmc_card *card, const char *name);
+
+
 
 #endif /* LINUX_MMC_CORE_H */

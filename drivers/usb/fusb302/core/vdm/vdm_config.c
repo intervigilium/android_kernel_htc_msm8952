@@ -1,8 +1,14 @@
+#ifdef FSC_HAVE_VDM
+
 #include "vdm_config.h"
 
-void ConfigureVdmResponses(UINT8* bytes) {
-    UINT16 _svid = 0;
-    UINT32 _mode = 0;
+#ifdef FSC_HAVE_DP
+#include "DisplayPort/dp.h"
+#endif // FSC_HAVE_DP
+
+void ConfigureVdmResponses(FSC_U8* bytes) {
+    FSC_U16 _svid = 0;
+    FSC_U32 _mode = 0;
 
     if (*(bytes+2)) {
         svid_enable = TRUE;
@@ -33,7 +39,7 @@ void ConfigureVdmResponses(UINT8* bytes) {
     mode_entered = FALSE;
 }
 
-void ReadVdmConfiguration(UINT8* data) {
+void ReadVdmConfiguration(FSC_U8* data) {
     if (svid_enable) {
         *(data+0+0) = 1;
     } else {
@@ -62,7 +68,7 @@ void ReadVdmConfiguration(UINT8* data) {
     *(data+12+2) = ((my_mode >> 16)& 0xFF);
     *(data+12+3) = ((my_mode >> 24)& 0xFF);
 
-    
+    // add in mode entry status
     if (mode_entered) {
         *(data+16+0) = 1;
     } else {
@@ -73,25 +79,25 @@ void ReadVdmConfiguration(UINT8* data) {
     *(data+16+3) = 0;
 }
 
-
-void configDp (BOOL enabled, UINT32 status)
+#ifdef FSC_HAVE_DP
+void configDp (FSC_BOOL enabled, FSC_U32 status)
 {
     DpEnabled = enabled;
     DpStatus.word = status;
 }
 
-void configAutoDpModeEntry (BOOL enabled, UINT32 mask, UINT32 value)
+void configAutoDpModeEntry (FSC_BOOL enabled, FSC_U32 mask, FSC_U32 value)
 {
     DpAutoModeEntryEnabled = enabled;
     DpModeEntryMask.word = mask;
     DpModeEntryValue.word = value;
 }
 
-void WriteDpControls(UINT8* data)
+void WriteDpControls(FSC_U8* data)
 {
-    BOOL en;
-    BOOL ame_en;
-    UINT32 m, v, stat;
+    FSC_BOOL en;
+    FSC_BOOL ame_en;
+    FSC_U32 m, v, stat;
 
     m = 0;
     v = 0;
@@ -99,55 +105,58 @@ void WriteDpControls(UINT8* data)
     ame_en = FALSE;
 
     en = *data++ ? TRUE : FALSE;
-    stat = (UINT32) *data++;
-    stat |= ((UINT32) (*data++) << 8);
-    stat |= ((UINT32) (*data++) << 16);
-    stat |= ((UINT32) (*data++) << 24);
+    stat = (FSC_U32) *data++;
+    stat |= ((FSC_U32) (*data++) << 8);
+    stat |= ((FSC_U32) (*data++) << 16);
+    stat |= ((FSC_U32) (*data++) << 24);
 
     ame_en = *data++ ? TRUE : FALSE;
-    m = (UINT32) *data++;
-    m |= ((UINT32) (*data++) << 8);
-    m |= ((UINT32) (*data++) << 16);
-    m |= ((UINT32) (*data++) << 24);
-    v = (UINT32) *data++;
-    v |= ((UINT32) (*data++) << 8);
-    v |= ((UINT32) (*data++) << 16);
-    v |= ((UINT32) (*data++) << 24);
+    m = (FSC_U32) *data++;
+    m |= ((FSC_U32) (*data++) << 8);
+    m |= ((FSC_U32) (*data++) << 16);
+    m |= ((FSC_U32) (*data++) << 24);
+    v = (FSC_U32) *data++;
+    v |= ((FSC_U32) (*data++) << 8);
+    v |= ((FSC_U32) (*data++) << 16);
+    v |= ((FSC_U32) (*data++) << 24);
 
     configDp(en, stat);
     configAutoDpModeEntry(ame_en, m, v);
 }
 
-void ReadDpControls(UINT8* data)
+void ReadDpControls(FSC_U8* data)
 {
-    *data++ = (UINT8) DpEnabled;
-    *data++ = (UINT8) (DpStatus.word);
-    *data++ = (UINT8) ((DpStatus.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpStatus.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpStatus.word >> 24) & 0xFF);
-    *data++ = (UINT8) DpAutoModeEntryEnabled;
-    *data++ = (UINT8) (DpModeEntryMask.word);
-    *data++ = (UINT8) ((DpModeEntryMask.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpModeEntryMask.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpModeEntryMask.word >> 24) & 0xFF);
-    *data++ = (UINT8) (DpModeEntryValue.word);
-    *data++ = (UINT8) ((DpModeEntryValue.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpModeEntryValue.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpModeEntryValue.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) DpEnabled;
+    *data++ = (FSC_U8) (DpStatus.word);
+    *data++ = (FSC_U8) ((DpStatus.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpStatus.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpStatus.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) DpAutoModeEntryEnabled;
+    *data++ = (FSC_U8) (DpModeEntryMask.word);
+    *data++ = (FSC_U8) ((DpModeEntryMask.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpModeEntryMask.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpModeEntryMask.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) (DpModeEntryValue.word);
+    *data++ = (FSC_U8) ((DpModeEntryValue.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpModeEntryValue.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpModeEntryValue.word >> 24) & 0xFF);
 }
 
-void ReadDpStatus(UINT8* data)
+void ReadDpStatus(FSC_U8* data)
 {
-    *data++ = (UINT8) (DpConfig.word);
-    *data++ = (UINT8) ((DpConfig.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpConfig.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpConfig.word >> 24) & 0xFF);
-    *data++ = (UINT8) (DpPpStatus.word);
-    *data++ = (UINT8) ((DpPpStatus.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpPpStatus.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpPpStatus.word >> 24) & 0xFF);
-    *data++ = (UINT8) (DpPpConfig.word);
-    *data++ = (UINT8) ((DpPpConfig.word >> 8) & 0xFF);
-    *data++ = (UINT8) ((DpPpConfig.word >> 16) & 0xFF);
-    *data++ = (UINT8) ((DpPpConfig.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) (DpConfig.word);
+    *data++ = (FSC_U8) ((DpConfig.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpConfig.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpConfig.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) (DpPpStatus.word);
+    *data++ = (FSC_U8) ((DpPpStatus.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpPpStatus.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpPpStatus.word >> 24) & 0xFF);
+    *data++ = (FSC_U8) (DpPpConfig.word);
+    *data++ = (FSC_U8) ((DpPpConfig.word >> 8) & 0xFF);
+    *data++ = (FSC_U8) ((DpPpConfig.word >> 16) & 0xFF);
+    *data++ = (FSC_U8) ((DpPpConfig.word >> 24) & 0xFF);
 }
+#endif // FSC_HAVE_DP
+
+#endif // FSC_HAVE_VDM

@@ -787,7 +787,7 @@ static int adreno_of_get_bus_data(struct platform_device *pdev,
 		struct kgsl_device_platform_data *pdata)
 {
 	struct device_node *parent =  pdev->dev.of_node;
-	int ret, num_usecases = 0, num_paths, len;
+	int ret=0, num_usecases = 0, num_paths, len;
 	const uint32_t *vec_arr = NULL;
 	const char *name;
 
@@ -2116,6 +2116,23 @@ static int adreno_getproperty(struct kgsl_device *device,
 			status = 0;
 		}
 		break;
+	case KGSL_PROP_DEVICE_BITNESS:
+	{
+		unsigned int bitness = 32;
+
+		if (sizebytes != sizeof(unsigned int)) {
+			status = -EINVAL;
+			break;
+		}
+
+		if (copy_to_user(value, &bitness,
+				sizeof(unsigned int))) {
+			status = -EFAULT;
+			break;
+		}
+		status = 0;
+	}
+	break;
 	default:
 		status = -EINVAL;
 	}

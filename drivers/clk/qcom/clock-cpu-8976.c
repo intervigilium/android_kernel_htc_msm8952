@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -132,13 +132,11 @@ static struct pll_clk a72ss_hf_pll = {
 		.vco_mask = BM(29, 28),
 		.pre_div_mask = BIT(12),
 		.post_div_mask = BM(9, 8),
-		.mn_en_mask = BIT(24),
 		.early_output_mask =  BIT(3),
 		.main_output_mask = BIT(0),
 	},
 	.vals = {
 		.config_ctl_val = 0x04E0405D,
-		.enable_mn = true,
 		.post_div_masked = BVAL(9, 8, (1)),
 		.vco_mode_masked = BVAL(21, 20, 1),
 	},
@@ -174,13 +172,11 @@ static struct pll_clk a53ss_sr_pll = {
 		.vco_mask = BM(21, 20),
 		.pre_div_mask = BM(14, 12),
 		.post_div_mask = BM(9, 8),
-		.mn_en_mask = BIT(24),
 		.early_output_mask =  BIT(3),
 		.main_output_mask = BIT(0),
 	},
 	.vals = {
 		.config_ctl_val = 0x00341600,
-		.enable_mn = true,
 		.post_div_masked =  BVAL(9, 8, (1)),
 	},
 	.data = {
@@ -221,13 +217,11 @@ static struct pll_clk cci_sr_pll = {
 		.vco_mask = BM(21, 20),
 		.pre_div_mask = BM(14, 12),
 		.post_div_mask = BM(9, 8),
-		.mn_en_mask = BIT(24),
 		.early_output_mask =  BIT(3),
 		.main_output_mask = BIT(0),
 	},
 	.vals = {
 		.config_ctl_val = 0x00141400,
-		.enable_mn = true,
 		.post_div_masked = BVAL(9, 8, (1)),
 		.vco_mode_masked = BVAL(21, 20, 1),
 	},
@@ -551,6 +545,30 @@ static struct clk *logical_cpu_to_clk(int cpu)
 	return NULL;
 }
 
+#if (defined(CONFIG_HTC_DEBUG_FOOTPRINT) && defined(CONFIG_HTC_DEBUG_MSM8976))
+/* get effective cpu idx by clk */
+int clk_get_cpu_idx(struct clk *c)
+{
+	/* cpu0 ~ cpu3 are small cluster. */
+	if (c == &a53ssmux.c || c == &a53_clk.c)
+		return 0;
+
+	/* cpu4 ~ cpu7 are big cluster. */
+	if (c == &a72ssmux.c || c == &a72_clk.c)
+		return 4;
+
+	return -1;
+}
+
+int clk_get_l2_idx(struct clk *c)
+{
+	if (c == &ccissmux.c || c == &cci_clk.c)
+		return 0;
+
+	return -1;
+}
+#endif
+
 static long corner_to_voltage(unsigned long corner, struct device *dev)
 {
 	struct opp *oppl;
@@ -577,6 +595,7 @@ static int add_opp(struct clk *c, struct device *cpudev, struct device *vregdev,
 	long ret, uv, corner;
 	bool use_voltages = false;
 	struct opp *oppl;
+	int j = 1;
 
 	rcu_read_lock();
 
@@ -588,12 +607,7 @@ static int add_opp(struct clk *c, struct device *cpudev, struct device *vregdev,
 		use_voltages = true;
 
 	do {
-		ret = clk_round_rate(c, rate + 1);
-		if (ret < 0) {
-			pr_warn("clock-cpu: round_rate failed at %lu\n", rate);
-			return ret;
-		}
-		rate = ret;
+		rate = c->fmax[j++];
 		level = find_vdd_level(c, rate);
 		if (level <= 0) {
 			pr_warn("clock-cpu: no uv for %lu.\n", rate);

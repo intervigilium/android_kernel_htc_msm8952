@@ -65,6 +65,7 @@ static int parse_config(struct device *dev, struct synaptics_dsx_board_data *bda
 	uint8_t cnt = 0, i = 0;
 	u32 data = 0;
 	int len = 0, size = 0;
+	const char *panel_id = NULL;
 
 	pr_info(" %s\n", __func__);
 	node = dev->of_node;
@@ -90,6 +91,11 @@ static int parse_config(struct device *dev, struct synaptics_dsx_board_data *bda
 
 		if (of_property_read_u32(pp, "pr_number", &data) == 0)
 			cfg_table[i].pr_number = data;
+
+		if (of_property_read_string(pp, "disp_panel", &panel_id))
+			cfg_table[i].disp_panel = NULL;
+		else
+			cfg_table[i].disp_panel = panel_id;
 
 		if (of_property_read_u32(pp, "eng_id", &data) == 0)
 			cfg_table[i].eng_id = data;
@@ -130,6 +136,10 @@ static int parse_config(struct device *dev, struct synaptics_dsx_board_data *bda
 
 		cfg_table[i].length = len;
 		memcpy(cfg_table[i].config, prop->value, cfg_table[i].length);
+		/*pr_info(rmi4_data->pdev->dev.parent, " DT#%d-id:%05x, pr:%d, len:%d\n", i,
+			cfg_table[i].sensor_id, cfg_table[i].pr_number, cfg_table[i].length);
+		pr_info(rmi4_data->pdev->dev.parent, " cfg=[%02x,%02x,%02x,%02x]\n", cfg_table[i].config[0],
+			cfg_table[i].config[1],	cfg_table[i].config[2], cfg_table[i].config[3]);*/
 		i++;
 	}
 
@@ -198,26 +208,6 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 		bdata->power_gpio = -1;
 	}
 	pr_info("%s: power_gpio = %d\n", __func__, bdata->power_gpio);
-
-#ifdef MTK_PLATFORM
-	if (of_property_read_u32(np, "synaptics,power-gpio-1v8", &value) == 0) {
-		bdata->power_gpio_1v8 = value;
-#else
-	gpio = of_get_named_gpio_flags(np,
-			"synaptics,power-gpio-1v8", 0, NULL);
-	if (gpio >= 0) {
-		bdata->power_gpio_1v8 = gpio;
-#endif
-		retval = of_property_read_u32(np, "synaptics,power-on-state",
-				&value);
-		if (retval < 0)
-			return retval;
-		else
-			bdata->power_on_state = value;
-	} else {
-		bdata->power_gpio_1v8 = -1;
-	}
-	pr_info("%s: power_gpio_1v8 = %d\n", __func__, bdata->power_gpio_1v8);
 
 	retval = of_property_read_u32(np, "synaptics,power-delay-ms",
 			&value);
@@ -351,6 +341,13 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 	else
 		bdata->support_cover = value;
 
+	retval = of_property_read_u32(np, "synaptics,config-setting-group",
+			&value);
+	if (retval < 0)
+		bdata->setting_group = 0;
+	else
+		bdata->setting_group = value;
+
 	retval = of_property_read_u32(np, "synaptics,hall-block-time",
 			&value);
 	if (retval < 0)
@@ -371,10 +368,10 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 		}
 		bdata->display_width  = coords[1];
 		bdata->display_height = coords[3];
-		
+		/*pr_info("DT-%s:display-coords = (%d, %d)", __func__, bdata->display_width,bdata->display_height);*/
 	}
 
-	
+	/* Parse eng_id */
 	if (of_property_read_u32(np, "htc,eng_id", &bdata->eng_id) == 0) {
 		pr_info("(INIT) eng_id = %d", bdata->eng_id);
 	} else if (of_property_read_u32(np, "htc,eng_id_mask", &bdata->eng_id_mask) == 0) {

@@ -20,7 +20,6 @@
 
 #define ADC_REPLY_ARRAY_SIZE		5
 
-/* ioctl define */
 #define HTC_BATT_IOCTL_MAGIC		0xba
 
 #define DEBUG_LOG_LENGTH		1024
@@ -76,7 +75,19 @@ struct battery_vol_alarm {
 	int enable;
 };
 
-/* information about the system we're running on */
+struct htc_charging_statistics {
+        unsigned long begin_chg_time;
+        unsigned long end_chg_time;
+        int begin_chg_batt_level;
+        int end_chg_batt_level;
+};
+
+struct htc_statistics_category {
+        unsigned long chg_time_sum;
+        unsigned long dischg_time_sum;
+        int sample_count;
+};
+
 extern unsigned int system_rev;
 
 enum {
@@ -127,6 +138,9 @@ struct htc_battery_platform_data {
 	int usb_temp_overheat_increase_threshold;
 	int normal_usb_temp_threshold;
 	int usb_temp_overheat_threshold;
+#ifdef CONFIG_HTC_BATT_WA_PCN0018
+	bool disable_pwrpath_after_eoc;
+#endif
 	int smooth_chg_full_delay_min;
 	int decreased_batt_level_check;
 	struct htc_gauge igauge;
@@ -139,6 +153,21 @@ enum {
 	BATT_ALARM_DISABLE_MODE,
 	BATT_ALARM_NORMAL_MODE,
 	BATT_ALARM_CRITICAL_MODE,
+};
+
+enum htc_chr_type_data {
+	DATA_NO_CHARGING = 0,
+	DATA_UNKNOWN_CHARGER,
+	DATA_UNKNOWN_TYPE,
+	DATA_USB,
+	DATA_USB_CDP,
+	DATA_AC,
+	DATA_QC2,
+	DATA_QC3,
+	DATA_PD_5V,
+	DATA_PD_9V,
+	DATA_PD_12V,
+	DATA_TYPE_C
 };
 
 #endif

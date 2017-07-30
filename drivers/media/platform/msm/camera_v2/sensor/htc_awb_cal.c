@@ -46,6 +46,12 @@ struct qct_lsc_struct{
 	unsigned long int	lsc_checksum;
 };
 
+struct gyro_struct{
+	unsigned long int gyro_caBuff[1];
+	unsigned long int fuse_id[4];
+	unsigned long int check_sum[1];
+};
+
 struct qct_awb_lsc_struct{
 	unsigned long int caBuff[8];/* AWB Calibartion */
 	struct qct_lsc_struct qct_lsc_data;/* LSC Calibration */
@@ -58,6 +64,9 @@ struct qct_awb_lsc_struct{
 // HTC_START, For new AWB check
 	unsigned long int awb_verify;
 // HTC_END, For new AWB check
+/*HTC_START for gyro offset calibration*/
+    struct gyro_struct gyro_data;
+/*HTC_END*/
 };
 
 static unsigned char cam_awb_ram[AWB_CAL_MAX_SIZE];

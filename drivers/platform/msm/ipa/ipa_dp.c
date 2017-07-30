@@ -246,7 +246,6 @@ static void ipa_handle_tx(struct ipa_sys_context *sys)
 	int cnt;
 
 	ipa_inc_client_enable_clks();
-	pm_stay_awake(ipa_ctx->pdev);
 	do {
 		cnt = ipa_handle_tx_core(sys, true, true);
 		if (cnt == 0) {
@@ -259,7 +258,6 @@ static void ipa_handle_tx(struct ipa_sys_context *sys)
 	} while (inactive_cycles <= POLLING_INACTIVITY_TX);
 
 	ipa_tx_switch_to_intr_mode(sys);
-	pm_relax(ipa_ctx->pdev);
 	ipa_dec_client_disable_clks();
 }
 
@@ -758,16 +756,23 @@ static void ipa_rx_switch_to_intr_mode(struct ipa_sys_context *sys)
 {
 	int ret;
 
-	if (!atomic_read(&sys->curr_polling_state)) {
-		IPAERR("already in intr mode\n");
-		goto fail;
-	}
-
 	ret = sps_get_config(sys->ep->ep_hdl, &sys->ep->connect);
 	if (ret) {
 		IPAERR("sps_get_config() failed %d\n", ret);
 		goto fail;
 	}
+
+	if (!atomic_read(&sys->curr_polling_state) &&
+		((sys->ep->connect.options & SPS_O_EOT) == SPS_O_EOT)) {
+		IPADBG("already in intr mode\n");
+		return;
+	}
+
+	if (!atomic_read(&sys->curr_polling_state)) {
+		IPAERR("Not in poll mode, and IRQ not enabled.\n");
+		goto fail;
+	}
+
 	sys->event.options = SPS_O_EOT;
 	ret = sps_register_event(sys->ep->ep_hdl, &sys->event);
 	if (ret) {
@@ -783,6 +788,13 @@ static void ipa_rx_switch_to_intr_mode(struct ipa_sys_context *sys)
 	}
 	atomic_set(&sys->curr_polling_state, 0);
 	ipa_handle_rx_core(sys, true, false);
+	if (sys->ep->client == IPA_CLIENT_APPS_LAN_CONS)
+		ipa_dec_release_wakelock(IPA_WAKELOCK_REF_CLIENT_LAN_RX);
+	else if (sys->ep->client == IPA_CLIENT_APPS_WAN_CONS)
+		ipa_dec_release_wakelock(IPA_WAKELOCK_REF_CLIENT_WAN_RX);
+	else
+		IPAERR("ipa_dec_release_wakelock failed, client enum %d\n",
+			sys->ep->client);
 	return;
 
 fail:
@@ -797,6 +809,16 @@ fail:
 static void ipa_sps_irq_control(struct ipa_sys_context *sys, bool enable)
 {
 	int ret;
+
+	/*
+	 * Do not change sps config in case we are in polling mode as this
+	 * indicates that sps driver already notified EOT event and sps config
+	 * should not change until ipa driver processes the packet.
+	 */
+	if (atomic_read(&sys->curr_polling_state)) {
+		IPADBG("in polling mode, do not change config\n");
+		return;
+	}
 
 	if (enable) {
 		ret = sps_get_config(sys->ep->ep_hdl, &sys->ep->connect);
@@ -902,6 +924,15 @@ static void ipa_sps_irq_rx_notify(struct sps_event_notify *notify)
 				IPAERR("sps_set_config() failed %d\n", ret);
 				break;
 			}
+			if (sys->ep->client == IPA_CLIENT_APPS_LAN_CONS)
+				ipa_inc_acquire_wakelock(
+				IPA_WAKELOCK_REF_CLIENT_LAN_RX);
+			else if (sys->ep->client == IPA_CLIENT_APPS_WAN_CONS)
+				ipa_inc_acquire_wakelock(
+				IPA_WAKELOCK_REF_CLIENT_WAN_RX);
+			else
+				IPAERR("acquire_wakelock failed, client(%d)\n",
+					sys->ep->client);
 			atomic_set(&sys->curr_polling_state, 1);
 			queue_work(sys->wq, &sys->work);
 		}
@@ -934,7 +965,6 @@ static void ipa_handle_rx(struct ipa_sys_context *sys)
 	int cnt;
 
 	ipa_inc_client_enable_clks();
-	pm_stay_awake(ipa_ctx->pdev);
 	do {
 		cnt = ipa_handle_rx_core(sys, true, true);
 		if (cnt == 0) {
@@ -947,7 +977,6 @@ static void ipa_handle_rx(struct ipa_sys_context *sys)
 	} while (inactive_cycles <= POLLING_INACTIVITY_RX);
 
 	ipa_rx_switch_to_intr_mode(sys);
-	pm_relax(ipa_ctx->pdev);
 	ipa_dec_client_disable_clks();
 }
 
@@ -2754,6 +2783,8 @@ static int ipa_assign_policy(struct ipa_sys_connect_params *in,
 					sys->pyld_hdlr = ipa_wan_rx_pyld_hdlr;
 					sys->rx_pool_sz =
 						ipa_ctx->wan_rx_ring_size;
+					in->ipa_ep_cfg.aggr.aggr_sw_eof_active
+						= true;
 					if (ipa_ctx->
 					ipa_client_apps_wan_cons_agg_gro) {
 						IPAERR("get close-by %u\n",
@@ -2797,7 +2828,18 @@ static int ipa_assign_policy(struct ipa_sys_connect_params *in,
 						IPA_GENERIC_AGGR_PKT_LIMIT;
 					}
 				}
-				sys->repl_trig_thresh = sys->rx_pool_sz / 8;
+				/*
+				 * When HOLB mitigation is enabled, there is
+				 * a need to replenish the buffers quickly.
+				 * Otherwise we may run into issues with Q6
+				 * ZIP requests.
+				 */
+				if (ipa_ctx->ipa_hw_type == IPA_HW_v2_6L)
+					sys->repl_trig_thresh =
+						 sys->rx_pool_sz / 16;
+				else
+					sys->repl_trig_thresh =
+						 sys->rx_pool_sz / 8;
 				if (nr_cpu_ids > 1)
 					sys->repl_hdlr =
 						ipa_fast_replenish_rx_cache;

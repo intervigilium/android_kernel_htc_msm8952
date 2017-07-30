@@ -250,6 +250,8 @@ static int shmem_radix_tree_replace(struct address_space *mapping,
 	if (pslot)
 		item = radix_tree_deref_slot_protected(pslot,
 							&mapping->tree_lock);
+	else
+		return -ENOENT;
 	if (item != expected)
 		return -ENOENT;
 	if (replacement)

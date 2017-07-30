@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -944,6 +944,23 @@ periph_interrupt(struct spmi_pmic_arb_dev *pmic_arb, u8 apid, bool show)
 	return IRQ_HANDLED;
 }
 
+static void register_status_debug(struct spmi_pmic_arb_dev *pmic_arb)
+{
+	uint32_t apid;
+	int j;
+
+	
+	for (apid = 0; apid < pmic_arb->max_periph_intrs; ++apid)
+		dev_err(pmic_arb->dev, "IRQ Clear[0x%llx]: 0x%x, ACC enabled[0x%llx]: 0x%x\n",
+				(unsigned long long)pmic_arb->ver->irq_clear(apid), readl_relaxed(pmic_arb->intr + pmic_arb->ver->irq_clear(apid)),
+				(unsigned long long)pmic_arb->ver->acc_enable(apid), readl_relaxed(pmic_arb->intr + pmic_arb->ver->acc_enable(apid)));
+
+	for (j=0; j<=7; j++) {
+		dev_err(pmic_arb->dev, "Acc Status[0x%llx]: 0x%x\n",
+			(unsigned long long)pmic_arb->ver->owner_acc_status(0, j), readl_relaxed(pmic_arb->intr + pmic_arb->ver->owner_acc_status(0, j)));
+	}
+}
+
 static irqreturn_t
 __pmic_arb_periph_irq(int irq, void *dev_id, bool show)
 {
@@ -951,10 +968,15 @@ __pmic_arb_periph_irq(int irq, void *dev_id, bool show)
 	u8 ee = pmic_arb->ee;
 	u32 ret = IRQ_NONE;
 	u32 status;
+	static u32 cnt = 0;
 
 	int first = pmic_arb->min_intr_apid >> 5;
 	int last = pmic_arb->max_intr_apid >> 5;
 	int i, j;
+	
+	bool acc_valid = false;
+	u32 irq_status = 0;
+
 
 	dev_dbg(pmic_arb->dev, "Peripheral interrupt detected\n");
 
@@ -962,6 +984,8 @@ __pmic_arb_periph_irq(int irq, void *dev_id, bool show)
 	for (i = first; i <= last; ++i) {
 		status = readl_relaxed(pmic_arb->intr +
 					pmic_arb->ver->owner_acc_status(ee, i));
+		if (status)
+			acc_valid = true;
 
 		if ((i == 0) && (status & pmic_arb->irq_acc0_init_val)) {
 			dev_dbg(pmic_arb->dev, "Ignoring IRQ acc[0] mask:0x%x\n",
@@ -978,8 +1002,33 @@ __pmic_arb_periph_irq(int irq, void *dev_id, bool show)
 		}
 	}
 
-	if (IRQ_NONE == ret)
+	
+	if (!acc_valid) {
+		for (i = pmic_arb->min_intr_apid; i <= pmic_arb->max_intr_apid;
+				i++) {
+			if (!is_apid_valid(pmic_arb, i))
+				continue;
+			irq_status = readl_relaxed(pmic_arb->intr +
+					pmic_arb->ver->irq_status(i));
+			if (irq_status) {
+				dev_dbg(pmic_arb->dev,
+					"Dispatching for IRQ_STATUS_REG:0x%lx IRQ_STATUS:0x%x\n",
+					(ulong) pmic_arb->ver->irq_status(i),
+					irq_status);
+				ret |= periph_interrupt(pmic_arb, i, show);
+			}
+		}
+	}
+
+	if (IRQ_NONE == ret) {
+		if ((cnt == 0) || (cnt == 10000)) {
+			dev_err(pmic_arb->dev, "Peripheral interrupt detected. first: 0x%x, last: 0x%x, irq: 0x%x\n", first, last, irq);
+			register_status_debug(pmic_arb);
+			cnt = 0;
+		}
 		ret = IRQ_HANDLED;
+		cnt++;
+	}
 
 	return ret;
 }
@@ -1056,6 +1105,28 @@ static void pmic_arb_handle_stuck_irqs(struct spmi_pmic_arb_dev *pmic_arb)
 		}
 	}
 }
+
+static void pmic_arb_clear_spmi(struct spmi_pmic_arb_dev *pmic_arb)
+{
+        uint32_t apid;
+
+		dev_err(pmic_arb->dev, " %s: %d\n", __func__, __LINE__);
+		register_status_debug(pmic_arb);
+
+        for (apid = 0; apid < pmic_arb->max_periph_intrs; ++apid) {
+                u32 owner = SPMI_OWNERSHIP_PERIPH2OWNER(
+                                        readl_relaxed(pmic_arb->cnfg +
+                                              SPMI_OWNERSHIP_TABLE_REG(apid)));
+
+                if (owner == pmic_arb->ee) {
+                        writel_relaxed(0x0, pmic_arb->intr +
+                                pmic_arb->ver->irq_clear(apid));
+                        writel_relaxed(0x0, pmic_arb->intr +
+                                pmic_arb->ver->acc_enable(apid));
+                }
+        }
+}
+
 
 static int
 spmi_pmic_arb_get_property(struct platform_device *pdev, char *pname, u32 *prop)
@@ -1274,6 +1345,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	pmic_arb->controller.dev.of_node = of_node_get(pdev->dev.of_node);
 
 	pmic_arb_handle_stuck_irqs(pmic_arb);
+	pmic_arb_clear_spmi(pmic_arb);
 
 	
 	pmic_arb->controller.cmd = pmic_arb_cmd;
