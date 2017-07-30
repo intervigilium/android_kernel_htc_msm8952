@@ -354,7 +354,7 @@ static int snd_usb_audio_create(struct usb_device *dev, int idx,
 	struct snd_card *card;
 	struct snd_usb_audio *chip;
 	int err, len;
-	char component[14];
+	char component[18]; //HTC_AUD klockwork
 	static struct snd_device_ops ops = {
 		.dev_free =	snd_usb_audio_dev_free,
 	};

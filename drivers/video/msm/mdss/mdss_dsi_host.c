@@ -50,7 +50,7 @@ struct mdss_hw mdss_dsi1_hw = {
 };
 
 
-#define DSI_EVENT_Q_MAX	4
+#define DSI_EVENT_Q_MAX	8
 
 #define DSI_BTA_EVENT_TIMEOUT (HZ / 10)
 
@@ -1297,7 +1297,9 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		}
 
 		/* DSI_COMMAND_MODE_NULL_INSERTION_CTRL */
-		if (ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_104_2) {
+		if ((ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_104_2)
+			&& ctrl_pdata->null_insert_enabled) {
+
 			data = (mipi->vc << 1); /* Virtual channel ID */
 			data |= 0 << 16; /* Word count of the NULL packet */
 			data |= 0x1; /* Enable Null insertion */
@@ -1306,10 +1308,17 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 
 		/* Enable frame transfer in burst mode */
 		if (ctrl_pdata->shared_data->hw_rev >= MDSS_DSI_HW_REV_103) {
-			data = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
-			data = data | BIT(16);
-			MIPI_OUTP((ctrl_pdata->ctrl_base + 0x1b8), data);
-			ctrl_pdata->burst_mode_enabled = 1;
+			if (ctrl_pdata->burst_feature_disabled) {
+				data = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
+				data &= ~BIT(16);
+				MIPI_OUTP((ctrl_pdata->ctrl_base + 0x1b8), data);
+				ctrl_pdata->burst_mode_enabled = 0;
+			} else {
+				data = MIPI_INP(ctrl_pdata->ctrl_base + 0x1b8);
+				data = data | BIT(16);
+				MIPI_OUTP((ctrl_pdata->ctrl_base + 0x1b8), data);
+				ctrl_pdata->burst_mode_enabled = 1;
+			}
 		}
 
 		/* DSI_COMMAND_MODE_MDP_STREAM_CTRL */
@@ -2293,7 +2302,7 @@ int mdss_dsi_cmd_mdp_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 			if (mdss_dsi_mdp_busy_tout_check(ctrl)) {
 				pr_err("%s: timeout error\n", __func__);
 				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
-				"dsi0_phy", "dsi1_ctrl", "dsi1_phy", "panic");
+				"dsi0_phy", "dsi1_ctrl", "dsi1_phy");
 			}
 		}
 	}
@@ -2619,6 +2628,8 @@ static int dsi_event_thread(void *data)
 				ctrl->recovery->fxn(ctrl->recovery->data,
 					MDP_INTF_DSI_CMD_FIFO_UNDERFLOW);
 				mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
+				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
+				"dsi0_phy", "dsi1_ctrl", "dsi1_phy");
 			} else {
 				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
 				"dsi0_phy", "dsi1_ctrl", "dsi1_phy", "panic");
@@ -2626,8 +2637,11 @@ static int dsi_event_thread(void *data)
 			mutex_unlock(&ctrl->mutex);
 		}
 
-		if (todo & DSI_EV_DSI_FIFO_EMPTY)
+		if (todo & DSI_EV_DSI_FIFO_EMPTY) {
+			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 			mdss_dsi_sw_reset(ctrl, true);
+			mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
+		}
 
 		if (todo & DSI_EV_DLNx_FIFO_OVERFLOW) {
 			mdss_dsi_get_hw_revision(ctrl);

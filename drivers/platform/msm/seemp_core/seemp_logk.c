@@ -165,8 +165,9 @@ static int seemp_logk_usr_record(const char __user *buf, size_t count)
 	struct timespec now;
 	struct tm ts;
 	int idx, ret;
-
 	DEFINE_WAIT(write_wait);
+
+	memset(&usr_blk, 0, sizeof(usr_blk));
 	if (buf) {
 		local_blk = (struct seemp_logk_blk *)buf;
 		if (copy_from_user(&usr_blk.pid, &local_blk->pid,

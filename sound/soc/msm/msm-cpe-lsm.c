@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -353,6 +353,10 @@ static int msm_cpe_lsm_lab_stop(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 	afe_ops = &cpe->afe_ops;
 	session = lsm_d->lsm_session;
 	if (rtd->cpu_dai)
@@ -614,6 +618,13 @@ static int msm_cpe_lab_thread(void *data)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops) {
+		rc = -EINVAL;
+		goto done;
+	}
+//HTC_AUD_END
+
 	afe_ops = &cpe->afe_ops;
 
 	rc = lsm_ops->lab_ch_setup(cpe->core_handle,
@@ -812,6 +823,10 @@ static int msm_cpe_lsm_open(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 	lsm_d = kzalloc(sizeof(struct cpe_lsm_data), GFP_KERNEL);
 	if (!lsm_d) {
 		dev_err(rtd->dev,
@@ -903,6 +918,10 @@ static int msm_cpe_lsm_close(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	afe_ops = &cpe->afe_ops;
 	afe_cfg = &(lsm_d->lsm_session->afe_port_cfg);
@@ -1076,6 +1095,10 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	switch (cmd) {
 	case SNDRV_LSM_STOP_LAB:
@@ -1192,13 +1215,6 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 		dev_dbg(rtd->dev,
 			"%s: %s\n",
 			__func__, "SNDRV_LSM_REG_SND_MODEL_V2");
-		if (!arg) {
-			dev_err(rtd->dev,
-				"%s: Invalid argument to ioctl %s\n",
-				__func__,
-				"SNDRV_LSM_REG_SND_MODEL_V2");
-			return -EINVAL;
-		}
 
 		memcpy(&snd_model, arg,
 			sizeof(struct snd_lsm_sound_model_v2));
@@ -1341,13 +1357,6 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 		dev_dbg(rtd->dev,
 			"%s: %s\n",
 			__func__, "SNDRV_LSM_EVENT_STATUS");
-		if (!arg) {
-			dev_err(rtd->dev,
-				"%s: Invalid argument to ioctl %s\n",
-				__func__,
-				"SNDRV_LSM_EVENT_STATUS");
-			return -EINVAL;
-		}
 
 		user = arg;
 
@@ -1458,12 +1467,6 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 		break;
 
 	case SNDRV_LSM_SET_PARAMS:
-		if (!arg) {
-			dev_err(rtd->dev,
-				"%s: %s Invalid argument\n",
-				__func__, "SNDRV_LSM_SET_PARAMS");
-			return -EINVAL;
-		}
 		memcpy(&det_params, arg,
 			sizeof(det_params));
 		if (det_params.num_confidence_levels <= 0) {
@@ -1603,6 +1606,10 @@ static int msm_cpe_lsm_lab_start(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 	lab_d = &lsm_d->lab;
 	afe_ops = &cpe->afe_ops;
 	hw_params = &lsm_d->hw_params;
@@ -1721,8 +1728,16 @@ static int msm_cpe_lsm_set_epd(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	if (p_info->param_size != sizeof(epd_thres)) {
 		dev_err(rtd->dev,
@@ -1769,8 +1784,16 @@ static int msm_cpe_lsm_set_mode(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	if (p_info->param_size != sizeof(det_mode)) {
 		dev_err(rtd->dev,
@@ -1817,8 +1840,16 @@ static int msm_cpe_lsm_set_gain(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	if (p_info->param_size != sizeof(gain)) {
 		dev_err(rtd->dev,
@@ -1865,8 +1896,16 @@ static int msm_cpe_lsm_set_conf(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	session->num_confidence_levels =
 			p_info->param_size;
@@ -1908,8 +1947,16 @@ static int msm_cpe_lsm_reg_model(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	lsm_ops->lsm_get_snd_model_offset(cpe->core_handle,
 			session, &offset);
@@ -1974,8 +2021,16 @@ static int msm_cpe_lsm_dereg_model(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	rc = lsm_ops->lsm_set_one_param(cpe->core_handle,
 				session, p_info, NULL,
@@ -2004,8 +2059,16 @@ static int msm_cpe_lsm_set_custom(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+//HTC_AUD_START klockwork
+	if (!cpe)
+		return -EINVAL;
+//HTC_AUD_END
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	if (p_info->param_size > MSM_CPE_MAX_CUSTOM_PARAM_SIZE) {
 		dev_err(rtd->dev,
@@ -2138,6 +2201,10 @@ static int msm_cpe_lsm_ioctl(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	switch (cmd) {
 	case SNDRV_LSM_REG_SND_MODEL_V2: {
@@ -2333,12 +2400,6 @@ done:
 }
 
 #ifdef CONFIG_COMPAT
-struct snd_lsm_event_status32 {
-	u16 status;
-	u16 payload_size;
-	u8 payload[0];
-};
-
 struct snd_lsm_sound_model_v2_32 {
 	compat_uptr_t data;
 	compat_uptr_t confidence_level;
@@ -2370,8 +2431,6 @@ struct snd_lsm_module_params_32 {
 };
 
 enum {
-	SNDRV_LSM_EVENT_STATUS32 =
-		_IOW('U', 0x02, struct snd_lsm_event_status32),
 	SNDRV_LSM_REG_SND_MODEL_V2_32 =
 		_IOW('U', 0x07, struct snd_lsm_sound_model_v2_32),
 	SNDRV_LSM_SET_PARAMS32 =
@@ -2419,6 +2478,10 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+//HTC_AUD_START klockwork
+	if (!lsm_ops)
+		return -EINVAL;
+//HTC_AUD_END
 
 	switch (cmd) {
 	case SNDRV_LSM_REG_SND_MODEL_V2_32: {
@@ -2466,7 +2529,7 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 				err);
 	}
 		break;
-	case SNDRV_LSM_EVENT_STATUS32: {
+	case SNDRV_LSM_EVENT_STATUS: {
 		struct snd_lsm_event_status *event_status = NULL;
 		struct snd_lsm_event_status u_event_status32;
 		struct snd_lsm_event_status *udata_32 = NULL;
@@ -2508,7 +2571,6 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 		} else {
 			event_status->payload_size =
 				u_event_status32.payload_size;
-			cmd = SNDRV_LSM_EVENT_STATUS;
 			err = msm_cpe_lsm_ioctl_shared(substream,
 						       cmd, event_status);
 			if (err)
@@ -2610,14 +2672,6 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 			goto done;
 		}
 
-		if (!arg) {
-			dev_err(rtd->dev,
-				"%s: %s: No Param data to set\n",
-				__func__, "SET_MODULE_PARAMS_32");
-			err = -EINVAL;
-			goto done;
-		}
-
 		if (copy_from_user(&p_data_32, arg,
 				   sizeof(p_data_32))) {
 			dev_err(rtd->dev,
@@ -2702,6 +2756,19 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 		kfree(params32);
 		break;
 	}
+	case SNDRV_LSM_REG_SND_MODEL_V2:
+	case SNDRV_LSM_SET_PARAMS:
+	case SNDRV_LSM_SET_MODULE_PARAMS:
+		/*
+		 * In ideal cases, the compat_ioctl should never be called
+		 * with the above unlocked ioctl commands. Print error
+		 * and return error if it does.
+		 */
+		dev_err(rtd->dev,
+			"%s: Invalid cmd for compat_ioctl\n",
+			__func__);
+		err = -EINVAL;
+		break;
 	default:
 		err = msm_cpe_lsm_ioctl_shared(substream, cmd, arg);
 		break;

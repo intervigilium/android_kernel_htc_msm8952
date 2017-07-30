@@ -1363,7 +1363,10 @@ ncm_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	DBG(c->cdev, "ncm unbind\n");
 
-	ncm_string_defs[0].id = 0;
+/*++ 2015/10/1 USB Team, PCN00092 ++*/
+	/* Don't reset the ncm string ID */
+	/*ncm_string_defs[0].id = 0;*/
+/*-- 2015/10/1 USB Team, PCN00092 --*/
 	usb_free_all_descriptors(f);
 
 	kfree(ncm->notify_req->buf);

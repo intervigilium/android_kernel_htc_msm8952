@@ -106,17 +106,6 @@
 
 				qcom,pm-cluster-level@1{
 					reg = <1>;
-					label = "perf-l2-gdhs";
-					qcom,psci-mode = <2>;
-					qcom,latency-us = <267>;
-					qcom,ss-power = <435>;
-					qcom,energy-overhead = <388012>;
-					qcom,time-overhead = <627>;
-					qcom,min-child-idx = <1>;
-				};
-
-				qcom,pm-cluster-level@2{
-					reg = <2>;
 					label = "perf-l2-pc";
 					qcom,psci-mode = <3>;
 					qcom,latency-us = <305>;
@@ -181,17 +170,6 @@
 
 				qcom,pm-cluster-level@1{
 					reg = <1>;
-					label = "pwr-l2-gdhs";
-					qcom,psci-mode = <2>;
-					qcom,latency-us = <337>;
-					qcom,ss-power = <433>;
-					qcom,energy-overhead = <372429>;
-					qcom,time-overhead = <717>;
-					qcom,min-child-idx = <1>;
-				};
-
-				qcom,pm-cluster-level@2{
-					reg = <2>;
 					label = "pwr-l2-pc";
 					qcom,psci-mode = <3>;
 					qcom,latency-us = <415>;
@@ -340,6 +318,7 @@
 			<0xff 205>, /* rpm_ipc(25) */
 			<0xff 206>, /* rpm_ipc(26) */
 			<0xff 207>, /* rpm_ipc(27) */
+			<0xff 212>, /* LPASS SLIMbus BAM interrupt to APCS */
 			<0xff 215>, /* o_bimc_intr[0] */
 			<0xff 224>, /* SPDM interrupt */
 			<0xff 239>, /* crypto_bam_irq[1]*/
@@ -349,6 +328,7 @@
 			<0xff 262>, /* ipa_bam_irq[2] */
 			<0xff 269>, /* rpm_wdog_expired_irq */
 			<0xff 270>, /* blsp1_bam_irq[0] */
+			<0xff 271>, /* blsp2_bam_irq[0] */
 			<0xff 272>, /* smmu_intr_bus[17] */
 			<0xff 273>, /* smmu_bus_intr[18] */
 			<0xff 274>, /* smmu_bus_intr[19] */
@@ -432,6 +412,12 @@
 		qcom,masters = "APSS", "MPSS", "PRONTO", "TZ", "LPASS";
 		qcom,master-stats-version = <2>;
 		qcom,master-offset = <4096>;
+	};
+
+	qcom,rpm-stats-ver {
+		compatible = "qcom,rpm-stats-ver";
+		reg = <0x290000 0x4>;
+		reg-names = "rpm_data_base";
 	};
 
 	qcom,rpm-rbcpr-stats@0x29daa0  {

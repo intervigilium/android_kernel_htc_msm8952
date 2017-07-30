@@ -28,6 +28,7 @@ enum ion_heap_ids {
 	ION_CP_MM_HEAP_ID = 8,
 	ION_SECURE_HEAP_ID = 9,
 	ION_CP_MFC_HEAP_ID = 12,
+	ION_FBMEM_HEAP_ID = 13,
 	ION_CP_WB_HEAP_ID = 16, /* 8660 only */
 	ION_CAMERA_HEAP_ID = 20, /* 8660 only */
 	ION_SYSTEM_CONTIG_HEAP_ID = 21,
@@ -115,6 +116,7 @@ enum cp_mem_usage {
  */
 #define ION_HEAP(bit) (1 << (bit))
 
+#define ION_FBMEM_HEAP_NAME	"fbmem"
 #define ION_ADSP_HEAP_NAME	"adsp"
 #define ION_SYSTEM_HEAP_NAME	"system"
 #define ION_VMALLOC_HEAP_NAME	ION_SYSTEM_HEAP_NAME
@@ -163,6 +165,18 @@ struct ion_prefetch_data {
 	unsigned long len;
 };
 
+/*
+ * struct ion_client_name_data - rename data passed from userspace to kernel
+ * @len:        length of name
+ * @name:       new client name, a user pointer to char string buffer
+ *
+ * This works just like the regular cmd and arg fields of an ioctlstl.
+ */
+struct ion_client_name_data {
+        size_t len;
+        const char *name;
+};
+
 #define ION_IOC_MSM_MAGIC 'M'
 
 /**
@@ -192,5 +206,13 @@ struct ion_prefetch_data {
 
 #define ION_IOC_DRAIN			_IOWR(ION_IOC_MSM_MAGIC, 4, \
 						struct ion_prefetch_data)
+
+/*
+ * DOC: ION_IOC_CLIENT_DEBUG_NAME - set client debug name for debug purpose
+ *
+ * Take the argument ion_client_name_data with name and name length.
+ */
+#define ION_IOC_CLIENT_DEBUG_NAME       _IOWR(ION_IOC_MSM_MAGIC, 5, \
+                                                struct ion_client_name_data)
 
 #endif

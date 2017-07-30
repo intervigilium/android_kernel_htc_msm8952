@@ -1337,6 +1337,12 @@ static int snd_ctl_tlv_ioctl(struct snd_ctl_file *file,
 		err = -ENXIO;
 		goto __kctl_end;
 	}
+//HTC_AUD_START klocwork
+	if (tlv.numid - kctl->id.numid < 0) {
+		err = -EINVAL;
+		goto __kctl_end;
+	}
+//HTC_AUD_END
 	vd = &kctl->vd[tlv.numid - kctl->id.numid];
 	if ((op_flag == 0 && (vd->access & SNDRV_CTL_ELEM_ACCESS_TLV_READ) == 0) ||
 	    (op_flag > 0 && (vd->access & SNDRV_CTL_ELEM_ACCESS_TLV_WRITE) == 0) ||

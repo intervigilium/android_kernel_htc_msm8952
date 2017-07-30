@@ -2434,7 +2434,7 @@ int mdss_mdp_ctl_reconfig(struct mdss_mdp_ctl *ctl,
 		struct mdss_panel_data *pdata)
 {
 	int (*stop_fnc)(struct mdss_mdp_ctl *ctl, int panel_power_state);
-	int ret;
+	int ret = 0;
 
 	/*
 	 * Switch first to prevent deleting important data in the case
@@ -2824,6 +2824,8 @@ void mdss_mdp_ctl_restore(void)
 		if (sctl) {
 			mdss_mdp_ctl_restore_sub(sctl);
 			mdss_mdp_ctl_split_display_enable(1, ctl, sctl);
+		} else if (is_pingpong_split(ctl->mfd)) {
+			mdss_mdp_ctl_pp_split_display_enable(1, ctl);
 		}
 		if (ctl->ops.restore_fnc)
 			ctl->ops.restore_fnc(ctl);
@@ -3752,7 +3754,7 @@ int mdss_mdp_mixer_pipe_unstage(struct mdss_mdp_pipe *pipe,
 int mdss_mdp_ctl_update_fps(struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_panel_info *pinfo;
-	struct mdss_overlay_private *mdp5_data;
+	struct mdss_overlay_private *mdp5_data = NULL;
 	int ret = 0;
 	int new_fps;
 

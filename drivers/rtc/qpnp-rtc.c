@@ -20,7 +20,12 @@
 #include <linux/spmi.h>
 #include <linux/spinlock.h>
 #include <linux/spmi.h>
+#include <linux/bug.h>
 #include <linux/alarmtimer.h>
+#ifdef CONFIG_HTC_POWER_DEBUG
+#include <linux/debugfs.h>
+#include <linux/htc_flags.h>
+#endif
 
 /* RTC/ALARM Register offsets */
 #define REG_OFFSET_ALARM_RW	0x40
@@ -108,6 +113,19 @@ qpnp_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	struct qpnp_rtc *rtc_dd = dev_get_drvdata(dev);
 
 	rtc_tm_to_time(tm, &secs);
+	rc = rtc_valid_tm(tm);
+	if (rc) {
+		dev_err(dev, "[Power_FDA] Invalid time value written to RTC\n");
+		dev_err(dev, "[Power_FDA] secs = %lu, h:m:s == %d:%d:%d, d/m/y = %d/%d/%d\n",
+				secs, tm->tm_hour, tm->tm_min, tm->tm_sec,
+				tm->tm_mday, tm->tm_mon, tm->tm_year);
+		dump_stack();
+		return rc;
+	}
+
+	dev_info(dev, "[RTC] set rtc to secs = %lu, h:m:s == %d:%d:%d, d/m/y = %d/%d/%d\n",
+			secs, tm->tm_hour, tm->tm_min, tm->tm_sec,
+			tm->tm_mday, tm->tm_mon, tm->tm_year);
 
 	value[0] = secs & 0xFF;
 	value[1] = (secs >> 8) & 0xFF;
@@ -272,7 +290,10 @@ qpnp_rtc_read_time(struct device *dev, struct rtc_time *tm)
 
 	rc = rtc_valid_tm(tm);
 	if (rc) {
-		dev_err(dev, "Invalid time read from RTC\n");
+		dev_err(dev, "[Power_FDA] Invalid time read from RTC\n");
+		dev_err(dev, "[Power_FDA] secs = %lu, h:m:s == %d:%d:%d, d/m/y = %d/%d/%d\n",
+				secs, tm->tm_hour, tm->tm_min, tm->tm_sec,
+				tm->tm_mday, tm->tm_mon, tm->tm_year);
 		return rc;
 	}
 
@@ -300,7 +321,7 @@ qpnp_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 	 */
 	rc = qpnp_rtc_read_time(dev, &rtc_tm);
 	if (rc) {
-		dev_err(dev, "Unable to read RTC time\n");
+		dev_err(dev, "[Power_FDA]set alarm: Unable to read RTC time\n");
 		return -EINVAL;
 	}
 
@@ -368,7 +389,11 @@ qpnp_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 
 	rc = rtc_valid_tm(&alarm->time);
 	if (rc) {
-		dev_err(dev, "Invalid time read from RTC\n");
+		dev_err(dev, "[Power_FDA] Invalid alarm time read from RTC\n");
+		dev_err(dev, "[Power_FDA] Alarm set for - h:r:s=%d:%d:%d, d/m/y=%d/%d/%d\n",
+				alarm->time.tm_hour, alarm->time.tm_min,
+				alarm->time.tm_sec, alarm->time.tm_mday,
+				alarm->time.tm_mon, alarm->time.tm_year);
 		return rc;
 	}
 
@@ -463,6 +488,52 @@ static irqreturn_t qpnp_alarm_trigger(int irq, void *dev_id)
 rtc_alarm_handled:
 	return IRQ_HANDLED;
 }
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+static int htc_qpnp_rtc_set_time(void *data, u64 val)
+{
+	int ret;
+	struct rtc_time tm;
+	struct spmi_device *spmi = data;
+
+	rtc_time_to_tm(val, &tm);
+	ret = qpnp_rtc_set_time(&spmi->dev, &tm);
+
+	return ret;
+}
+
+static int htc_qpnp_rtc_read_time(void *data, u64 *val)
+{
+	struct rtc_time rtc_new_time;
+	struct spmi_device *spmi = data;
+	unsigned long rtc_time ;
+
+	qpnp_rtc_read_time(&spmi->dev, &rtc_new_time);
+	rtc_tm_to_time(&rtc_new_time, &rtc_time);
+	printk("%s:rtc_time = %lu\n", __func__, rtc_time);
+	*val = rtc_time;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(qpnp_rtc_time_ops, htc_qpnp_rtc_read_time,
+			htc_qpnp_rtc_set_time, "%llu\n");
+
+int htc_rtc_time_debugfs_init(struct spmi_device *spmi)
+{
+	static struct dentry *debugfs_rtc_time_base;
+
+	debugfs_rtc_time_base = debugfs_create_dir("htc_rtc_time", NULL);
+	if (!debugfs_rtc_time_base)
+                return -ENOMEM;
+
+	if (!debugfs_create_file("rtc_time", S_IRUGO, debugfs_rtc_time_base,
+                                spmi, &qpnp_rtc_time_ops))
+                return -ENOMEM;
+
+        return 0;
+}
+#endif
 
 static int qpnp_rtc_probe(struct spmi_device *spmi)
 {
@@ -612,6 +683,11 @@ static int qpnp_rtc_probe(struct spmi_device *spmi)
 	enable_irq_wake(rtc_dd->rtc_alarm_irq);
 
 	dev_dbg(&spmi->dev, "Probe success !!\n");
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+	if (get_tamper_sf() == 0)
+		htc_rtc_time_debugfs_init(spmi);
+#endif
 
 	return 0;
 

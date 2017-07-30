@@ -225,6 +225,30 @@ static struct clk *logical_cpu_to_clk(int cpu)
 	return NULL;
 }
 
+#if (defined(CONFIG_HTC_DEBUG_FOOTPRINT) && !defined(CONFIG_HTC_DEBUG_MSM8976))
+/* get effective cpu idx by clk */
+int clk_get_cpu_idx(struct clk *c)
+{
+	/* cpu0 ~ cpu3 are big cluster. */
+	if (c == &a53ssmux_bc.c || c == &a53_bc_clk.c)
+		return 0;
+
+	/* cpu4 ~ cpu7 are small cluster. */
+	if (c == &a53ssmux_lc.c || c == &a53_lc_clk.c)
+		return 4;
+
+	return -1;
+}
+
+int clk_get_l2_idx(struct clk *c)
+{
+	if (c == &a53ssmux_cci.c || c == &cci_clk.c)
+		return 0;
+
+	return -1;
+}
+#endif
+
 static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 								char *prop_name)
 {

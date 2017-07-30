@@ -13,7 +13,9 @@
 &slim_msm {
 	tasha_codec {
 		swr_master {
-			compatible = "qcom,swr-wcd";
+			status = "disable"; //HTC_AUDIO
+//HTC_AUDIO_START
+			/*compatible = "qcom,swr-wcd";
 			#address-cells = <2>;
 			#size-cells = <0>;
 
@@ -42,8 +44,8 @@
 				compatible = "qcom,wsa881x";
 				reg = <0x00 0x21170214>;
 				qcom,spkr-sd-n-gpio = <&msm_gpio 132 0>;
-
-			};
+			};*/
+//HTC_AUDIO_END
 		};
 	};
 };

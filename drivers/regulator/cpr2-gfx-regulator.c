@@ -2372,7 +2372,7 @@ static int cpr_aging_init(struct cpr2_gfx_regulator *cpr_vreg)
 	struct cpr2_gfx_aging_sensor_info *sensor_info;
 	int num_corners = cpr_vreg->num_corners;
 	int i, j, rc = 0, len = 0, num_aging_sensors, bits, pos = 0;
-	u32 *aging_sensor_id, *fuse_sel, *fuse_sel_orig;
+	u32 *aging_sensor_id, *fuse_sel, *fuse_sel_orig = NULL;
 	u32 sensor = 0, non_collapsible_sensor_mask = 0;
 	u64 efuse_val;
 	struct property *prop;
@@ -2617,7 +2617,8 @@ static int cpr_aging_init(struct cpr2_gfx_regulator *cpr_vreg)
 	kfree(buf);
 
 err:
-	kfree(fuse_sel_orig);
+	if (fuse_sel_orig)
+		kfree(fuse_sel_orig);
 	kfree(aging_sensor_id);
 	return rc;
 }

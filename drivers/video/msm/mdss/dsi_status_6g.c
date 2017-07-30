@@ -110,6 +110,7 @@ void mdss_check_dsi_ctrl_status(struct work_struct *work, uint32_t interval)
 	}
 
 	if (ctrl_pdata->status_mode == ESD_TE) {
+		pr_info("Start Check TE\n");
 		if (mdss_check_te_status(ctrl_pdata, pstatus_data, interval))
 			return;
 		else

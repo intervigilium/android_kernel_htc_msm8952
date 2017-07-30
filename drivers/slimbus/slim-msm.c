@@ -18,6 +18,13 @@
 #include <linux/gcd.h>
 #include "slim-msm.h"
 
+//HTC_AUD_START
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//HTC_AUD_END
+
 int msm_slim_rx_enqueue(struct msm_slim_ctrl *dev, u32 *buf, u8 len)
 {
 	spin_lock(&dev->rx_lock);
@@ -1457,6 +1464,11 @@ static int msm_slim_qmi_send_select_inst_req(struct msm_slim_ctrl *dev,
 			&resp_desc, &resp, sizeof(resp), SLIM_QMI_RESP_TOUT);
 	if (rc < 0) {
 		SLIM_ERR(dev, "%s: QMI send req failed %d\n", __func__, rc);
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+                BUG_ON(1);
+#endif
+//HTC_AUD_END
 		return rc;
 	}
 
@@ -1464,6 +1476,12 @@ static int msm_slim_qmi_send_select_inst_req(struct msm_slim_ctrl *dev,
 	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
 		SLIM_ERR(dev, "%s: QMI request failed 0x%x (%s)\n", __func__,
 				resp.resp.result, get_qmi_error(&resp.resp));
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_err("trigger ramdump to keep status\n");
+		BUG();
+#endif
+//HTC_AUD_END
 		return -EREMOTEIO;
 	}
 
@@ -1489,6 +1507,12 @@ static int msm_slim_qmi_send_power_request(struct msm_slim_ctrl *dev,
 			&resp_desc, &resp, sizeof(resp), SLIM_QMI_RESP_TOUT);
 	if (rc < 0) {
 		SLIM_ERR(dev, "%s: QMI send req failed %d\n", __func__, rc);
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_err("trigger ramdump to keep status\n");
+		BUG_ON(1);
+#endif
+//HTC_AUD_END
 		return rc;
 	}
 
@@ -1607,6 +1631,11 @@ int msm_slim_qmi_check_framer_request(struct msm_slim_ctrl *dev)
 		&resp_desc, &resp, sizeof(resp), SLIM_QMI_RESP_TOUT);
 	if (rc < 0) {
 		SLIM_ERR(dev, "%s: QMI send req failed %d\n", __func__, rc);
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+                BUG_ON(1);
+#endif
+//HTC_AUD_END
 		return rc;
 	}
 	/* Check the response */

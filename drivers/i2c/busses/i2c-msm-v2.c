@@ -1489,6 +1489,9 @@ static bool i2c_msm_qup_slv_holds_bus(struct i2c_msm_ctrl *ctrl)
 	bool slv_holds_bus =	!(status & QUP_I2C_SDA) &&
 				(status & QUP_BUS_ACTIVE) &&
 				!(status & QUP_BUS_MASTER);
+
+	dev_info(ctrl->dev, "%s: status = 0x%x\n", __func__, status);
+
 	if (slv_holds_bus)
 		dev_info(ctrl->dev,
 			"bus lines held low by a slave detected\n");
@@ -1969,12 +1972,43 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 		if ((ctrl->xfer.err == I2C_MSM_ERR_ARB_LOST) ||
 		    (ctrl->xfer.err == I2C_MSM_ERR_BUS_ERR)  ||
 		    (ctrl->xfer.err == I2C_MSM_ERR_TIMEOUT)) {
-			if (i2c_msm_qup_slv_holds_bus(ctrl))
+			if (i2c_msm_qup_slv_holds_bus(ctrl)) {
+				dev_info(ctrl->dev, "i2c_msm_qup_slv_holds_bus"
+						    " returns true\n");
 				qup_i2c_recover_bus_busy(ctrl);
+			} else {
+				dev_info(ctrl->dev, "i2c_msm_qup_slv_holds_bus"
+						    " returns false\n");
+				qup_i2c_recover_bus_busy(ctrl);
+			}
 
 			/* do not generalize error to EIO if its already set */
-			if (!err)
-				err = -EIO;
+			if (!err) {
+				dev_info(ctrl->dev, "Assign rc to %d\n",
+					 (-EPROTO));
+				err = -EPROTO;
+			}
+		}
+	} else {
+		if ((ctrl->xfer.err == I2C_MSM_ERR_ARB_LOST) ||
+		    (ctrl->xfer.err == I2C_MSM_ERR_BUS_ERR)  ||
+		    (ctrl->xfer.err == I2C_MSM_ERR_TIMEOUT)) {
+			if (i2c_msm_qup_slv_holds_bus(ctrl)) {
+				dev_info(ctrl->dev, "active: i2c_msm_qup_slv_holds_bus"
+						    " returns true, err = 0x%x\n", ctrl->xfer.err);
+				qup_i2c_recover_bus_busy(ctrl);
+			} else {
+				dev_info(ctrl->dev, "active: i2c_msm_qup_slv_holds_bus"
+						    " returns false, err = 0x%x\n", ctrl->xfer.err);
+				qup_i2c_recover_bus_busy(ctrl);
+			}
+
+			/* do not generalize error to EIO if its already set */
+			if (!err) {
+				dev_info(ctrl->dev, "active: Assign rc to %d\n",
+					 (-EPROTO));
+				err = -EPROTO;
+			}
 		}
 	}
 

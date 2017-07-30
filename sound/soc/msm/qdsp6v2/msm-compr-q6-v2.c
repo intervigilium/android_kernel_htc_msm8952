@@ -37,6 +37,9 @@
 #include "msm-pcm-routing-v2.h"
 #include "audio_ocmem.h"
 #include <sound/tlv.h>
+// HTC_AUD ++
+#include <sound/q6adm-v2.h>
+// HTC_AUD --
 
 #define COMPRE_CAPTURE_NUM_PERIODS	16
 /* Allocate the worst case frame size for compressed audio */
@@ -981,7 +984,7 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct compr_audio *compr = runtime->private_data;
 	struct msm_audio *prtd = &compr->prtd;
-	uint64_t timestamp;
+	uint64_t timestamp = 0; //HTC_AUD klocwork
 	uint64_t temp;
 
 	switch (cmd) {
@@ -1170,6 +1173,79 @@ static int msm_compr_ioctl_shared(struct snd_pcm_substream *substream,
 
 		prtd->cmd_interrupt = 0;
 		return rc;
+//HTC_AUD ++
+	case SNDRV_PCM_IOCTL1_ENABLE_EFFECT:
+	{
+		struct param {
+			uint32_t effect_type; /* 0 for POPP, 1 for COPP */
+			uint32_t module_id;
+			uint32_t param_id;
+			uint32_t payload_size;
+		} q6_param;
+		void *payload;
+
+		pr_info("[%p] %s: SNDRV_PCM_IOCTL1_ENABLE_EFFECT\n", prtd, __func__);
+		if (copy_from_user(&q6_param, (void *) arg,
+					sizeof(q6_param))) {
+			pr_err("[%p] %s: copy param from user failed\n",
+				prtd, __func__);
+			return -EFAULT;
+		}
+
+		if (q6_param.payload_size <= 0 ||
+		    (q6_param.effect_type != 0 &&
+		     q6_param.effect_type != 1)) {
+			pr_err("[%p] %s: unsupported param: %d, 0x%x, 0x%x, %d\n",
+				prtd, __func__, q6_param.effect_type,
+				q6_param.module_id, q6_param.param_id,
+				q6_param.payload_size);
+			return -EINVAL;
+		}
+
+		payload = kzalloc(q6_param.payload_size, GFP_KERNEL);
+		if (!payload) {
+			pr_err("[%p] %s: failed to allocate memory\n",
+				prtd, __func__);
+			return -ENOMEM;
+		}
+
+		if (copy_from_user(payload, (void *) (arg + sizeof(q6_param)),
+			q6_param.payload_size)) {
+			pr_err("[%p] %s: copy payload from user failed\n",
+				prtd, __func__);
+			kfree(payload);
+			return -EFAULT;
+		}
+
+		if (q6_param.effect_type == 0) { /* POPP */
+			if (!prtd->audio_client) {
+				pr_debug("%s: audio_client not found\n",
+					__func__);
+				kfree(payload);
+				return -EACCES;
+			}
+
+			rc = q6asm_enable_effect(prtd->audio_client,
+						q6_param.module_id,
+						q6_param.param_id,
+						q6_param.payload_size,
+						payload);
+			pr_info("[%p] %s: call q6asm_enable_effect, rc %d\n",
+				prtd, __func__, rc);
+		}
+#ifdef Q6_EFFECT_DEBUG
+		{
+			int *ptr;
+			int i;
+			ptr = (int *)payload;
+			for (i = 0; i < (q6_param.payload_size / 4); i++)
+				pr_aud_info("[%p] 0x%08x", prtd, *(ptr + i));
+		}
+#endif
+		kfree(payload);
+		return rc;
+	}
+//HTC_AUD --
 	default:
 		break;
 	}

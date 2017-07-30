@@ -4024,3 +4024,26 @@ static int __init msm_gcc_gfx_init(void)
 	return platform_driver_register(&msm_clock_gcc_gfx_driver);
 }
 arch_initcall_sync(msm_gcc_gfx_init);
+#ifdef CONFIG_HTC_POWER_DEBUG
+void clk_8976_ignore_list_add(const char *clock_name)
+{
+	struct clk_lookup *p, *cl = NULL;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(msm_clocks_lookup); i++) {
+		p = &msm_clocks_lookup[i];
+		if (p->clk && !strcmp(p->clk->dbg_name, clock_name)) {
+			cl = p;
+		}
+	}
+	if (cl)
+	cl->clk->flags |= CLKFLAG_IGNORE;
+}
+
+int __init clk_8976_ignore_list_init(void)
+{
+	clk_8976_ignore_list_add("gcc_blsp1_uart2_apps_clk");
+	return 0;
+}
+module_init(clk_8976_ignore_list_init);
+#endif

@@ -1471,17 +1471,27 @@ static struct adreno_snapshot_data a3xx_snapshot_data = {
 	.sect_sizes = &a3xx_snap_sizes,
 };
 
+#define FW_LOOP_COUNT	100	//must > 0
+#define FW_LOOP_PERIOD	50	//ms
+
 static int _load_firmware(struct kgsl_device *device, const char *fwfile,
 			  void **buf, int *len)
 {
 	const struct firmware *fw = NULL;
 	int ret;
+	int i = FW_LOOP_COUNT;
 
-	ret = request_firmware(&fw, fwfile, device->dev);
+	while (i--) {
+		ret = request_firmware(&fw, fwfile, device->dev);
+		if (ret)
+			usleep_range(FW_LOOP_PERIOD * 1000, FW_LOOP_PERIOD * 1000 + 500);
+		else
+			break;
+	}
 
 	if (ret) {
-		KGSL_DRV_ERR(device, "request_firmware(%s) failed: %d\n",
-			     fwfile, ret);
+		KGSL_DRV_ERR(device, "request_firmware(%s) failed for %d times: %d\n",
+			     fwfile, FW_LOOP_COUNT,ret);
 		return ret;
 	}
 
@@ -1511,7 +1521,7 @@ int a3xx_microcode_read(struct adreno_device *adreno_dev)
 			adreno_dev->gpucore->pm4fw_name, &ptr, &len);
 
 		if (ret) {
-			KGSL_DRV_FATAL(device, "Failed to read pm4 ucode %s\n",
+			KGSL_DRV_ERR(device, "Failed to read pm4 ucode %s\n",
 					   adreno_dev->gpucore->pm4fw_name);
 			return ret;
 		}

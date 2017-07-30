@@ -121,6 +121,12 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8952-cdp.dtb \
 	msm8952-ext-codec-cdp.dtb \
 	msm8952-mtp.dtb \
+	msm8952-htc_hiae-xa.dtb \
+	msm8952-htc_hiae-xb.dtb \
+	msm8952-htc_hiae-xc.dtb \
+	msm8952-htc_hiae-xd.dtb \
+	msm8952-htc_hiae-xe.dtb \
+	msm8952-htc_hiae-pvt.dtb \
 	msm8952-polaris.dtb \
 	apq8052-cdp.dtb \
 	apq8052-mtp.dtb \

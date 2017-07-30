@@ -565,7 +565,7 @@ struct q6v5_data *pil_q6v5_init(struct platform_device *pdev)
 	prop = of_find_property(pdev->dev.of_node, "vdd_cx-voltage", NULL);
 	if (!prop) {
 		dev_err(&pdev->dev, "Missing vdd_cx-voltage property\n");
-		return ERR_CAST(prop);
+		return ERR_PTR(-EINVAL);
 	}
 
 	drv->vreg_pll = devm_regulator_get(&pdev->dev, "vdd_pll");

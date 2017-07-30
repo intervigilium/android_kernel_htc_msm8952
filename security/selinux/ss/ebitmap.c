@@ -247,7 +247,7 @@ int ebitmap_get_bit(struct ebitmap *e, unsigned long bit)
 {
 	struct ebitmap_node *n;
 
-	if (e->highbit < bit)
+	if (e && e->highbit < bit)
 		return 0;
 
 	n = e->node;

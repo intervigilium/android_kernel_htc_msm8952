@@ -88,7 +88,7 @@ static irqreturn_t threaded_isr(int irq, void *dev_id)
 			pr_err("Spurious interrupts\n");
 			break;
 		}
-		if (data->spdm_client == desc.ret[0]) {
+		if (data->spdm_client == desc.ret[0] && data->devfreq) {
 			devfreq_monitor_suspend(data->devfreq);
 			mutex_lock(&data->devfreq->lock);
 			data->action = SPDM_UP;
@@ -154,6 +154,11 @@ static int gov_spdm_hyp_eh(struct devfreq *devfreq, unsigned int event,
 	int ext_status = 0;
 	struct spdm_data *spdm_data = (struct spdm_data *)devfreq->data;
 	int i;
+
+	if (!devfreq) {
+	    pr_err("[WARN] NULL object devfreq detected in gov_spdm_hyp_eh event handling, drop the event handling to prevent kernel panic.");
+	    return -EINVAL;
+	}
 
 	switch (event) {
 	case DEVFREQ_GOV_START:

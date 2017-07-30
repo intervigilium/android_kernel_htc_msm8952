@@ -162,7 +162,12 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 
 		skb->sp->xvec[skb->sp->len++] = x;
 
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		spin_lock_bh(&x->lock);
+#else
 		spin_lock(&x->lock);
+#endif
+
 		if (unlikely(x->km.state != XFRM_STATE_VALID)) {
 			XFRM_INC_STATS(net, LINUX_MIB_XFRMINSTATEINVALID);
 			goto drop_unlock;
@@ -183,7 +188,11 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 			goto drop_unlock;
 		}
 
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		spin_unlock_bh(&x->lock);
+#else
 		spin_unlock(&x->lock);
+#endif
 
 		seq_hi = htonl(xfrm_replay_seqhi(x, seq));
 
@@ -198,7 +207,12 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 			return 0;
 
 resume:
+
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		spin_lock_bh(&x->lock);
+#else
 		spin_lock(&x->lock);
+#endif
 		if (nexthdr <= 0) {
 			if (nexthdr == -EBADMSG) {
 				xfrm_audit_state_icvfail(x, skb,
@@ -222,7 +236,11 @@ resume:
 		x->curlft.bytes += skb->len;
 		x->curlft.packets++;
 
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		spin_unlock_bh(&x->lock);
+#else
 		spin_unlock(&x->lock);
+#endif
 
 		XFRM_MODE_SKB_CB(skb)->protocol = nexthdr;
 
@@ -269,7 +287,13 @@ resume:
 	}
 
 drop_unlock:
+
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+	spin_unlock_bh(&x->lock);
+#else
 	spin_unlock(&x->lock);
+#endif
+
 drop:
 	kfree_skb(skb);
 	return 0;

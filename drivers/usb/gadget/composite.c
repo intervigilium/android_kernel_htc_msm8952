@@ -21,6 +21,26 @@
 #include <linux/usb/composite.h>
 #include <asm/unaligned.h>
 
+/*++ 2015/09/25 USB Team, PCN00091 ++*/
+#define MAC_FIRST_DT_LENGTH  18
+#define WIN_LINUX_FIRST_DT1_LENGTH 8
+#define WIN_LINUX_FIRST_DT2_LENGTH 64
+/*-- 2015/09/25 USB Team, PCN00091 --*/
+
+/*++ 2015/6/4 USB Team, PCN00022 ++*/
+#define REQUEST_RESET_DELAYED (HZ / 100) /* 1000 ms *//*++ 2015/06/26 USB Team, PCN00046 ++*/
+
+void usb_android_force_reset(struct usb_composite_dev *cdev);
+static void composite_request_reset(struct work_struct *w)
+{
+	struct usb_composite_dev *cdev = container_of(
+			(struct delayed_work *)w,
+			struct usb_composite_dev, request_reset);
+
+	if (cdev)
+		usb_android_force_reset(cdev);
+}
+/*-- 2015/6/4 USB Team, PCN00022 --*/
 /*
  * The code in this file is utility code, used to build a gadget driver
  * from one or more "function" drivers, one or more "configuration"
@@ -413,6 +433,12 @@ static u8 encode_bMaxPower(enum usb_device_speed speed,
 	};
 }
 
+/*++ 2015/08/04 USB Team, PCN00065 ++*/
+static struct usb_descriptor_header *fs_mtp_descs[];
+static struct usb_descriptor_header *hs_mtp_descs[];
+static struct usb_descriptor_header *ss_mtp_descs[];
+/*-- 2015/08/04 USB Team, PCN00065 --*/
+
 static int config_buf(struct usb_configuration *config,
 		enum usb_device_speed speed, void *buf, u8 type)
 {
@@ -451,12 +477,24 @@ static int config_buf(struct usb_configuration *config,
 		switch (speed) {
 		case USB_SPEED_SUPER:
 			descriptors = f->ss_descriptors;
+/*++ 2015/08/04 USB Team, PCN00065 ++*/
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = ss_mtp_descs;
+/*-- 2015/08/04 USB Team, PCN00065 --*/
 			break;
 		case USB_SPEED_HIGH:
 			descriptors = f->hs_descriptors;
+/*++ 2015/08/04 USB Team, PCN00065 ++*/
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = hs_mtp_descs;
+/*-- 2015/08/04 USB Team, PCN00065 --*/
 			break;
 		default:
 			descriptors = f->fs_descriptors;
+/*++ 2015/08/04 USB Team, PCN00065 ++*/
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = fs_mtp_descs;
+/*-- 2015/08/04 USB Team, PCN00065 --*/
 		}
 
 		if (!descriptors)
@@ -950,6 +988,13 @@ void usb_remove_config(struct usb_composite_dev *cdev,
 
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
+/*++ 2015/05/29 USB Team, PCN00012 ++*/
+	os_type = OS_NOT_YET;
+#ifdef CONFIG_HTC_USB_DEBUG_FLAG
+	printk("[USB]%s unbind+\n",__func__);
+#endif
+/*-- 2015/05/29 USB Team, PCN00012 --*/
+
 	unbind_config(cdev, config);
 }
 
@@ -1299,7 +1344,57 @@ static void composite_setup_complete(struct usb_ep *ep, struct usb_request *req)
 				"setup complete --> %d, %d/%d\n",
 				req->status, req->actual, req->length);
 }
+/*++ 2015/09/25 USB Team, PCN00091 ++*/
+/*
+ * Copyright (C) 2015 HTC, Inc.
+ * Author: HTC USB Team
+ * The following two functions are used for get OS_type for HTC device.
+ * In tranditional design,the length of request USB_DT_CONFIG will
+ * different. MAC is 4, Windows is 255, Linux is 9. But for MAC 10.11,
+ * both MAC/LINUX is 9. Therefore, the design check_MAC_or_LINUX is use
+ * for distinguish OS_type. This function will store the first length
+ * of USB_DT_STRING and USB_DT_DEVICE and base on the value to get os
+ * type.
+ * 1. The length of first USB_DT_STRING is 2 and USB_DT_DEVICE is 18
+ * for MAC.
+ * 2. The length of first USB_DT_DEVICE is 8/64 for Windows/Linux.
+ */
+static void check_MAC_or_LINUX(int first_dt_length, int first_string_length)
+{
+	switch (first_dt_length)
+	{
+		case MAC_FIRST_DT_LENGTH:
+			if (first_string_length == 2)
+				os_type = OS_MAC;
+			break;
+		case WIN_LINUX_FIRST_DT1_LENGTH:
+		case WIN_LINUX_FIRST_DT2_LENGTH:
+			os_type = OS_LINUX;
+			break;
+		default:
+			break;
+	}
 
+	if (os_type == OS_LINUX)
+		pr_info("%s: Re detect as OS_LINUX \n", __func__);
+	else if (os_type == OS_MAC)
+		pr_info("%s: Re detect as OS_MAC \n", __func__);
+	else
+		pr_info("unknow os type");
+}
+static void get_os_type(int length)
+{
+	if (length == 4) {
+		pr_info("%s: OS_MAC\n", __func__);
+		os_type = OS_MAC;
+	} else if (length == 255) {
+		pr_info("%s: OS_WINDOWS\n", __func__);
+		os_type = OS_WINDOWS;
+	} else if (length == 9 && os_type != OS_WINDOWS && os_type !=OS_MAC) {
+		check_MAC_or_LINUX(first_dt_w_length,first_string_w_length);
+	}
+}
+/*-- 2015/09/25 USB Team, PCN00091 --*/
 /*
  * The setup() callback implements all the ep0 functionality that's
  * not handled lower down, in hardware or the hardware driver(like
@@ -1344,6 +1439,12 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
+/*++ 2015/09/25 USB Team, PCN00091 ++*/
+			if (first_dt_w_length == 0) {
+				first_dt_w_length = w_length;
+				printk("[USB] first_dt_w_length = %d \n",first_dt_w_length);
+			}
+/*-- 2015/09/25 USB Team, PCN00091 --*/
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			cdev->desc.bMaxPacketSize0 =
@@ -1359,7 +1460,6 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				cdev->desc.bcdUSB = cpu_to_le16(0x0201);
 				DBG(cdev, "Config HS device with LPM(L1)\n");
 			}
-
 			value = min(w_length, (u16) sizeof cdev->desc);
 			memcpy(req->buf, &cdev->desc, value);
 			break;
@@ -1377,6 +1477,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
+			get_os_type(w_length);/*++ 2015/09/25 USB Team, PCN00091 ++*/
 			value = config_desc(cdev, w_value);
 			if (value >= 0)
 				value = min(w_length, (u16) value);
@@ -1393,6 +1494,12 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 						USB_DT_OTG);
 			break;
 		case USB_DT_STRING:
+/*++ 2015/09/25 USB Team, PCN00091 ++*/
+			if (first_string_w_length == 0) {
+				first_string_w_length = w_length;
+				printk("[USB] first_string_w_length = %d \n",first_string_w_length);
+			}
+/*-- 2015/09/25 USB Team, PCN00091 --*/
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)
@@ -1635,6 +1742,24 @@ void composite_disconnect(struct usb_gadget *gadget)
 	}
 	spin_unlock_irqrestore(&cdev->lock, flags);
 }
+/*++ 2015/06/25 USB Team, PCN00044 ++*/
+void composite_mute_disconnect(struct usb_gadget *gadget)
+{
+	struct usb_composite_dev *cdev  = get_gadget_data(gadget);
+	unsigned long flags;
+	/* REVISIT: should we have config and device level
+	 * disconnect callbacks?
+	 */
+	spin_lock_irqsave(&cdev->lock, flags);
+	if (cdev->config)
+		reset_config(cdev);
+	if (cdev->delayed_status != 0) {
+		INFO(cdev, "delayed status mismatch..resetting\n");
+		cdev->delayed_status = 0;
+	}
+	spin_unlock_irqrestore(&cdev->lock, flags);
+}
+/*-- 2015/06/25 USB Team, PCN00044 --*/
 
 /*-------------------------------------------------------------------------*/
 
@@ -1805,6 +1930,7 @@ static int composite_bind(struct usb_gadget *gadget,
 	if (status)
 		goto fail;
 
+	INIT_DELAYED_WORK(&cdev->request_reset, composite_request_reset);/*++ 2015/6/4 USB Team, PCN00022 ++*/
 	/* composite gadget needs to assign strings for whole device (like
 	 * serial number), register function drivers, potentially update
 	 * power state and consumption, etc
@@ -1909,6 +2035,8 @@ static const struct usb_gadget_driver composite_driver_template = {
 
 	.setup		= composite_setup,
 	.disconnect	= composite_disconnect,
+
+	.mute_disconnect = composite_mute_disconnect,/*++ 2015/06/25 USB Team, PCN00044 ++*/
 
 	.suspend	= composite_suspend,
 	.resume		= composite_resume,

@@ -393,7 +393,7 @@ static u64 update_load(int cpu)
 }
 
 #define MAX_LOCAL_LOAD 100
-static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
+static void cpufreq_interactive_timer(unsigned long data)
 {
 	u64 now;
 	unsigned int delta_time;
@@ -496,7 +496,7 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 
 	new_freq = pcpu->freq_table[index].frequency;
 
-	if (!is_notif && new_freq < pcpu->target_freq &&
+	if (new_freq < pcpu->target_freq &&
 	    now - pcpu->max_freq_hyst_start_time <
 	    tunables->max_freq_hysteresis) {
 		trace_cpufreq_interactive_notyet(data, cpu_load,
@@ -510,7 +510,7 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 	 * floor frequency for the minimum sample time since last validated.
 	 */
 	max_fvtime = max(pcpu->floor_validate_time, pcpu->local_fvtime);
-	if (!is_notif && new_freq < pcpu->floor_freq &&
+	if (new_freq < pcpu->floor_freq &&
 	    pcpu->target_freq >= pcpu->policy->cur) {
 		if (now - max_fvtime < tunables->min_sample_time) {
 			trace_cpufreq_interactive_notyet(
@@ -539,7 +539,7 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 	if (new_freq == pcpu->policy->max)
 		pcpu->max_freq_hyst_start_time = now;
 
-	if (pcpu->target_freq == new_freq) {
+	if (pcpu->policy->cur == pcpu->target_freq && pcpu->target_freq == new_freq) {
 		trace_cpufreq_interactive_already(
 			data, cpu_load, pcpu->target_freq,
 			pcpu->policy->cur, new_freq);
@@ -566,10 +566,6 @@ exit:
 	return;
 }
 
-static void cpufreq_interactive_timer(unsigned long data)
-{
-	__cpufreq_interactive_timer(data, false);
-}
 
 static void cpufreq_interactive_idle_end(void)
 {
@@ -741,7 +737,7 @@ static int load_change_callback(struct notifier_block *nb, unsigned long val,
 	trace_cpufreq_interactive_load_change(cpu);
 	del_timer(&pcpu->cpu_timer);
 	del_timer(&pcpu->cpu_slack_timer);
-	__cpufreq_interactive_timer(cpu, true);
+	cpufreq_interactive_timer(cpu);
 
 	up_read(&pcpu->enable_sem);
 	return 0;
@@ -1687,7 +1683,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			 * stopped unexpectedly.
 			 */
 
-			if (policy->max > pcpu->max_freq) {
+			if (policy->max > pcpu->max_freq || policy->min < pcpu->min_freq) {
 				pcpu->reject_notification = true;
 				down_write(&pcpu->enable_sem);
 				del_timer_sync(&pcpu->cpu_timer);
@@ -1698,6 +1694,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			}
 
 			pcpu->max_freq = policy->max;
+			pcpu->min_freq = policy->min;
 		}
 		break;
 	}
@@ -1756,7 +1753,7 @@ static int __init cpufreq_interactive_init(void)
 }
 
 #ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE
-fs_initcall(cpufreq_interactive_init);
+arch_initcall(cpufreq_interactive_init);
 #else
 module_init(cpufreq_interactive_init);
 #endif

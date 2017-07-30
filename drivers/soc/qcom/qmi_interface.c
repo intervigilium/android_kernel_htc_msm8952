@@ -1748,6 +1748,10 @@ int qmi_connect_to_service(struct qmi_handle *handle,
 	if (rc <= 0) {
 		pr_err("%s: Server %08x:%08x not found\n",
 			__func__, service_id, instance_id);
+		if ( svc_dest_addr ) {
+			kfree(svc_dest_addr);
+			svc_dest_addr = NULL;
+		}
 		return -ENODEV;
 	}
 	svc_dest_addr->addrtype = MSM_IPC_ADDR_ID;

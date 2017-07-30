@@ -30,6 +30,7 @@
 #include "venus_hfi.h"
 #include "vidc_hfi_io.h"
 #include "msm_vidc_debug.h"
+#include "msm_vidc_common.h"
 
 #define FIRMWARE_SIZE			0X00A00000
 #define REG_ADDR_OFFSET_BITMASK	0x000FFFFF
@@ -266,7 +267,7 @@ static int venus_hfi_acquire_regulator(struct regulator_info *rinfo)
 					rinfo->name);
 		}
 	}
-	WARN_ON(!regulator_is_enabled(rinfo->regulator));
+	WARN_ON(!regulator_is_enabled(rinfo->regulator) && (msm_vidc_debug & VIDC_INFO));
 	return rc;
 }
 
@@ -2626,6 +2627,7 @@ err_core_init:
 
 static int venus_hfi_core_release(void *device)
 {
+	struct msm_vidc_core *core = NULL;
 	struct venus_hfi_device *dev;
 	int rc = 0;
 
@@ -2660,6 +2662,10 @@ static int venus_hfi_core_release(void *device)
 		if (!(dev->intr_status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK))
 			disable_irq_nosync(dev->hal_data->irq);
 		dev->intr_status = 0;
+
+		//No need to wait if SYS_ERROR (deadlock)
+		core = get_vidc_core(dev->device_id);
+		if (core && core->state != VIDC_CORE_INVALID) flush_workqueue(dev->vidc_workq);
 	}
 	venus_hfi_set_state(dev, VENUS_STATE_DEINIT);
 
@@ -2704,6 +2710,13 @@ static void venus_hfi_core_clear_interrupt(struct venus_hfi_device *device)
 
 	if (!device) {
 		dprintk(VIDC_ERR, "%s: NULL device\n", __func__);
+		return;
+	}
+
+	if (device->state == VENUS_STATE_DEINIT) {
+		dprintk(VIDC_DBG, "SPURIOUS_INTR for device: %p: "
+			"times: %d interrupt_status: %d",
+			device, ++device->spur_count, intr_status);
 		return;
 	}
 
@@ -4357,7 +4370,7 @@ static int venus_hfi_disable_regulator(struct regulator_info *rinfo)
 disable_regulator_failed:
 
 	/* Bring attention to this issue */
-	WARN_ON(1);
+	WARN_ON(msm_vidc_debug & VIDC_INFO);
 	return rc;
 }
 
@@ -4550,7 +4563,7 @@ static int venus_hfi_get_fw_info(void *dev, struct hal_fw_info *fw_info)
 	struct venus_hfi_device *device = dev;
 	u32 smem_block_size = 0;
 	u8 *smem_table_ptr;
-	char version[VENUS_VERSION_LENGTH];
+	char version[VENUS_VERSION_LENGTH] = {0};
 	const u32 version_string_size = VENUS_VERSION_LENGTH;
 	const u32 smem_image_index_venus = 14 * 128;
 

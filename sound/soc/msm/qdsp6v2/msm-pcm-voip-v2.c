@@ -31,6 +31,10 @@
 #include "msm-pcm-routing-v2.h"
 #include "q6voice.h"
 #include "audio_ocmem.h"
+//htc audio ++
+#include <linux/jiffies.h>
+#define LOG_DUMP_PERIOD (5*HZ)
+//htc audio --
 
 #define SHARED_MEM_BUF 2
 #define VOIP_MAX_Q_LEN 10
@@ -172,6 +176,11 @@ struct voip_drv_info {
 	uint32_t evrc_min_rate;
 	uint32_t evrc_max_rate;
 };
+
+//htc audio ++
+static unsigned long ul_log_dump_j = 0;
+static unsigned long dl_log_dump_j = 0;
+//htc audio --
 
 static int voip_get_media_type(uint32_t mode, uint32_t rate_type,
 				unsigned int samp_rate,
@@ -325,7 +334,7 @@ static void voip_ssr_cb_fn(uint32_t opcode, void *private_data)
 	/* Notify ASoC to send next playback/Capture to unblock write/read */
 	struct voip_drv_info *prtd = private_data;
 
-	if (opcode == 0xFFFFFFFF) {
+	if ((opcode == 0xFFFFFFFF) || (opcode == RESET_EVENTS)) { //HTC_AUD
 
 		prtd->voip_reset = true;
 		pr_debug("%s: Notify ASoC to send next playback/Capture\n",
@@ -501,9 +510,18 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 
 		spin_unlock_irqrestore(&prtd->dsp_ul_lock, dsp_flags);
 		snd_pcm_period_elapsed(prtd->capture_substream);
+
+//htc aduio ++
+		ul_log_dump_j = 0;
+//htc audio --
 	} else {
 		spin_unlock_irqrestore(&prtd->dsp_ul_lock, dsp_flags);
-		pr_err("UL data dropped\n");
+//htc audio ++
+		if(time_after(jiffies,ul_log_dump_j)) {
+			ul_log_dump_j = jiffies + LOG_DUMP_PERIOD;
+			pr_err("UL data dropped\n");
+		}
+//htc audio --
 	}
 
 	wake_up(&prtd->out_wait);
@@ -667,10 +685,20 @@ static void voip_process_dl_pkt(uint8_t *voc_pkt, void *private_data)
 
 		spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
 		snd_pcm_period_elapsed(prtd->playback_substream);
+
+//htc audio ++
+		dl_log_dump_j = 0;
+//htc audio --
 	} else {
 		*((uint32_t *)voc_pkt) = 0;
 		spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
-		pr_err("DL data not available\n");
+
+//htc audio ++
+		if(time_after(jiffies,dl_log_dump_j)) {
+			dl_log_dump_j = jiffies + LOG_DUMP_PERIOD;
+			pr_err("DL data not available\n");
+		}
+//htc audio --
 	}
 	wake_up(&prtd->in_wait);
 }
@@ -826,6 +854,11 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 					buf_node->frame.pktlen = count -
 					(sizeof(buf_node->frame.frm_hdr) +
 					 sizeof(buf_node->frame.pktlen));
+			}
+			if (ret) {
+				pr_err("%s: copy from user failed %d\n",
+				       __func__, ret);
+				return -EFAULT;
 			}
 			spin_lock_irqsave(&prtd->dsp_lock, dsp_flags);
 			list_add_tail(&buf_node->list, &prtd->in_queue);
@@ -1196,6 +1229,9 @@ static int msm_pcm_prepare(struct snd_pcm_substream *substream)
 			goto done;
 		}
 
+//htc audio ++
+		ul_log_dump_j = dl_log_dump_j = 0;
+//htc audio --
 		/* Initialaizing cb variables */
 		voc_register_mvs_cb(voip_process_ul_pkt,
 				    voip_process_dl_pkt,

@@ -32,14 +32,198 @@ static int msm_ipc_router_smd_xprt_debug_mask;
 module_param_named(debug_mask, msm_ipc_router_smd_xprt_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#include <linux/fs.h>
+#include <linux/debugfs.h>
+#define DBG_SMD_XPRT_MAX_MSG   512UL
+/* Maximum debug message length */
+#define DBG_SMD_XPRT_MSG_LEN   100UL
+
+#define TIME_BUF_LEN  20
+
+//SMD debug
+void smd_xprt_dbg_log_event(const char * event, ...);
+
+static int smd_xprt_htc_debug_enable = 0;
+static int smd_xprt_htc_debug_dump = 1;
+static int smd_xprt_htc_debug_dump_lines = DBG_SMD_XPRT_MAX_MSG;
+static int smd_xprt_htc_debug_print = 0;
+module_param_named(smd_xprt_htc_debug_enable, smd_xprt_htc_debug_enable,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+module_param_named(smd_xprt_htc_debug_dump, smd_xprt_htc_debug_dump,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+module_param_named(smd_xprt_htc_debug_dump_lines, smd_xprt_htc_debug_dump_lines,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+module_param_named(smd_xprt_htc_debug_print, smd_xprt_htc_debug_print,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+static struct {
+	char     (buf[DBG_SMD_XPRT_MAX_MSG])[DBG_SMD_XPRT_MSG_LEN];   /* buffer */
+	unsigned idx;   /* index */
+	rwlock_t lck;   /* lock */
+} dbg_smd_xprt = {
+	.idx = 0,
+	.lck = __RW_LOCK_UNLOCKED(lck)
+};
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+
 #if defined(DEBUG)
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#define D(x...) do { \
+	if (msm_ipc_router_smd_xprt_debug_mask) \
+		pr_info(x); \
+	if (smd_xprt_htc_debug_enable) \
+		smd_xprt_dbg_log_event(x); \
+} while (0)
+#else//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
 #define D(x...) do { \
 if (msm_ipc_router_smd_xprt_debug_mask) \
 	pr_info(x); \
 } while (0)
-#else
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#else//defined(DEBUG)
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#define D(x...) do { \
+	if (smd_htc_debug_enable) \
+		smd_xprt_dbg_log_event(x); \
+} while (0)
+#else//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
 #define D(x...) do { } while (0)
-#endif
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#endif//defined(DEBUG)
+
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+
+/**
+ * dbg_inc: increments debug event index
+ * @idx: buffer index
+ */
+static void smd_xprt_dbg_inc(unsigned *idx)
+{
+	*idx = (*idx + 1) & (DBG_SMD_XPRT_MAX_MSG-1);
+}
+
+/*get_timestamp - returns time of day in us */
+static char *smd_xprt_get_timestamp(char *tbuf)
+{
+	unsigned long long t;
+	unsigned long nanosec_rem;
+
+	t = cpu_clock(smp_processor_id());
+	nanosec_rem = do_div(t, 1000000000)/1000;
+	scnprintf(tbuf, TIME_BUF_LEN, "[%5lu.%06lu] ", (unsigned long)t,
+		nanosec_rem);
+	return tbuf;
+}
+
+void smd_xprt_events_print(void)
+{
+	unsigned long	flags;
+	unsigned	i;
+	unsigned lines = 0;
+
+	pr_info("### Show SMD XPRT Log Start ###\n");
+
+	read_lock_irqsave(&dbg_smd_xprt.lck, flags);
+
+	i = dbg_smd_xprt.idx;
+
+	for (smd_xprt_dbg_inc(&i); i != dbg_smd_xprt.idx; smd_xprt_dbg_inc(&i)) {
+		if (!strnlen(dbg_smd_xprt.buf[i], DBG_SMD_XPRT_MSG_LEN))
+			continue;
+		pr_info("%s", dbg_smd_xprt.buf[i]);
+		lines++;
+		if ( lines > smd_xprt_htc_debug_dump_lines )
+			break;
+	}
+
+	read_unlock_irqrestore(&dbg_smd_xprt.lck, flags);
+
+	pr_info("### Show SMD XPRT Log End ###\n");
+}
+
+void msm_smd_xprt_dumplog(void)
+{
+
+	if ( !smd_xprt_htc_debug_enable ) {
+		pr_info("%s: smd_xprt_htc_debug_enable=[%d]\n", __func__, smd_xprt_htc_debug_enable);
+		return;
+	}
+
+	if ( !smd_xprt_htc_debug_dump ) {
+		pr_info("%s: smd_xprt_htc_debug_dump=[%d]\n", __func__, smd_xprt_htc_debug_dump);
+		return;
+	}
+
+	smd_xprt_events_print();
+	return;
+}
+EXPORT_SYMBOL(msm_smd_xprt_dumplog);
+
+void smd_xprt_dbg_log_event(const char * event, ...)
+{
+	unsigned long flags;
+	char tbuf[TIME_BUF_LEN];
+	char dbg_buff[DBG_SMD_XPRT_MSG_LEN];
+	va_list arg_list;
+	int data_size;
+
+	if ( !smd_xprt_htc_debug_enable ) {
+		return;
+	}
+
+	va_start(arg_list, event);
+	data_size = vsnprintf(dbg_buff,
+			      DBG_SMD_XPRT_MSG_LEN, event, arg_list);
+	va_end(arg_list);
+
+	write_lock_irqsave(&dbg_smd_xprt.lck, flags);
+
+	scnprintf(dbg_smd_xprt.buf[dbg_smd_xprt.idx], DBG_SMD_XPRT_MSG_LEN,
+		"%s %s", smd_xprt_get_timestamp(tbuf), dbg_buff);
+
+	smd_xprt_dbg_inc(&dbg_smd_xprt.idx);
+
+	if ( smd_xprt_htc_debug_print )
+		pr_info("%s", dbg_buff);
+	write_unlock_irqrestore(&dbg_smd_xprt.lck, flags);
+
+	return;
+
+}
+EXPORT_SYMBOL(smd_xprt_dbg_log_event);
+
+static int smd_xprt_events_show(struct seq_file *s, void *unused)
+{
+	unsigned long	flags;
+	unsigned	i;
+
+	read_lock_irqsave(&dbg_smd_xprt.lck, flags);
+
+	i = dbg_smd_xprt.idx;
+	for (smd_xprt_dbg_inc(&i); i != dbg_smd_xprt.idx; smd_xprt_dbg_inc(&i)) {
+		if (!strnlen(dbg_smd_xprt.buf[i], DBG_SMD_XPRT_MSG_LEN))
+			continue;
+		seq_printf(s, "%s", dbg_smd_xprt.buf[i]);
+	}
+
+	read_unlock_irqrestore(&dbg_smd_xprt.lck, flags);
+
+	return 0;
+}
+
+static int smd_xprt_events_open(struct inode *inode, struct file *f)
+{
+	return single_open(f, smd_xprt_events_show, inode->i_private);
+}
+
+const struct file_operations smd_xprt_dbg_fops = {
+	.open = smd_xprt_events_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
 
 #define MIN_FRAG_SZ (IPC_ROUTER_HDR_SIZE + sizeof(union rr_control_msg))
 
@@ -418,6 +602,8 @@ static void msm_ipc_router_smd_remote_notify(void *_dev, unsigned event)
 		break;
 
 	case SMD_EVENT_OPEN:
+		D("%s: get smd remote notify SMD_EVENT_OPEN\n", __func__);
+		pr_info("%s: get smd remote notify SMD_EVENT_OPEN\n", __func__);
 		xprt_work = kmalloc(sizeof(struct msm_ipc_router_smd_xprt_work),
 				    GFP_ATOMIC);
 		if (!xprt_work) {
@@ -432,6 +618,8 @@ static void msm_ipc_router_smd_remote_notify(void *_dev, unsigned event)
 		break;
 
 	case SMD_EVENT_CLOSE:
+		D("%s: get smd remote notify SMD_EVENT_CLOSE\n", __func__);
+		pr_info("%s: get smd remote notify SMD_EVENT_CLOSE\n", __func__);
 		spin_lock_irqsave(&smd_xprtp->ss_reset_lock, flags);
 		smd_xprtp->ss_reset = 1;
 		spin_unlock_irqrestore(&smd_xprtp->ss_reset_lock, flags);
@@ -953,6 +1141,20 @@ static int __init msm_ipc_router_smd_xprt_init(void)
 					ipc_router_smd_xprt_probe_worker);
 	schedule_delayed_work(&ipc_router_smd_xprt_probe_work,
 			msecs_to_jiffies(IPC_ROUTER_SMD_XPRT_WAIT_TIMEOUT));
+
+#ifdef CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+#ifdef CONFIG_DEBUG_FS
+	do {
+		struct dentry *dent;
+
+		dent = debugfs_create_dir("smd_xprt", 0);
+		if (!IS_ERR(dent)) {
+			debugfs_create_file("dumplog", S_IRUGO, dent, NULL, &smd_xprt_dbg_fops);
+		}
+	} while(0);
+#endif//CONFIG_DEBUG_FS
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0005_HTC_DUMP_SMSM_LOG
+
 	return 0;
 }
 

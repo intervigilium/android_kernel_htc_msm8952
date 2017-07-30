@@ -28,6 +28,13 @@
 #include <sound/audio_cal_utils.h>
 #include <sound/adsp_err.h>
 
+//htc audio ++
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
+
 #define WAKELOCK_TIMEOUT	5000
 enum {
 	AFE_COMMON_RX_CAL = 0,
@@ -1987,7 +1994,7 @@ int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		ret = -EINVAL;
 		return ret;
 	}
-
+	pr_info("%s: port id: %#x rate %d\n", __func__, port_id,rate);
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 		(port_id == RT_PROXY_DAI_002_TX)) {
 		pr_debug("%s: before incrementing pcm_afe_instance %d"\
@@ -2014,7 +2021,7 @@ int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 		port_id = VIRTUAL_ID_TO_PORTID(port_id);
 	}
 
-	pr_debug("%s: port id: 0x%x\n", __func__, port_id);
+	pr_info("%s: true port id: %#x rate %d\n", __func__, port_id,rate);
 
 	index = q6audio_get_port_index(port_id);
 	ret = q6audio_validate_port(port_id);
@@ -3878,7 +3885,7 @@ int afe_close(int port_id)
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	pr_debug("%s: port_id = 0x%x\n", __func__, port_id);
+	pr_info("%s: port_id = 0x%x\n", __func__, port_id);
 	if ((port_id == RT_PROXY_DAI_001_RX) ||
 			(port_id == RT_PROXY_DAI_002_TX)) {
 		pr_debug("%s: before decrementing pcm_afe_instance %d\n",
@@ -3967,9 +3974,15 @@ int afe_close(int port_id)
 	stop.reserved = 0;
 
 	ret = afe_apr_send_pkt(&stop, &this_afe.wait[index]);
-	if (ret)
+//HTC_AUD_START
+	if (ret) {
 		pr_err("%s: AFE close failed %d\n", __func__, ret);
-
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_err("%s: audio trigger ramdump\n", __func__);
+		BUG();
+#endif
+	}
+//HTC_AUD_END
 fail_cmd:
 	return ret;
 }

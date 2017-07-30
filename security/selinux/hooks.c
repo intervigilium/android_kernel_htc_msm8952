@@ -3070,11 +3070,19 @@ static int selinux_revalidate_file_permission(struct file *file, int mask)
 
 static int selinux_file_permission(struct file *file, int mask)
 {
-	struct inode *inode = file_inode(file);
-	struct file_security_struct *fsec = file->f_security;
-	struct inode_security_struct *isec = inode->i_security;
+	struct inode *inode = NULL;
+	struct file_security_struct *fsec = NULL;
+	struct inode_security_struct *isec = NULL;
 	u32 sid = current_sid();
 	int ret;
+
+	/* Invalid pointer input */
+        if (file == NULL)
+		return -1;
+
+	inode = file_inode(file);
+	fsec = file->f_security;
+	isec = inode->i_security;
 
 	if (!mask)
 		/* No permission to check.  Existence test. */

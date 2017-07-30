@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -69,6 +69,13 @@
 #define REG_BYTES 2
 #define VAL_BYTES 1
 #define WCD9XXX_PAGE_NUM(reg)    (((reg) >> 8) & 0xff)
+
+//HTC_AUD_START
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//HTC_AUD_END
 
 struct wcd9xxx_i2c {
 	struct i2c_client *client;
@@ -1133,7 +1140,6 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 {
 	int ret;
 	struct wcd9xxx_pdata *pdata = wcd9xxx->dev->platform_data;
-
 
 	if (wcd9xxx->wcd_rst_np) {
 		/* use pinctrl and call into wcd-rst-gpio driver */
@@ -2931,6 +2937,12 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
 		ret = -EPROBE_DEFER;
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_info("%s:trigger ramdump to keep status\n",__func__);
+		BUG();
+#endif
+//HTC_AUD_END
 		goto err_reset;
 	}
 	wcd9xxx->read_dev = wcd9xxx_slim_read_device;
@@ -2955,6 +2967,12 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
 		ret = -EPROBE_DEFER;
+//HTC_AUD_START
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_info("%s:trigger ramdump to keep status\n",__func__);
+		BUG();
+#endif
+//HTC_AUD_END
 		goto err_slim_add;
 	}
 	wcd9xxx_inf_la = wcd9xxx->slim_slave->laddr;
@@ -3055,6 +3073,7 @@ static int wcd9xxx_slim_device_reset(struct slim_device *sldev)
 	dev_info(wcd9xxx->dev, "%s: device reset\n", __func__);
 	if (wcd9xxx->slim_device_bootup)
 		return 0;
+
 	ret = wcd9xxx_reset(wcd9xxx);
 	if (ret)
 		dev_err(wcd9xxx->dev, "%s: Resetting Codec failed\n", __func__);

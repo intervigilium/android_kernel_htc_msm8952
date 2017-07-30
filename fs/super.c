@@ -37,6 +37,7 @@
 #include "internal.h"
 
 
+atomic_t vfs_emergency_remount;
 LIST_HEAD(super_blocks);
 DEFINE_SPINLOCK(sb_lock);
 
@@ -753,6 +754,7 @@ static void do_emergency_remount(struct work_struct *work)
 {
 	struct super_block *sb, *p = NULL;
 
+	atomic_set(&vfs_emergency_remount, 1);
 	spin_lock(&sb_lock);
 	list_for_each_entry_reverse(sb, &super_blocks, s_list) {
 		if (hlist_unhashed(&sb->s_instances))
@@ -777,6 +779,7 @@ static void do_emergency_remount(struct work_struct *work)
 		__put_super(p);
 	spin_unlock(&sb_lock);
 	kfree(work);
+	atomic_set(&vfs_emergency_remount, 0);
 	printk("Emergency Remount complete\n");
 }
 

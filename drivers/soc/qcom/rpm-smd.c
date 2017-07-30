@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -39,6 +39,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/trace_rpm_smd.h>
 
+#include "smd_private.h"
 /* Debug Definitions */
 enum {
 	MSM_RPM_LOG_REQUEST_PRETTY	= BIT(0),
@@ -64,12 +65,14 @@ struct msm_rpm_driver_data {
 #define DEFAULT_BUFFER_SIZE 256
 #define DEBUG_PRINT_BUFFER_SIZE 512
 #define MAX_SLEEP_BUFFER 128
-#define GFP_FLAG(noirq) (noirq ? GFP_ATOMIC : GFP_KERNEL)
+#define GFP_FLAG(noirq) (noirq ? GFP_ATOMIC : GFP_NOFS)
 #define INV_RSC "resource does not exist"
 #define ERR "err\0"
 #define MAX_ERR_BUFFER_SIZE 128
 #define MAX_WAIT_ON_ACK 24
 #define INIT_ERROR 1
+
+#define SMD_CHANNEL_NOTIF_TIMEOUT 1000
 
 static ATOMIC_NOTIFIER_HEAD(msm_rpm_sleep_notifier);
 static bool standalone;
@@ -366,13 +369,13 @@ static inline int msm_rpm_get_error_from_ack(uint8_t *buf)
 	if (!req_len)
 		return 0;
 
-	pr_err("%s:rpm returned error or nack req_len: %d id_ack: %d\n",
-				__func__, tmp_buf->req_len, tmp_buf->id_ack);
+	pr_err("%s:rpm returned error or nack req_len: %d id_ack: %d tmp buf addr: %p buf:%p\n",
+				__func__, tmp_buf->req_len, tmp_buf->id_ack,(void *) tmp_buf, buf);
 
 	tmp = buf + sizeof(struct msm_rpm_ack_msg);
 
 	if (memcmp(tmp, ERR, sizeof(uint32_t))) {
-		pr_err("%s rpm returned error\n", __func__);
+		pr_err("%s rpm returned error  %s tmp %p buf %p\n", __func__, tmp, tmp, buf);
 		BUG_ON(1);
 	}
 
@@ -780,8 +783,10 @@ static struct msm_rpm_wait_data *msm_rpm_get_entry_from_msg_id(uint32_t msg_id)
 
 	list_for_each(ptr, &msm_rpm_wait_list) {
 		elem = list_entry(ptr, struct msm_rpm_wait_data, list);
-		if (elem && (elem->msg_id == msg_id))
+		if (elem && (elem->msg_id == msg_id)) {
+			trace_rpm_msg_id(msm_rpm_msg_id.counter, elem->msg_id, msg_id);
 			break;
+		}
 		elem = NULL;
 	}
 	spin_unlock_irqrestore(&msm_rpm_list_lock, flags);
@@ -803,6 +808,7 @@ static uint32_t msm_rpm_get_next_msg_id(void)
 		id = atomic_inc_return(&msm_rpm_msg_id);
 	} while ((id == 0) || (id == 1) || msm_rpm_get_entry_from_msg_id(id));
 
+	trace_rpm_msg_id(msm_rpm_msg_id.counter, id, 0xDEADBEEF);
 	return id;
 }
 
@@ -922,7 +928,9 @@ static void msm_rpm_smd_work(struct work_struct *work)
 		while (smd_is_pkt_avail(msm_rpm_data.ch_info)) {
 			if (msm_rpm_read_smd_data(buf))
 				break;
+			trace_rpm_smd_ack_buf(buf, msg_id, errno);
 			msg_id = msm_rpm_get_msg_id_from_ack(buf);
+			trace_rpm_smd_ack_buf(buf, msg_id, errno);
 			errno = msm_rpm_get_error_from_ack((uint8_t *)buf);
 			trace_rpm_smd_ack_recvd(0, msg_id, errno);
 			msm_rpm_process_ack(msg_id, errno);
@@ -1222,6 +1230,129 @@ int msm_rpm_send_request_noirq(struct msm_rpm_request *handle)
 }
 EXPORT_SYMBOL(msm_rpm_send_request_noirq);
 
+void msm_rpm_dump_half_channel_data(smd_channel_t *ch_info, volatile void __iomem *half_channel, unsigned char *data)
+{
+       pr_info("[RPM] state=0x%08x, head=0x%08x, tail=0x%08x\n",
+                       ch_info->half_ch->get_state(half_channel),
+                       ch_info->half_ch->get_head(half_channel),
+                       ch_info->half_ch->get_tail(half_channel)
+                       );
+
+       pr_info("[RPM] fSTATE=0x%08x, fHEAD=0x%08x, fTAIL=0x%08x\n",
+                       ch_info->half_ch->get_fSTATE(half_channel),
+                       ch_info->half_ch->get_fHEAD(half_channel),
+                       ch_info->half_ch->get_fTAIL(half_channel)
+                       );
+}
+
+void msm_rpm_dump_channel_data(smd_channel_t *ch_info)
+{
+    struct list_head *ptr;
+    struct msm_rpm_wait_data *elem = NULL;
+    unsigned long flags;
+
+    pr_info("[RPM] SMD Channel `%s'\n", ch_info->name);
+
+    pr_info("[RPM] Send:\n");
+    msm_rpm_dump_half_channel_data(ch_info, ch_info->send, ch_info->send_data);
+
+    pr_info("[RPM] Recv:\n");
+    msm_rpm_dump_half_channel_data(ch_info, ch_info->recv, ch_info->recv_data);
+
+    pr_info("[RPM] current packet size: %d, read avail size %d\n",
+            smd_cur_packet_size(ch_info), smd_read_avail(ch_info));
+
+    pr_info("[RPM] Ack wait list:\n");
+    spin_lock_irqsave(&msm_rpm_list_lock, flags);
+    list_for_each(ptr, &msm_rpm_wait_list) {
+        elem = list_entry(ptr, struct msm_rpm_wait_data, list);
+        pr_info("MSG: %d\n", elem->msg_id);
+    }
+    spin_unlock_irqrestore(&msm_rpm_list_lock, flags);
+}
+
+#define MAX_MSM_RPM_WAIT_RETRY  (20)
+void gic_show_pending_irq(void);
+bool gic_is_irq_pending(unsigned int irq);
+int smd_interrupt_id(smd_channel_t *ch);
+
+int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
+{
+    unsigned int remain = 0;
+    int retry = MAX_MSM_RPM_WAIT_RETRY;
+
+    do {
+        remain = wait_for_completion_timeout(&elem->ack, msecs_to_jiffies(SMD_CHANNEL_NOTIF_TIMEOUT));
+
+        /* For timeout case, try to recover it or print warning and dump channel data, then let it go with TIMEOUT error. */
+        if (0 == remain) {
+
+            /* Even polling does not work, leave debug messages. */
+            if (retry == 0) {
+                unsigned long flags;
+
+                WARN(1, "max %u msecs timeout for waiting msg rpm ack of msg %u.\n",
+                        SMD_CHANNEL_NOTIF_TIMEOUT * MAX_MSM_RPM_WAIT_RETRY, elem->msg_id);
+                /* Dump SMD channel data to check details */
+                msm_rpm_dump_channel_data(msm_rpm_data.ch_info);
+
+                local_irq_save(flags);
+                gic_show_pending_irq();
+                local_irq_restore(flags);
+
+                elem->errno = -ETIMEDOUT;
+				/* For HTC Debug purpose */
+                // panic("Cannot process RPM acknowledge message normally.\n");
+            }
+            /* Poll smd channel actively. */
+            else {
+                int smd_irq;
+                struct irq_chip *smd_irq_chip;
+                struct irq_data *smd_irq_data;
+
+                smd_irq = smd_interrupt_id(msm_rpm_data.ch_info);
+                smd_irq_chip = irq_get_chip(smd_irq);
+                smd_irq_data = irq_get_irq_data(smd_irq);
+
+                pr_warn("%s: %u msecs timeout for waiting msg rpm ack of msg %u. Poll SMD channel.\n",
+                        __func__, SMD_CHANNEL_NOTIF_TIMEOUT, elem->msg_id);
+
+                if (!standalone) {
+                    bool rpm_smd_irq_is_pending = 0;
+
+                    local_irq_disable();
+                    rpm_smd_irq_is_pending = gic_is_irq_pending(smd_irq);
+                    local_irq_enable();
+
+                    pr_warn("%s: IRQ %d is pending = %d\n", __func__, smd_irq, rpm_smd_irq_is_pending);
+
+                    if (smd_irq_chip && smd_irq_chip->irq_enable) {
+                        pr_warn("%s: try to enable rpm smd irq %d.\n", __func__, smd_irq);
+                        smd_irq_chip->irq_enable(smd_irq_data);
+                    }
+
+                    if (smd_irq_chip && smd_irq_chip->irq_unmask) {
+                        pr_warn("%s: try to unmask rpm smd irq %d.\n", __func__, smd_irq);
+                        smd_irq_chip->irq_unmask(smd_irq_data);
+                    }
+                }
+
+                /* Dump SMD channel data to check details */
+                msm_rpm_dump_channel_data(msm_rpm_data.ch_info);
+
+                if (smd_is_pkt_avail(msm_rpm_data.ch_info))
+                    complete(&data_ready);
+                else
+                    pr_warn("%s: rpm smd channel has no ready data.\n", __func__);
+            }
+
+            retry--;
+        }
+    } while (remain == 0 && retry >= 0);
+
+    return 0;
+}
+
 int msm_rpm_wait_for_ack(uint32_t msg_id)
 {
 	struct msm_rpm_wait_data *elem;
@@ -1242,7 +1373,7 @@ int msm_rpm_wait_for_ack(uint32_t msg_id)
 	if (!elem)
 		return rc;
 
-	wait_for_completion(&elem->ack);
+	msm_rpm_wait_for_ack_handle(elem);
 	trace_rpm_smd_ack_recvd(0, msg_id, 0xDEADFEED);
 
 	rc = elem->errno;

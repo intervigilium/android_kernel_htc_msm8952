@@ -1096,9 +1096,10 @@ void wcnss_log_debug_regs_on_bite(void)
 		}
 
 		clk_rate = clk_get_rate(measure);
-		pr_info("wcnss: clock frequency is: %luHz\n", clk_rate);
+		pr_err("wcnss: clock frequency is: %luHz\n", clk_rate);
 
 		if (clk_rate) {
+			pr_err("%s: Try to dump wcnss register(wcnss_pronto_log_debug_regs)\n", __func__);
 			wcnss_pronto_log_debug_regs();
 			if (wcnss_get_mux_control())
 				wcnss_log_iris_regs();
@@ -1119,6 +1120,7 @@ void wcnss_reset_fiq(bool clk_chk_en)
 		if (clk_chk_en) {
 			wcnss_log_debug_regs_on_bite();
 		} else {
+			pr_err("%s: Try to dump wcnss register(wcnss_pronto_log_debug_regs)\n", __func__);
 			wcnss_pronto_log_debug_regs();
 			if (wcnss_get_mux_control())
 				wcnss_log_iris_regs();
@@ -3166,6 +3168,7 @@ wcnss_trigger_config(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Peripheral Loader failed on WCNSS.\n");
 			ret = PTR_ERR(penv->pil);
 			wcnss_disable_pc_add_req();
+			pr_err("%s: Try to dump wcnss register(wcnss_pronto_log_debug_regs)\n", __func__);
 			wcnss_pronto_log_debug_regs();
 		}
 	} while (pil_retry++ < WCNSS_MAX_PIL_RETRY && IS_ERR(penv->pil));
@@ -3422,6 +3425,7 @@ static int wcnss_notif_cb(struct notifier_block *this, unsigned long code,
 		if (pdev && pwlanconfig)
 			wcnss_wlan_power(&pdev->dev, pwlanconfig,
 					WCNSS_WLAN_SWITCH_OFF, NULL);
+		pr_err("%s: Try to dump wcnss register(wcnss_pronto_log_debug_regs)\n", __func__);
 		wcnss_pronto_log_debug_regs();
 		wcnss_disable_pc_remove_req();
 	} else if (SUBSYS_BEFORE_SHUTDOWN == code) {

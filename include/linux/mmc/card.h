@@ -111,12 +111,16 @@ struct mmc_ext_csd {
 	u8			raw_sec_erase_mult;	/* 230 */
 	u8			raw_sec_feature_support;/* 231 */
 	u8			raw_trim_mult;		/* 232 */
+	u8			cache_flush_policy;	/* 240 */
 	u8			raw_bkops_status;	/* 246 */
 	u8			raw_sectors[4];		/* 212 - 4 bytes */
 	u8			cmdq_depth;		/* 307 */
 	u8			cmdq_support;		/* 308 */
+	u8			barrier_support;	/* 486 */
 
 	u8			fw_version;		/* 254 */
+
+    bool		ffu_mode_op;	/* FFU mode operation */
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
 };
@@ -340,6 +344,7 @@ struct mmc_card {
 #define MMC_TYPE_SD		1		/* SD card */
 #define MMC_TYPE_SDIO		2		/* SDIO card */
 #define MMC_TYPE_SD_COMBO	3		/* SD combo (IO+mem) card */
+#define MMC_TYPE_NA		0xFF		/* Unknown type */
 	unsigned int		state;		/* (our) card state */
 #define MMC_STATE_PRESENT	(1<<0)		/* present in sysfs */
 #define MMC_STATE_READONLY	(1<<1)		/* card is read-only */
@@ -355,7 +360,8 @@ struct mmc_card {
 #define MMC_STATE_NEED_BKOPS	(1<<11)		/* card needs to do BKOPS */
 #define MMC_STATE_CMDQ		(1<<12)         /* card is in cmd queue mode */
 #define MMC_STATE_SUSPENDED     (1<<13)         /* card is suspended */
-#define MMC_STATE_HS400_STROBE	(1<<14)         /* card is in strobe mode */
+#define MMC_STATE_AUTO_BKOPS	(1<<14)		/* card is doing auto BKOPS */
+#define MMC_STATE_HS400_STROBE	(1<<15)         /* card is in strobe mode */
 	unsigned int		quirks; 	/* card quirks */
 #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
 #define MMC_QUIRK_BLKSZ_FOR_BYTE_MODE (1<<1)	/* use func->cur_blksize */
@@ -412,6 +418,7 @@ struct mmc_card {
 	struct mmc_part	part[MMC_NUM_PHY_PARTITION]; /* physical partitions */
 	unsigned int    nr_parts;
 	unsigned int	part_curr;
+	unsigned char	speed_class; /* SD card class level */
 
 	struct mmc_wr_pack_stats wr_pack_stats; /* packed commands stats*/
 
@@ -422,6 +429,7 @@ struct mmc_card {
 	struct notifier_block        reboot_notify;
 	enum mmc_pon_type pon_type;
 	u8 *cached_ext_csd;
+	int			force_remove;	/* force removing card */
 	bool cmdq_init;
 };
 
@@ -493,6 +501,7 @@ struct mmc_fixup {
 #define EXT_CSD_REV_ANY (-1u)
 
 #define CID_MANFID_SANDISK	0x2
+#define CID_MANFID_SANDISK_2 0x45
 #define CID_MANFID_TOSHIBA	0x11
 #define CID_MANFID_MICRON	0x13
 #define CID_MANFID_SAMSUNG	0x15
@@ -501,6 +510,18 @@ struct mmc_fixup {
 #define CID_MANFID_NUMONYX_MICRON 0xfe
 
 #define END_FIXUP { 0 }
+/* extended CSD mapping to mmc version */
+enum mmc_version_ext_csd_rev {
+	MMC_V4_0,
+	MMC_V4_1,
+	MMC_V4_2,
+	MMC_V4_41 = 5,
+	MMC_V4_5,
+	MMC_V4_51 = MMC_V4_5,
+	MMC_V5_0,
+	MMC_V5_01 = MMC_V5_0,
+	MMC_V5_1
+};
 
 #define _FIXUP_EXT(_name, _manfid, _oemid, _rev_start, _rev_end,	\
 		   _cis_vendor, _cis_device,				\
@@ -588,6 +609,7 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_doing_bkops(c)	((c)->state & MMC_STATE_DOING_BKOPS)
 #define mmc_card_need_bkops(c)	((c)->state & MMC_STATE_NEED_BKOPS)
 #define mmc_card_cmdq(c)       ((c)->state & MMC_STATE_CMDQ)
+#define mmc_card_doing_auto_bkops(c)	((c)->state & MMC_STATE_AUTO_BKOPS)
 #define mmc_card_suspended(c)  ((c)->state & MMC_STATE_SUSPENDED)
 
 #define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
@@ -615,6 +637,8 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_clr_cmdq(c)           ((c)->state &= ~MMC_STATE_CMDQ)
 #define mmc_card_set_suspended(c) ((c)->state |= MMC_STATE_SUSPENDED)
 #define mmc_card_clr_suspended(c) ((c)->state &= ~MMC_STATE_SUSPENDED)
+#define mmc_card_set_auto_bkops(c)	((c)->state |= MMC_STATE_AUTO_BKOPS)
+#define mmc_card_clr_auto_bkops(c)	((c)->state &= ~MMC_STATE_AUTO_BKOPS)
 
 static inline int get_mmc_fw_version(struct mmc_card *card)
 {
@@ -694,6 +718,11 @@ static inline int mmc_card_broken_byte_mode_512(const struct mmc_card *c)
 static inline int mmc_card_long_read_time(const struct mmc_card *c)
 {
 	return c->quirks & MMC_QUIRK_LONG_READ_TIME;
+}
+
+static inline bool mmc_card_support_auto_bkops(const struct mmc_card *c)
+{
+	return c->ext_csd.rev >= MMC_V5_1;
 }
 
 static inline bool mmc_enable_qca6574_settings(const struct mmc_card *c)

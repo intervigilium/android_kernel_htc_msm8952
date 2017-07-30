@@ -44,6 +44,7 @@
 #include <linux/irqchip/arm-gic.h>
 #include <linux/syscore_ops.h>
 #include <linux/msm_rtb.h>
+#include <linux/htc_debug_tools.h>
 
 #include <asm/cputype.h>
 #include <asm/irq.h>
@@ -51,6 +52,15 @@
 #include <asm/smp_plat.h>
 
 #include "irqchip.h"
+#ifdef CONFIG_HTC_POWER_DEBUG
+#define GIC_SPI_START 32
+#define EE0_KRAIT_HLOS_SPMI_PERIPH_IRQ (GIC_SPI_START + 190)
+#define TLMM_MSM_SUMMARY_IRQ (GIC_SPI_START + 208)
+#endif
+
+#ifdef CONFIG_HTC_DEBUG_WATCHDOG
+#include <linux/htc_debug_tools.h>
+#endif
 
 union gic_base {
 	void __iomem *common_base;
@@ -331,6 +341,11 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
+#ifdef CONFIG_HTC_POWER_DEBUG
+                if (EE0_KRAIT_HLOS_SPMI_PERIPH_IRQ != i + gic->irq_offset)
+                        if (TLMM_MSM_SUMMARY_IRQ != i + gic->irq_offset)
+                                pr_info("[WAKEUP] Resume caused by gic-%d\n", i + gic->irq_offset);
+#endif
 	}
 }
 
@@ -506,14 +521,29 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 		irqnr = irqstat & ~0x1c00;
 
 		if (likely(irqnr > 15 && irqnr < 1021)) {
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+			/* only check on timer interrupt */
+			if (irqnr == 20 && smp_processor_id() == 4) {
+				unsigned long long timestamp = sched_clock();
+				htc_debug_watchdog_check_pet(timestamp);
+			}
+#endif /* CONFIG_HTC_DEBUG_WATCHDOG */
 			irqnr = irq_find_mapping(gic->domain, irqnr);
+#if defined(CONFIG_HTC_DEBUG_RTB)
+			uncached_logk_pc(LOGK_IRQ, (void *)(uintptr_t)htc_debug_get_sched_clock_ms(), (void *)(uintptr_t)irqnr);
+#else
 			uncached_logk(LOGK_IRQ, (void *)(uintptr_t)irqnr);
+#endif /* CONFIG_HTC_DEBUG_RTB */
 			handle_IRQ(irqnr, regs);
 			continue;
 		}
 		if (irqnr < 16) {
 			writel_relaxed_no_log(irqstat, cpu_base + GIC_CPU_EOI);
+#if defined(CONFIG_HTC_DEBUG_RTB)
+			uncached_logk_pc(LOGK_IRQ, (void *)(uintptr_t)htc_debug_get_sched_clock_ms(), (void *)(uintptr_t)irqnr);
+#else
 			uncached_logk(LOGK_IRQ, (void *)(uintptr_t)irqnr);
+#endif /* CONFIG_HTC_DEBUG_RTB */
 #ifdef CONFIG_SMP
 			handle_IPI(irqnr, regs);
 #endif
@@ -940,7 +970,6 @@ void gic_set_irq_secure(unsigned int irq)
 {
 	unsigned int gicd_isr_reg, gicd_pri_reg;
 	unsigned int mask = 0xFFFFFF00;
-	struct gic_chip_data *gic_data = &gic_data[0];
 	struct irq_data *d = irq_get_irq_data(irq);
 
 	if (is_cpu_secure()) {
@@ -1171,3 +1200,25 @@ IRQCHIP_DECLARE(msm_8660_qgic, "qcom,msm-8660-qgic", gic_of_init);
 IRQCHIP_DECLARE(msm_qgic2, "qcom,msm-qgic2", msm_gic_of_init);
 
 #endif
+
+/*
+ *  * Before calling this function the interrupts should be disabled
+ *   * and the irq must be disabled at gic to avoid spurious interrupts
+ *    */
+bool gic_is_irq_pending(unsigned int irq)
+{
+    struct irq_data *d = irq_get_irq_data(irq);
+    u32 mask, val;
+
+    WARN_ON(!irqs_disabled());
+    raw_spin_lock(&irq_controller_lock);
+    mask = 1 << (gic_irq(d) % 32);
+    val = readl(gic_dist_base(d) +
+            GIC_DIST_ENABLE_SET + (gic_irq(d) / 32) * 4);
+    /* warn if the interrupt is enabled */
+    WARN_ON(val & mask);
+    val = readl(gic_dist_base(d) +
+            GIC_DIST_PENDING_SET + (gic_irq(d) / 32) * 4);
+    raw_spin_unlock(&irq_controller_lock);
+    return (bool) (val & mask);
+}

@@ -571,6 +571,7 @@ static int mdss_mdp_wb_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 	if (ctx->comp_cnt == 0)
 		return rc;
 
+	MDSS_XLOG(ctx->wb_num, ctx->intf_num);
 	rc = wait_for_completion_timeout(&ctx->wb_comp,
 			KOFF_TIMEOUT);
 	mdss_mdp_set_intr_callback(ctx->intr_type, ctx->intf_num,

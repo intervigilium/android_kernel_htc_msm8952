@@ -462,9 +462,96 @@ static const char *hwcap_str[] = {
 	NULL
 };
 
+u64 fuse_data;
+static int htc_read_fuse(void){
+	void __iomem *addr;
+	struct device_node *dn = of_find_compatible_node(NULL, NULL, "qcom,cpufuse-8952");
+	if (dn) {
+		addr = of_iomap(dn, 0);
+		if (!addr) {
+			pr_err("%s: Cannot get fuse address.\n", __func__);
+			return -ENOMEM;
+		}
+		fuse_data = readl_relaxed(addr);
+		pr_debug("%s: 0x%llX\n", __func__, fuse_data);
+		iounmap(addr);
+	} else {
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+#define __MX_MAX__ 4
+#define __CX_MAX__ 8
+
+static const u32 vddcx_pvs_retention_data[__CX_MAX__] =
+{
+    /* 000 */ 650000,
+    /* 001 */ 500000,
+    /* 010 */ 650000,
+    /* 011 */ 650000,
+    /* 100 */ 650000,
+    /* 101 */ 650000,
+    /* 110 */ 650000,
+    /* 111 */ 650000
+};
+
+static const u32 vddmx_pvs_retention_data[__MX_MAX__] =
+{
+	/* 00 */ 750000,
+	/* 01 */ 650000,
+	/* 10 */ 750000,
+	/* 11 */ 750000
+};
+
+#define __MX_RETENTION_BMSK__	0x3
+#define __MX_RETENTION_SHFT__	0x0
+#define __CX_RETENTION_BMSK__	0xe0
+#define __CX_RETENTION_SHFT__	0x5
+
+static int read_cx_fuse_setting(void){
+	if(htc_read_fuse() == 0)
+		return ((fuse_data & __CX_RETENTION_BMSK__) >> __CX_RETENTION_SHFT__);
+	else
+		return -ENOMEM;
+}
+
+static int read_mx_fuse_setting(void){
+	if(htc_read_fuse() == 0)
+		return ((fuse_data & __MX_RETENTION_BMSK__) >> __MX_RETENTION_SHFT__);
+	else
+		return -ENOMEM;
+}
+
+static u32 get_min_cx(void) {
+	u32 lookup_val = 0;
+	int mapping_data;
+
+	mapping_data = read_cx_fuse_setting();
+	if((mapping_data >= 0) && (mapping_data < __CX_MAX__))
+		lookup_val = vddcx_pvs_retention_data[mapping_data];
+
+	return lookup_val;
+}
+
+static u32 get_min_mx(void) {
+	u32 lookup_val = 0;
+	int mapping_data;
+
+	mapping_data = read_mx_fuse_setting();
+	if((mapping_data >= 0) && (mapping_data < __MX_MAX__))
+		lookup_val = vddmx_pvs_retention_data[mapping_data];
+
+	return lookup_val;
+}
+
+extern int *htc_target_quot[2];
+extern int htc_target_quot_len[2];
+
 static int c_show(struct seq_file *m, void *v)
 {
 	int i;
+	int j, size;
 
 	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
 		   cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
@@ -479,7 +566,8 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
 	}
-
+	seq_printf(m, "min_vddcx\t: %d\n", get_min_cx());
+	seq_printf(m, "min_vddmx\t: %d\n", get_min_mx());
 	/* dump out the processor features */
 	seq_puts(m, "Features\t: ");
 
@@ -506,6 +594,17 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "Hardware\t: %s\n", machine_name);
 	else
 		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
+
+	seq_printf(m, "CPU param\t: ");
+	size = sizeof(htc_target_quot)/sizeof(int *);
+	for(i = 0; i < size; i++) {
+		if(htc_target_quot + i != NULL) {
+			for(j = 1; j < htc_target_quot_len[i]; j++) {
+				seq_printf(m, "%d ", htc_target_quot[i][j]);
+			}
+		}
+	}
+	seq_printf(m, "\n");
 
 	return 0;
 }

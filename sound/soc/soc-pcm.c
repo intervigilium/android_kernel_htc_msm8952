@@ -33,6 +33,13 @@
 #include <sound/soc-dpcm.h>
 #include <sound/initval.h>
 
+//htc audio ++
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
+
 static const struct snd_pcm_hardware no_host_hardware = {
 	.info			= SNDRV_PCM_INFO_MMAP |
 					SNDRV_PCM_INFO_MMAP_VALID |
@@ -76,6 +83,25 @@ int dpcm_dapm_stream_event(struct snd_soc_pcm_runtime *fe, int dir,
 
 	return 0;
 }
+
+//htc audio ++
+static void dump_fe_state_by_be(struct snd_soc_pcm_runtime *fe,
+		struct snd_soc_pcm_runtime *be, int stream)
+{
+	struct snd_soc_dpcm *dpcm_params;
+
+	pr_info("%s: update be %s fail state %d\n",__func__,be->dai_link->name,be->dpcm[stream].state);
+	pr_info("%s: current fe %s state %d\n",__func__,fe->dai_link->stream_name,fe->dpcm[stream].state);
+	list_for_each_entry(dpcm_params, &be->dpcm[stream].fe_clients, list_fe) {
+
+		if (dpcm_params->fe == fe)
+			continue;
+
+		pr_info("%s: connected fe %s state %d\n",__func__,dpcm_params->fe->dai_link->stream_name, \
+			dpcm_params->fe->dpcm[stream].state);
+	}
+}
+//htc audio --
 
 static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream,
 					struct snd_soc_dai *soc_dai)
@@ -1138,14 +1164,23 @@ int dpcm_be_dai_startup(struct snd_soc_pcm_runtime *fe, int stream)
 				stream ? "capture" : "playback",
 				be->dpcm[stream].state);
 
-		if (be->dpcm[stream].users++ != 0)
+		if (be->dpcm[stream].users++ != 0) {
+			if(fe->dai_link->stream_name && be->dai_link->name)
+				pr_info("fe %s ref be %s users %d \n",fe->dai_link->stream_name,\
+					be->dai_link->name,be->dpcm[stream].users);
 			continue;
+		}
+
+		if(fe->dai_link->stream_name && be->dai_link->name)
+			pr_info("fe %s connec be %s users %d \n",fe->dai_link->stream_name,\
+				be->dai_link->name,be->dpcm[stream].users);
 
 		if ((be->dpcm[stream].state != SND_SOC_DPCM_STATE_NEW) &&
 		    (be->dpcm[stream].state != SND_SOC_DPCM_STATE_CLOSE))
 			continue;
 
 		dev_dbg(be->dev, "ASoC: open BE %s\n", be->dai_link->name);
+		pr_info("open path  %s %s %s \n", fe->dai_link->stream_name,(stream == SNDRV_PCM_STREAM_PLAYBACK)?"->":"<-",be->dai_link->name);
 
 		be_substream->runtime = be->dpcm[stream].runtime;
 		err = soc_pcm_open(be_substream);
@@ -1280,8 +1315,16 @@ int dpcm_be_dai_shutdown(struct snd_soc_pcm_runtime *fe, int stream)
 				stream ? "capture" : "playback",
 				be->dpcm[stream].state);
 
-		if (--be->dpcm[stream].users != 0)
+		if (--be->dpcm[stream].users != 0) {
+			if(fe->dai_link->stream_name && be->dai_link->name)
+				pr_info("fe %s discon be %s users %d\n", fe->dai_link->stream_name,\
+					be->dai_link->name,be->dpcm[stream].users);
 			continue;
+		}
+
+		if(fe->dai_link->stream_name && be->dai_link->name)
+			pr_info("fe %s discon be %s users %d\n", fe->dai_link->stream_name,\
+				be->dai_link->name,be->dpcm[stream].users);
 
 		if ((be->dpcm[stream].state != SND_SOC_DPCM_STATE_HW_FREE) &&
 		    (be->dpcm[stream].state != SND_SOC_DPCM_STATE_OPEN))
@@ -1290,6 +1333,7 @@ int dpcm_be_dai_shutdown(struct snd_soc_pcm_runtime *fe, int stream)
 		dev_dbg(be->dev, "ASoC: close BE %s\n",
 			dpcm->fe->dai_link->name);
 
+		pr_info("close path  %s %s %s \n", fe->dai_link->stream_name,(stream == SNDRV_PCM_STREAM_PLAYBACK)?"->":"<-",be->dai_link->name);
 		soc_pcm_close(be_substream);
 		be_substream->runtime = NULL;
 
@@ -1508,6 +1552,9 @@ int dpcm_be_dai_hw_params(struct snd_soc_pcm_runtime *fe, int stream)
 		if (ret < 0) {
 			dev_err(dpcm->be->dev,
 				"ASoC: hw_params BE failed %d\n", ret);
+//htc audio ++
+			dump_fe_state_by_be(fe, be, stream);
+//htc audio --
 			goto unwind;
 		}
 
@@ -1916,6 +1963,13 @@ static int dpcm_fe_dai_prepare(struct snd_pcm_substream *substream)
 	if (list_empty(&fe->dpcm[stream].be_clients)) {
 		dev_err(fe->dev, "ASoC: no backend DAIs enabled for %s\n",
 				fe->dai_link->name);
+//HTC_AUD_START
+//#ifdef CONFIG_HTC_DEBUG_DSP
+#if 0
+		pr_err("%s: trigger ramdump here to check mixer paths!", __func__);
+		BUG();
+#endif
+//HTC_AUD_END
 		ret = -EINVAL;
 		goto out;
 	}
@@ -2285,6 +2339,10 @@ static int dpcm_fe_dai_open(struct snd_pcm_substream *fe_substream)
 		dev_warn(fe->dev, "ASoC: %s no valid %s route err[%d]\n",
 			fe->dai_link->name, stream ? "capture" : "playback",
 			ret);
+//htc audio ++
+		if(ret == 0 && list)
+			dpcm_path_put(&list);
+//htc audio --
 		mutex_unlock(&fe->card->mutex);
 		return ret;
 	}

@@ -3847,6 +3847,23 @@ static int cpr_cpu_map_init(struct cpr_regulator *cpr_vreg, struct device *dev)
 	return 0;
 }
 
+int *htc_target_quot[2] = {NULL};
+int htc_target_quot_len[2] = {0};
+
+int htc_get_apc_index(const char* apc_name)
+{
+        int rc = -1;
+	/* For 8976, there are 2 cpr regulaotr: apc0_corner and apc1_corner,
+	 * For 8952, there is only 1 cpr regulator: apc_corner
+         */
+        if(!strncmp(apc_name, "apc0", 4) || !strncmp(apc_name, "apc_", 4)) {
+                rc = 0;
+        } else if (!strncmp(apc_name, "apc1", 4)) {
+                rc = 1;
+        }
+        return rc;
+}
+
 static int cpr_init_cpr_efuse(struct platform_device *pdev,
 				     struct cpr_regulator *cpr_vreg)
 {
@@ -3862,9 +3879,10 @@ static int cpr_init_cpr_efuse(struct platform_device *pdev,
 	u64 fuse_bits, fuse_bits_2;
 	u32 *target_quot_size;
 	struct cpr_quot_scale *quot_scale;
+	int idx = -1;
+	int *cpr_fuse_target_quot = NULL;
 
 	len = cpr_vreg->num_fuse_corners + 1;
-
 	bp_target_quot = kzalloc(len * sizeof(*bp_target_quot), GFP_KERNEL);
 	target_quot_size = kzalloc(len * sizeof(*target_quot_size), GFP_KERNEL);
 	quot_scale = kzalloc(len * sizeof(*quot_scale), GFP_KERNEL);
@@ -4135,6 +4153,13 @@ static int cpr_init_cpr_efuse(struct platform_device *pdev,
 		}
 	}
 	rc = cpr_check_allowed(pdev, cpr_vreg);
+
+	idx = htc_get_apc_index(cpr_vreg->rdesc.name);
+	if(idx == 0 || idx == 1) {
+		htc_target_quot_len[idx] = len;
+		cpr_fuse_target_quot = cpr_vreg->cpr_fuse_target_quot;
+		htc_target_quot[idx] = cpr_fuse_target_quot;
+	}
 
 error:
 	kfree(bp_target_quot);
@@ -5697,6 +5722,17 @@ static int cpr_get_cpr_max_ceiling(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(cpr_max_ceiling_fops, cpr_get_cpr_max_ceiling, NULL,
 			"%llu\n");
 
+static int cpr_get_cpr_fuse_revision(void *data, u64 *val)
+{
+       struct cpr_regulator *cpr_vreg = data;
+
+       *val = cpr_vreg->cpr_fuse_revision;
+
+       return 0;
+}
+DEFINE_SIMPLE_ATTRIBUTE(cpr_fuse_revision_fops, cpr_get_cpr_fuse_revision, NULL,
+                       "%llu\n");
+
 static int cpr_debug_info_open(struct inode *inode, struct file *file)
 {
 	file->private_data = inode->i_private;
@@ -5904,15 +5940,21 @@ static void cpr_debugfs_init(struct cpr_regulator *cpr_vreg)
 		return;
 	}
 
-	if (cpr_vreg->aging_info) {
-		temp = debugfs_create_file("aging_debug_info", S_IRUGO,
-					cpr_vreg->debugfs, cpr_vreg,
-					&cpr_aging_debug_info_fops);
-		if (IS_ERR_OR_NULL(temp)) {
-			cpr_err(cpr_vreg, "aging_debug_info node creation failed\n");
-			return;
-		}
-	}
+       temp = debugfs_create_file("cpr_fuse_revision", S_IRUGO,
+                       cpr_vreg->debugfs, cpr_vreg, &cpr_fuse_revision_fops);
+       if (IS_ERR_OR_NULL(temp)) {
+               cpr_err(cpr_vreg, "cpr_fuse_revision node creation failed\n");
+               return;
+       }
+       if (cpr_vreg->aging_info) {
+	       temp = debugfs_create_file("aging_debug_info", S_IRUGO,
+			       cpr_vreg->debugfs, cpr_vreg,
+			       &cpr_aging_debug_info_fops);
+	       if (IS_ERR_OR_NULL(temp)) {
+		       cpr_err(cpr_vreg, "aging_debug_info node creation failed\n");
+		       return;
+	       }
+       }
 }
 
 static void cpr_debugfs_remove(struct cpr_regulator *cpr_vreg)

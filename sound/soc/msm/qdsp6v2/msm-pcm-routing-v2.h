@@ -234,6 +234,25 @@ struct msm_pcm_stream_app_type_cfg {
 	int sample_rate;
 };
 
+//HTC_AUD_START
+struct htc_adm_effect_s {
+	u16 used;
+	u16 port_id;
+	uint32_t copp_id;
+	uint32_t payload_size;
+	void *payload;
+};
+
+enum HTC_ADM_EFFECT_ID {
+	HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA1 = 0,
+	HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA2,
+	HTC_ADM_EFFECT_ONEDOTONE,
+	HTC_ADM_EFFECT_ONEDOTONE_MUTE,
+	HTC_ADM_EFFECT_ONEDOTONE_RAMPING,
+	HTC_ADM_EFFECT_MAX,
+};
+//HTC_AUD_END
+
 /* dai_id: front-end ID,
  * dspst_id:  DSP audio stream ID
  * stream_type: playback or capture
@@ -264,4 +283,12 @@ void msm_pcm_routing_release_lock(void);
 
 void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 					int acdb_dev_id, int sample_rate);
+//htc audio++
+int msm_pcm_routing_get_port(struct snd_pcm_substream *substream, u16 *port_id);
+//htc audio --
+//HTC_AUD_START
+int htc_adm_effect_control(enum HTC_ADM_EFFECT_ID effect_id, u16 port_id, uint32_t copp_id,
+					uint32_t payload_size, void *payload);
+ushort get_adm_custom_effect_status(void);
+//HTC_AUD_END
 #endif /*_MSM_PCM_H*/

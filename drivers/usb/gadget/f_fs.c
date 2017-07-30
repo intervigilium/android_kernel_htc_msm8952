@@ -784,7 +784,7 @@ static ssize_t ffs_epfile_io(struct file *file,
 	int buffer_len = 0;
 	size_t extra_buf_alloc = 0;
 
-	pr_debug("%s: len %zu, read %d\n", __func__, len, read);
+	//pr_debug("%s: len %zu, read %d\n", __func__, len, read);
 
 	if (atomic_read(&epfile->error))
 		return -ENODEV;
@@ -946,13 +946,14 @@ first_try:
 				ret = -ENODEV;
 			spin_unlock_irq(&epfile->ffs->eps_lock);
 			if (read && ret > 0) {
+				print_hex_dump_bytes("check first 16 bytes of data: ", DUMP_PREFIX_NONE, data, 16);
 				if (len != MAX_BUF_LEN && ret < len)
 					pr_err("less data(%zd) recieved than intended length(%zu)\n",
 								ret, len);
 				if (ret > len) {
-					ret = -EOVERFLOW;
 					pr_err("More data(%zd) recieved than intended length(%zu)\n",
 								ret, len);
+					ret = -EOVERFLOW;
 				} else if (unlikely(copy_to_user(
 							buf, data, ret))) {
 					pr_err("Fail to copy to user len:%zd\n",

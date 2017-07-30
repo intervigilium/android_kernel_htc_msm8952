@@ -1563,7 +1563,7 @@ static void hfi_process_sys_get_prop_image_version(
 	char version[256];
 	const u32 version_string_size = 128;
 	const u32 smem_image_index_venus = 14 * 128;
-	u8 *str_image_version;
+	u8 *str_image_version = NULL;
 	int req_bytes;
 
 	req_bytes = pkt->size - sizeof(*pkt);
@@ -1595,7 +1595,7 @@ static void hfi_process_sys_get_prop_image_version(
 	if (smem_table_ptr &&
 			((smem_image_index_venus +
 				version_string_size) <= smem_block_size))
-		memcpy(smem_table_ptr + smem_image_index_venus,
+		if (str_image_version) memcpy(smem_table_ptr + smem_image_index_venus,
 				str_image_version, version_string_size);
 }
 

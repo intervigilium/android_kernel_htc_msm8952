@@ -40,6 +40,10 @@ static s64 last_get_time;
  * Obtains the average nr_running value since the last poll.
  * This function may not be called concurrently with itself
  */
+u64 dbg_diff;
+u64 dbg_tmp_avg;
+u64 dbg_tmp_iowait;
+u64 dbg_tmp_big_avg;
 void sched_get_nr_running_avg(int *avg, int *iowait_avg, int *big_avg)
 {
 	int cpu;
@@ -53,6 +57,7 @@ void sched_get_nr_running_avg(int *avg, int *iowait_avg, int *big_avg)
 
 	if (!diff)
 		return;
+	WARN((s64)diff<0, "[%s] time last:%llu curr:%llu ", __func__, last_get_time, curr_time);
 
 	/* read and reset nr_running counts */
 	for_each_possible_cpu(cpu) {
@@ -87,6 +92,17 @@ void sched_get_nr_running_avg(int *avg, int *iowait_avg, int *big_avg)
 	*avg = (int)div64_u64(tmp_avg * 100, diff);
 	*big_avg = (int)div64_u64(tmp_big_avg * 100, diff);
 	*iowait_avg = (int)div64_u64(tmp_iowait * 100, diff);
+
+	if (*avg < 0 || *big_avg < 0 || *iowait_avg < 0) {
+		dbg_diff = diff;
+		dbg_tmp_avg = tmp_avg;
+		dbg_tmp_big_avg = tmp_big_avg;
+		dbg_tmp_iowait = tmp_iowait;
+	}
+
+	if(*avg < 0) *avg = INT_MAX;
+	if(*big_avg < 0) *big_avg = INT_MAX;
+	if(*iowait_avg < 0) *iowait_avg = INT_MAX;
 
 	trace_sched_get_nr_running_avg(*avg, *big_avg, *iowait_avg);
 

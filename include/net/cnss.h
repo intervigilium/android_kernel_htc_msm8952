@@ -31,7 +31,6 @@ enum cnss_bus_width_type {
 	CNSS_BUS_WIDTH_HIGH
 };
 
-/* FW image files */
 struct cnss_fw_files {
 	char image_file[CNSS_MAX_FILE_NAME];
 	char board_data[CNSS_MAX_FILE_NAME];
@@ -61,13 +60,6 @@ struct cnss_wlan_driver {
 	const struct pci_device_id *id_table;
 };
 
-/*
- * codeseg_total_bytes: Total bytes across all the codesegment blocks
- * num_codesegs: No of Pages used
- * codeseg_size: Size of each segment. Should be power of 2 and multiple of 4K
- * codeseg_size_log2: log2(codeseg_size)
- * codeseg_busaddr: Physical address of the DMAble memory;4K aligned
- */
 
 #define CODESWAP_MAX_CODESEGS 16
 struct codeswap_codeseg_info {
@@ -85,7 +77,6 @@ struct image_desc_info {
 	u32 bdata_size;
 };
 
-/* platform capabilities */
 enum cnss_platform_cap_flag {
 	CNSS_HAS_EXTERNAL_SWREG = 0x01,
 	CNSS_HAS_UART_ACCESS = 0x02,
@@ -95,7 +86,6 @@ struct cnss_platform_cap {
 	u32 cap_flag;
 };
 
-/* WLAN driver status */
 enum cnss_driver_status {
 	CNSS_UNINITIALIZED,
 	CNSS_INITIALIZED,
@@ -161,7 +151,6 @@ extern int cnss_is_auto_suspend_allowed(const char *caller_func);
 extern int cnss_pm_runtime_request(struct device *dev, enum
 		cnss_runtime_request request);
 #endif
-/* max 20mhz channel count */
 #define CNSS_MAX_CH_NUM       45
 
 extern void cnss_init_work(struct work_struct *work, work_func_t func);
@@ -221,4 +210,4 @@ extern int cnss_wlan_register_oob_irq_handler(oob_irq_handler_t handler,
 	    void *pm_oob);
 extern int cnss_wlan_unregister_oob_irq_handler(void *pm_oob);
 #endif
-#endif /* _NET_CNSS_H_ */
+#endif 

@@ -329,6 +329,7 @@ struct mipi_panel_info {
 	char lp11_init;
 	u32  init_delay;
 	u32  post_init_delay;
+	bool deferred_rst_off;
 };
 
 struct edp_panel_info {
@@ -544,6 +545,18 @@ struct mdss_panel_info {
 	bool is_dba_panel;
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
+
+	int first_power_on;
+	int camera_blk;
+	u32 mdss_pp_hue;
+	/* Skip frame to avoid flicker before boot animation */
+	u32 skip_frame;
+	u32 pcc_r;
+	u32 pcc_g;
+	u32 pcc_b;
+	bool blk_pending_display_on;
+	u32 mdss_lab_voltage;
+	u32 mdss_ibb_voltage;
 };
 
 struct mdss_panel_data {
@@ -564,6 +577,8 @@ struct mdss_panel_data {
 	 * and teardown.
 	 */
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
+
+	void (*display_on) (struct mdss_panel_data *pdata);
 
 	struct mdss_panel_data *next;
 };

@@ -30,6 +30,8 @@
 
 #include "u_serial.h"
 
+#define EXTRA_ALLOCATION_SIZE     256	/*++ 2015/8/24, USB team, XXX ++*/
+
 #define SMD_RX_QUEUE_SIZE		8
 #define SMD_RX_BUF_SIZE			2048
 
@@ -978,7 +980,12 @@ int gsmd_setup(struct usb_gadget *g, unsigned count)
 				__func__);
 		return -ENOMEM;
 	}
-	extra_sz = g->extra_buf_alloc;
+
+	/*++ 2015/8/24, USB team, XXX ++*/
+	// FIXME: workaround KP first, need to review where is suitable to call this function.
+	//extra_sz = g->extra_buf_alloc;
+	extra_sz = EXTRA_ALLOCATION_SIZE;
+	/*-- 2015/8/24, USB team XXX --*/
 
 	for (i = 0; i < count; i++) {
 		mutex_init(&smd_ports[i].lock);

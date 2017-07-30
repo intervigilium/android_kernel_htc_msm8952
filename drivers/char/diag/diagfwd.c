@@ -48,6 +48,14 @@
 #define STM_RSP_STATUS_INDEX		8
 #define STM_RSP_NUM_BYTES		9
 
+#define SMD_DRAIN_BUF_SIZE 4096
+/*++ 2015/06/05, USB Team, PCN00025 ++*/
+extern unsigned diag7k_debug_mask;
+extern unsigned diag9k_debug_mask;
+/*-- 2015/06/05, USB Team, PCN00025 --*/
+bool DM_enable = false;/*++ 2015/10/14, USB Team, PCN00092 ++*/
+int diag_debug_buf_idx;
+unsigned char diag_debug_buf[1024];
 static int timestamp_switch;
 module_param(timestamp_switch, int, 0644);
 
@@ -155,6 +163,7 @@ int chk_apps_only(void)
 	case MSM_CPU_8627:
 	case MSM_CPU_9615:
 	case MSM_CPU_8974:
+	case MSM_CPU_8952:/*++ 2015/06/08, USB Team, PCN00027 ++*/
 		return 1;
 	default:
 		return 0;
@@ -223,11 +232,13 @@ void chk_logging_wakeup(void)
 		 * have their data read/logged.  Detect and remedy this
 		 * situation.
 		 */
-		if ((driver->data_ready[i] & USER_SPACE_DATA_TYPE) == 0) {
-			driver->data_ready[i] |= USER_SPACE_DATA_TYPE;
-			pr_debug("diag: Force wakeup of logging process\n");
+/*++ 2015/06/05, USB Team, PCN00025 ++*/
+		if ((driver->data_ready[i] & USERMODE_DIAGFWD) == 0) {
+			driver->data_ready[i] |= USERMODE_DIAGFWD;
+			DIAGFWD_DBUG("diag: Force wakeup of logging process\n");
 			wake_up_interruptible(&driver->wait_q);
 		}
+/*-- 2015/06/05, USB Team, PCN00025 --*/
 	}
 }
 
@@ -860,7 +871,7 @@ int diag_process_apps_pkt(unsigned char *buf, int len)
 	entry.cmd_code_lo = (uint16_t)(*(uint16_t *)temp);
 	temp += sizeof(uint16_t);
 
-	pr_debug("diag: In %s, received cmd %02x %02x %02x\n",
+	DIAGFWD_INFO("diag: In %s, received cmd %02x %02x %02x\n",
 		 __func__, entry.cmd_code, entry.subsys_id, entry.cmd_code_hi);
 
 	if (*buf == DIAG_CMD_LOG_ON_DMND && driver->log_on_demand_support &&
@@ -1035,7 +1046,7 @@ int diag_process_apps_pkt(unsigned char *buf, int len)
 		 * the tools. This is required since the tools is expecting a
 		 * HDLC encoded reponse for this request.
 		 */
-		pr_debug("diag: In %s, disabling HDLC encoding\n",
+		DIAGFWD_DBUG("diag: In %s, disabling HDLC encoding\n",
 		       __func__);
 		driver->hdlc_disabled = 1;
 		diag_update_userspace_clients(HDLC_SUPPORT_TYPE);
@@ -1062,7 +1073,7 @@ void diag_process_hdlc_pkt(void *data, unsigned len)
 	}
 
 	mutex_lock(&driver->diag_hdlc_mutex);
-	pr_debug("diag: In %s, received packet of length: %d, req_buf_len: %d\n",
+	DIAGFWD_DBUG("diag: In %s, received packet of length: %d, req_buf_len: %d\n",
 		 __func__, len, driver->hdlc_buf_len);
 
 	if (driver->hdlc_buf_len >= DIAG_MAX_REQ_SIZE) {
@@ -1071,13 +1082,15 @@ void diag_process_hdlc_pkt(void *data, unsigned len)
 		goto fail;
 	}
 
+/*++ 2015/06/05, USB Team, PCN00025 ++*/
+	DIAGFWD_DBUG("HDLC decode fn, len of data  %d\n", len);
+/*-- 2015/06/05, USB Team, PCN00025 --*/
 	hdlc_decode->dest_ptr = driver->hdlc_buf + driver->hdlc_buf_len;
 	hdlc_decode->dest_size = DIAG_MAX_HDLC_BUF_SIZE - driver->hdlc_buf_len;
 	hdlc_decode->src_ptr = data;
 	hdlc_decode->src_size = len;
 	hdlc_decode->src_idx = 0;
 	hdlc_decode->dest_idx = 0;
-
 	ret = diag_hdlc_decode(hdlc_decode);
 	/*
 	 * driver->hdlc_buf is of size DIAG_MAX_HDLC_BUF_SIZE. But the decoded
@@ -1141,6 +1154,7 @@ static int diagfwd_mux_open(int id, int mode)
 
 	switch (mode) {
 	case DIAG_USB_MODE:
+		driver->qxdmusb_drop = 0;/*++ 2015/06/30, USB Team, PCN00052 ++*/
 		driver->usb_connected = 1;
 		break;
 	case DIAG_MEMORY_DEVICE_MODE:
@@ -1174,6 +1188,7 @@ static int diagfwd_mux_close(int id, int mode)
 
 	switch (mode) {
 	case DIAG_USB_MODE:
+		driver->qxdmusb_drop = 1;/*++ 2015/06/30, USB Team, PCN00052 ++*/
 		driver->usb_connected = 0;
 		break;
 	case DIAG_MEMORY_DEVICE_MODE:
@@ -1193,11 +1208,13 @@ static int diagfwd_mux_close(int id, int mode)
 		 */
 	} else {
 		for (i = 0; i < NUM_PERIPHERALS; i++) {
-			diagfwd_close(i, TYPE_DATA);
-			diagfwd_close(i, TYPE_CMD);
+			if (!DM_enable) { /*++ 2015/10/14, USB Team, PCN00092 ++*/
+				diagfwd_close(i, TYPE_DATA);
+				diagfwd_close(i, TYPE_CMD);
+			}
 		}
 		/* Re enable HDLC encoding */
-		pr_debug("diag: In %s, re-enabling HDLC encoding\n",
+		DIAGFWD_DBUG("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
 		mutex_lock(&driver->hdlc_disable_mutex);
 		driver->hdlc_disabled = 0;
@@ -1224,7 +1241,7 @@ static void hdlc_reset_timer_start(void)
 static void hdlc_reset_timer_func(unsigned long data)
 {
 
-	pr_debug("diag: In %s, re-enabling HDLC encoding\n",
+	DIAGFWD_DBUG("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
 	if (hdlc_reset) {
 		driver->hdlc_disabled = 0;
@@ -1463,7 +1480,7 @@ int diagfwd_init(void)
 	for (i = 0; i < DIAG_NUM_PROC; i++)
 		driver->real_time_mode[i] = 1;
 	driver->supports_separate_cmdrsp = 1;
-	driver->supports_apps_hdlc_encoding = 1;
+	driver->supports_apps_hdlc_encoding = 0;/*++ 2015/06/05, USB Team, PCN00025 ++*/
 	mutex_init(&driver->diag_hdlc_mutex);
 	mutex_init(&driver->diag_cntl_mutex);
 	mutex_init(&driver->mode_lock);

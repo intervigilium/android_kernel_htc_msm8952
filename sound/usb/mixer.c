@@ -197,7 +197,13 @@ static void *find_audio_control_unit(struct mixer_build *state, unsigned char un
 static int snd_usb_copy_string_desc(struct mixer_build *state, int index, char *buf, int maxlen)
 {
 	int len = usb_string(state->chip->dev, index, buf, maxlen - 1);
+//HTC_AUD_START
+	if (len < 0) {
+		snd_printk(KERN_ERR "snd_usb_copy_string_desc: len=%d\n", len);
+		len = 0;
+	}
 	buf[len] = 0;
+//HTC_AUD_END
 	return len;
 }
 
@@ -631,32 +637,32 @@ static int get_term_name(struct mixer_build *state, struct usb_audio_term *iterm
 			return 0;
 		switch (iterm->type >> 16) {
 		case UAC_SELECTOR_UNIT:
-			strcpy(name, "Selector"); return 8;
+			strlcpy(name, "Selector", sizeof(name)-1); return 8; //HTC_AUD klocwork
 		case UAC1_PROCESSING_UNIT:
-			strcpy(name, "Process Unit"); return 12;
+			strlcpy(name, "Process Unit", sizeof(name)-1); return 12; //HTC_AUD klocwork
 		case UAC1_EXTENSION_UNIT:
-			strcpy(name, "Ext Unit"); return 8;
+			strlcpy(name, "Ext Unit", sizeof(name)-1); return 8; //HTC_AUD klocwork
 		case UAC_MIXER_UNIT:
-			strcpy(name, "Mixer"); return 5;
+			strlcpy(name, "Mixer", sizeof(name)-1); return 5; //HTC_AUD klocwork
 		default:
-			return sprintf(name, "Unit %d", iterm->id);
+			return snprintf(name, sizeof(name)-1, "Unit %d", iterm->id); //HTC_AUD klocwork
 		}
 	}
 
 	switch (iterm->type & 0xff00) {
 	case 0x0100:
-		strcpy(name, "PCM"); return 3;
+		strlcpy(name, "PCM", sizeof(name)-1); return 3; //HTC_AUD klocwork
 	case 0x0200:
-		strcpy(name, "Mic"); return 3;
+		strlcpy(name, "Mic", sizeof(name)-1); return 3; //HTC_AUD klocwork
 	case 0x0400:
-		strcpy(name, "Headset"); return 7;
+		strlcpy(name, "Headset", sizeof(name)-1); return 7; //HTC_AUD klocwork
 	case 0x0500:
-		strcpy(name, "Phone"); return 5;
+		strlcpy(name, "Phone", sizeof(name)-1); return 5; //HTC_AUD klocwork
 	}
 
 	for (names = iterm_names; names->type; names++)
 		if (names->type == iterm->type) {
-			strcpy(name, names->name);
+			strlcpy(name, names->name, sizeof(name)-1); //HTC_AUD klocwork
 			return strlen(names->name);
 		}
 	return 0;
@@ -1207,7 +1213,8 @@ static void build_feature_ctl(struct mixer_build *state, void *raw_desc,
 	cval->id = unitid;
 	cval->control = control;
 	cval->cmask = ctl_mask;
-	cval->val_type = audio_feature_info[control-1].type;
+	if (control-1 >= 0) //HTC_AUD klocwork
+		cval->val_type = audio_feature_info[control-1].type;
 	if (ctl_mask == 0) {
 		cval->channels = 1;	/* master channel */
 		cval->master_readonly = readonly_mask;
@@ -1256,7 +1263,7 @@ static void build_feature_ctl(struct mixer_build *state, void *raw_desc,
 			if (! len)
 				len = get_term_name(state, &state->oterm, kctl->id.name, sizeof(kctl->id.name), 1);
 			if (! len)
-				len = snprintf(kctl->id.name, sizeof(kctl->id.name),
+				len = snprintf(kctl->id.name, sizeof(kctl->id.name)-1, //HTC_AUD klocwork
 					       "Feature %d", unitid);
 		}
 
@@ -1493,7 +1500,7 @@ static void build_mixer_unit_ctl(struct mixer_build *state,
 	if (! len)
 		len = get_term_name(state, iterm, kctl->id.name, sizeof(kctl->id.name), 0);
 	if (! len)
-		len = sprintf(kctl->id.name, "Mixer Source %d", in_ch + 1);
+		len = snprintf(kctl->id.name, sizeof(kctl->id.name)-1, "Mixer Source %d", in_ch + 1);
 	append_ctl_name(kctl, " Volume");
 
 	snd_printdd(KERN_INFO "[%d] MU [%s] ch = %d, val = %d/%d\n",
@@ -1981,7 +1988,7 @@ static int parse_audio_selector_unit(struct mixer_build *state, int unitid, void
 		if (! len && check_input_term(state, desc->baSourceID[i], &iterm) >= 0)
 			len = get_term_name(state, &iterm, namelist[i], MAX_ITEM_NAME_LEN, 0);
 		if (! len)
-			sprintf(namelist[i], "Input %d", i);
+			snprintf(namelist[i], sizeof(namelist[i])-1, "Input %d", i); //HTC_AUD klocwork
 	}
 
 	kctl = snd_ctl_new1(&mixer_selectunit_ctl, cval);
@@ -2367,7 +2374,7 @@ int snd_usb_create_mixer(struct snd_usb_audio *chip, int ctrlif,
 	struct snd_info_entry *entry;
 	int err;
 
-	strcpy(chip->card->mixername, "USB Mixer");
+	strlcpy(chip->card->mixername, "USB Mixer", sizeof(chip->card->mixername)-1); //HTC_AUD klocwork
 
 	mixer = kzalloc(sizeof(*mixer), GFP_KERNEL);
 	if (!mixer)

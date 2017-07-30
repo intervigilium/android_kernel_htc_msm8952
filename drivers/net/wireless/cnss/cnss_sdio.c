@@ -44,7 +44,6 @@
 #define WLAN_VREG_XTAL_MIN	1800000
 #define POWER_ON_DELAY		4
 
-/* Values for Dynamic Ramdump Collection*/
 #define CNSS_DUMP_FORMAT_VER	0x11
 #define CNSS_DUMP_MAGIC_VER_V2	0x42445953
 #define CNSS_DUMP_NAME		"CNSS_WLAN"
@@ -103,10 +102,8 @@ static struct cnss_sdio_data {
 } *cnss_pdata;
 
 #define WLAN_RECOVERY_DELAY 1
-/* cnss sdio subsytem device name, required property */
 #define CNSS_SUBSYS_NAME_KEY "subsys-name"
 
-/* SDIO manufacturer ID and Codes */
 #define MANUFACTURER_ID_AR6320_BASE        0x500
 #define MANUFACTURER_ID_QCA9377_BASE       0x700
 #define MANUFACTURER_CODE                  0x271
@@ -655,15 +652,6 @@ void cnss_device_crashed(void)
 }
 EXPORT_SYMBOL(cnss_device_crashed);
 
-/**
- * cnss_get_restart_level() - cnss get restart level API
- *
- * Wlan sdio function driver uses this API to get the current
- * subsystem restart level.
- *
- * Return: CNSS_RESET_SOC - "SYSTEM", restart system
- *         CNSS_RESET_SUBSYS_COUPLED - "RELATED",restart subsystem
- */
 int cnss_get_restart_level(void)
 {
 	struct cnss_ssr_info *ssr_info;
@@ -731,9 +719,6 @@ static int cnss_sdio_wlan_suspend(struct device *dev)
 
 	wdrv = cnss_pdata->cnss_sdio_info.wdrv;
 	if (!wdrv) {
-		/* This can happen when no wlan driver loaded (no register to
-		 * platform driver).
-		 */
 		func = cnss_pdata->cnss_sdio_info.func;
 		error = __cnss_set_mmc_keep_power_flag(func);
 		pr_debug("%s: wlan driver not registered error:%d\n",
@@ -768,9 +753,6 @@ static int cnss_sdio_wlan_resume(struct device *dev)
 
 	wdrv = cnss_pdata->cnss_sdio_info.wdrv;
 	if (!wdrv) {
-		/* This can happen when no wlan driver loaded (no register to
-		 * platform driver).
-		 */
 		pr_debug("wlan driver not registered\n");
 		return 0;
 	}
@@ -788,7 +770,7 @@ static const struct dev_pm_ops cnss_ar6k_device_pm_ops = {
 	.suspend = cnss_sdio_wlan_suspend,
 	.resume = cnss_sdio_wlan_resume,
 };
-#endif /* CONFIG_PM */
+#endif 
 
 static struct sdio_driver cnss_ar6k_driver = {
 	.name = "cnss_ar6k_wlan",
@@ -802,15 +784,6 @@ static struct sdio_driver cnss_ar6k_driver = {
 #endif
 };
 
-/**
- * cnss_sdio_wlan_register_driver() - cnss wlan register API
- * @driver: sdio wlan driver interface from wlan driver.
- *
- * wlan sdio function driver uses this API to register callback
- * functions to cnss_sido platform driver. The callback will
- * be invoked by corresponding wrapper function of this cnss
- * platform driver.
- */
 int cnss_sdio_wlan_register_driver(struct cnss_sdio_wlan_driver *driver)
 {
 	struct cnss_sdio_info *cnss_info;
@@ -835,13 +808,6 @@ int cnss_sdio_wlan_register_driver(struct cnss_sdio_wlan_driver *driver)
 }
 EXPORT_SYMBOL(cnss_sdio_wlan_register_driver);
 
-/**
- * cnss_sdio_wlan_unregister_driver() - cnss wlan unregister API
- * @driver: sdio wlan driver interface from wlan driver.
- *
- * wlan sdio function driver uses this API to detach it from cnss_sido
- * platform driver.
- */
 void
 cnss_sdio_wlan_unregister_driver(struct cnss_sdio_wlan_driver *driver)
 {
@@ -868,45 +834,18 @@ cnss_sdio_wlan_unregister_driver(struct cnss_sdio_wlan_driver *driver)
 }
 EXPORT_SYMBOL(cnss_sdio_wlan_unregister_driver);
 
-/**
- * cnss_wlan_query_oob_status() - cnss wlan query oob status API
- *
- * Wlan sdio function driver uses this API to check whether oob is
- * supported in platform driver.
- *
- * Return: 0 means oob is supported, others means unsupported.
- */
 int cnss_wlan_query_oob_status(void)
 {
 	return -ENOSYS;
 }
 EXPORT_SYMBOL(cnss_wlan_query_oob_status);
 
-/**
- * cnss_wlan_register_oob_irq_handler() - cnss wlan register oob callback API
- * @handler: oob callback function pointer which registered to platform driver.
- * @pm_oob : parameter which registered to platform driver.
- *
- * Wlan sdio function driver uses this API to register oob callback
- * function to platform driver.
- *
- * Return: 0 means register successfully, others means failure.
- */
 int cnss_wlan_register_oob_irq_handler(oob_irq_handler_t handler, void *pm_oob)
 {
 	return -ENOSYS;
 }
 EXPORT_SYMBOL(cnss_wlan_register_oob_irq_handler);
 
-/**
- * cnss_wlan_unregister_oob_irq_handler() - cnss wlan unregister oob callback API
- * @pm_oob: parameter which unregistered from platform driver.
- *
- * Wlan sdio function driver uses this API to unregister oob callback
- * function from platform driver.
- *
- * Return: 0 means unregister successfully, others means failure.
- */
 int cnss_wlan_unregister_oob_irq_handler(void *pm_oob)
 {
 	return -ENOSYS;

@@ -18,7 +18,11 @@
 
 #include "pmic-voter.h"
 
+#ifndef CONFIG_HTC_BATT_8960
 #define NUM_MAX_CLIENTS	8
+#else
+#define NUM_MAX_CLIENTS	15
+#endif
 
 struct client_vote {
 	int	state;
@@ -264,3 +268,20 @@ struct votable *create_votable(struct device *dev, const char *name,
 
 	return votable;
 }
+
+#ifdef CONFIG_HTC_BATT_8960
+int get_client_voter_state(struct votable *votable, int client_id)
+{
+        int value;
+
+        lock_votable(votable);
+        value = get_client_voter_state_locked(votable, client_id);
+        unlock_votable(votable);
+        return value;
+}
+
+int get_client_voter_state_locked(struct votable *votable, int client_id)
+{
+        return votable->votes[client_id].state;
+}
+#endif /* CONFIG_HTC_BATT_8960 */

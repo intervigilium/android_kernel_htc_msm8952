@@ -17,9 +17,85 @@
 #include "msm_camera_i2c_mux.h"
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
+/*HTC_START*/
+#ifdef CONFIG_OIS_CALIBRATION
+#include "lc898123AXD_htc.h"
+#endif
+#ifdef CONFIG_CAM_REG_LASER
+#include <linux/laser.h>
+#endif
+/*HTC_END*/
 
 #undef CDBG
-#define CDBG(fmt, args...) pr_debug(fmt, ##args)
+#define CDBG(fmt, args...) pr_info("[CAM]"fmt, ##args)
+
+/*HTC_START*/
+#ifdef CONFIG_OIS_CALIBRATION
+
+#define OIS_COMPONENT_I2C_ADDR_WRITE 0x7C
+
+int htc_ois_calibration(struct msm_sensor_ctrl_t *s_ctrl, int cam_id)
+{
+	int rc = -1;
+	uint16_t cci_client_sid_backup;
+    pr_info("[OIS_Cali]%s:E \n", __func__);
+
+	/* Bcakup the I2C slave address */
+	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
+
+	/* Replace the I2C slave address with OIS component */
+	s_ctrl->sensor_i2c_client->cci_client->sid = OIS_COMPONENT_I2C_ADDR_WRITE >> 1;
+
+    /*GYRO calibration*/
+    rc = htc_GyroReCalib(s_ctrl, cam_id);
+    if (rc != 0)
+          pr_err("[OIS_Cali]htc_GyroReCalib fail.\n");
+    else{
+        rc = htc_WrGyroOffsetData();
+        if (rc != 0)
+            pr_err("[OIS_Cali]htc_WrGyroOffsetData fail.\n");
+        else
+            pr_info("[OIS_Cali]Gyro calibration success.\n");
+    }
+
+	/* Restore the I2C slave address */
+	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
+
+	return rc;
+}
+
+int htc_ois_FWupdate(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int rc = -1;
+	uint16_t cci_client_sid_backup;
+    static int m_first = 0;
+    static int f_first = 0;
+    pr_info("[OIS_Cali]%s, camid = %d\n", __func__, s_ctrl->sensordata->sensor_info->position);
+
+	/* Bcakup the I2C slave address */
+	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
+
+	/* Replace the I2C slave address with OIS component */
+	s_ctrl->sensor_i2c_client->cci_client->sid = OIS_COMPONENT_I2C_ADDR_WRITE >> 1;
+
+    if (m_first == 0 && s_ctrl->sensordata->sensor_info->position == 0)
+    {
+        rc = htc_checkFWUpdate(s_ctrl);
+        m_first = 1;
+    }
+    else if (f_first == 0 && s_ctrl->sensordata->sensor_info->position == 1)
+    {
+        rc = htc_checkFWUpdate(s_ctrl);
+        f_first = 1;
+    }
+
+	/* Restore the I2C slave address */
+	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
+
+	return rc;
+}
+#endif
+/*HTC_END*/
 
 static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
 static void msm_sensor_adjust_mclk(struct msm_camera_power_ctrl_t *ctrl)
@@ -239,6 +315,7 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 	gconf = sensordata->power_info.gpio_conf;
 
 	gpio_array_size = of_gpio_count(of_node);
+	pr_err("%s %d:gpio_array_size = %d!!!!!!!!!!!!!!!!!!!!\n", __func__, __LINE__,gpio_array_size);
 	CDBG("%s gpio count %d\n", __func__, gpio_array_size);
 
 	if (gpio_array_size) {
@@ -468,6 +545,11 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	struct msm_camera_slave_info *slave_info;
 	const char *sensor_name;
 	uint32_t retry = 0;
+	// HTC_START, register laser
+#ifdef CONFIG_CAM_REG_LASER
+	static int first = 1;
+#endif
+	//HTC_END
 
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %pK\n",
@@ -491,6 +573,18 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+	// HTC_START, register laser
+#ifdef CONFIG_CAM_REG_LASER
+	if (first)
+	{
+		Laser_poweron_by_camera();
+		Laser_poweroff_by_camera();
+		first = 0;
+		msleep(1);
+	}
+#endif
+	// HTC_END
+
 	if (s_ctrl->set_mclk_23880000)
 		msm_sensor_adjust_mclk(power_info);
 
@@ -509,6 +603,11 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			break;
 		}
 	}
+/*HTC_START*/
+#ifdef CONFIG_OIS_CALIBRATION
+    htc_ois_FWupdate(s_ctrl);
+#endif
+/*HTC_END*/
 
 	return rc;
 }
@@ -671,14 +770,21 @@ long msm_sensor_subdev_fops_ioctl(struct file *file,
 	return video_usercopy(file, cmd, arg, msm_sensor_subdev_do_ioctl);
 }
 
+//HTC_CAM_START
+#if 0
 static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 	void __user *argp)
+#else
+int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
+	void __user *argp)
+#endif
+//HTC_CAM_END
 {
 	struct sensorb_cfg_data32 *cdata = (struct sensorb_cfg_data32 *)argp;
 	int32_t rc = 0;
 	int32_t i = 0;
 	mutex_lock(s_ctrl->msm_sensor_mutex);
-	CDBG("%s:%d %s cfgtype = %d\n", __func__, __LINE__,
+	pr_debug("%s:%d %s cfgtype = %d\n", __func__, __LINE__,
 		s_ctrl->sensordata->sensor_name, cdata->cfgtype);
 	switch (cdata->cfgtype) {
 	case CFG_GET_SENSOR_INFO:
@@ -1063,6 +1169,26 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 
 	}
 		break;
+
+/* HTC_START */
+	case CFG_I2C_IOCTL_R_OTP:
+		if (s_ctrl->func_tbl->sensor_i2c_read_fuseid32 == NULL) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid32(cdata, s_ctrl);
+	break;
+/* HTC_END */
+
+/*HTC_START GYRO calibration*/
+    case CFG_SET_GYRO_CALIBRATION:
+#ifdef CONFIG_OIS_CALIBRATION
+        rc = htc_ois_calibration(s_ctrl, s_ctrl->sensordata->sensor_info->position);
+#else
+        rc = 0;
+#endif
+    break;
+/*HTC_END*/
 
 	default:
 		rc = -EFAULT;
@@ -1528,6 +1654,26 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 	}
 		break;
 
+/* HTC_START */
+	case CFG_I2C_IOCTL_R_OTP:
+		if (s_ctrl->func_tbl->sensor_i2c_read_fuseid == NULL) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid(cdata, s_ctrl);
+	break;
+/* HTC_END */
+
+/*HTC_START GYRO calibration*/
+    case CFG_SET_GYRO_CALIBRATION:
+#ifdef CONFIG_OIS_CALIBRATION
+        rc = htc_ois_calibration(s_ctrl, s_ctrl->sensordata->sensor_info->position);
+#else
+        rc = 0;
+#endif
+    break;
+/*HTC_END*/
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1606,6 +1752,9 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_read_seq = msm_camera_cci_i2c_read_seq,
 	.i2c_write = msm_camera_cci_i2c_write,
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
+/* HTC_START */
+	.i2c_write_seq = msm_camera_cci_i2c_write_seq,
+/* HTC_END */
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
 	.i2c_write_table_w_microdelay =
 		msm_camera_cci_i2c_write_table_w_microdelay,
@@ -1622,6 +1771,9 @@ static struct msm_camera_i2c_fn_t msm_sensor_qup_func_tbl = {
 	.i2c_read_seq = msm_camera_qup_i2c_read_seq,
 	.i2c_write = msm_camera_qup_i2c_write,
 	.i2c_write_table = msm_camera_qup_i2c_write_table,
+/* HTC_START */
+	.i2c_write_seq = msm_camera_qup_i2c_write_seq,
+/* HTC_END */
 	.i2c_write_seq_table = msm_camera_qup_i2c_write_seq_table,
 	.i2c_write_table_w_microdelay =
 		msm_camera_qup_i2c_write_table_w_microdelay,
@@ -1667,6 +1819,9 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 	cci_client->cid = 0;
 	cci_client->retries = 3;
 	cci_client->id_map = 0;
+	/*HTC_START*/
+	cci_client->i2c_freq_mode = I2C_FAST_MODE;
+	/*HTC_END*/
 	if (!s_ctrl->func_tbl)
 		s_ctrl->func_tbl = &msm_sensor_func_tbl;
 	if (!s_ctrl->sensor_i2c_client->i2c_func_tbl)
@@ -1935,3 +2090,61 @@ FREE_CCI_CLIENT:
 	kfree(cci_client);
 	return rc;
 }
+
+/*HTC_START*/
+#include <linux/fs.h>
+#include <linux/file.h>
+#include <linux/vmalloc.h>
+#include <asm/segment.h>
+#include <asm/uaccess.h>
+#include <linux/buffer_head.h>
+
+void msm_fclose(struct file* file) {
+    filp_close(file, NULL);
+}
+
+int msm_fwrite(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
+    mm_segment_t oldfs;
+    int ret;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+
+    ret = vfs_write(file, data, size, &offset);
+
+    set_fs(oldfs);
+    return ret;
+}
+
+struct file* msm_fopen(const char* path, int flags, int rights) {
+    struct file* filp = NULL;
+    mm_segment_t oldfs;
+    int err = 0;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+    filp = filp_open(path, flags, rights);
+    set_fs(oldfs);
+    if(IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+    pr_err("[CAM]File Open Error:%s",path);
+        return NULL;
+    }
+    if(!filp->f_op){
+    pr_err("[CAM]File Operation Method Error!!");
+    return NULL;
+    }
+
+    return filp;
+}
+
+uint32_t msm_sensor_get_boardinfo(struct device_node *of_node)
+{
+    uint32_t boardinfo = 0;   //set as 1 after XD board
+    if (0 > of_property_read_u32(of_node, "qcom,hiaaero-image", &boardinfo))
+    {
+        boardinfo = 0;
+    }
+    return boardinfo;
+}
+/*HTC_END*/

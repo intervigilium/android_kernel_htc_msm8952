@@ -64,12 +64,17 @@ struct msm_l2ccc_of_info {
 	u32 l2_power_on_mask;
 };
 
+#define L2_SPM_STS_POLL_MAX_TIME (10000) // 10000*100us = 1s
+#define L2_SPM_STS_POLL_TIME_THRES (10) // 10*100us = 1ms
+
+volatile static int htc_l2_spm_sts_poll_time_max = 0;
+
 static int kick_l2spm(struct device_node *l2ccc_node,
 				struct device_node *vctl_node)
 {
 	struct resource res, acinactm_res;
 	int val;
-	int timeout = 10, ret = 0;
+	int timeout = L2_SPM_STS_POLL_MAX_TIME, ret = 0;
 	void __iomem *l2spm_base = of_iomap(vctl_node, 0);
 	bool use_acinactm = false;
 	int index;
@@ -116,6 +121,11 @@ static int kick_l2spm(struct device_node *l2ccc_node,
 		usleep(100);
 	}
 
+	if (htc_l2_spm_sts_poll_time_max < (L2_SPM_STS_POLL_MAX_TIME - timeout)) {
+		htc_l2_spm_sts_poll_time_max = L2_SPM_STS_POLL_MAX_TIME - timeout;
+		if (htc_l2_spm_sts_poll_time_max > L2_SPM_STS_POLL_TIME_THRES)
+			pr_err("[Power_SPM]kick_l2spm: Update max wait time, %d ms\n", htc_l2_spm_sts_poll_time_max/10);
+	}
 bail_l2_pwr_bit:
 	iounmap(l2spm_base);
 	return ret;

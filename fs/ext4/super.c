@@ -43,6 +43,10 @@
 
 #include <linux/kthread.h>
 #include <linux/freezer.h>
+#ifdef CONFIG_EXT4_E2FSCK_RECOVER
+#include <linux/reboot.h>
+#endif
+#include <linux/htc_flags.h>
 
 #include "ext4.h"
 #include "ext4_extents.h"	/* Needed for trace points definition */
@@ -304,6 +308,11 @@ static void __save_error_info(struct super_block *sb, const char *func,
 {
 	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 
+	if (bdev_read_only(sb->s_bdev)) {
+		ext4_msg(sb, KERN_ERR, "write access "
+			"unavailable, skipping save_error_info");
+		return;
+	}
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
 	es->s_state |= cpu_to_le16(EXT4_ERROR_FS);
 	es->s_last_error_time = cpu_to_le32(get_seconds());
@@ -369,6 +378,42 @@ static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
 	spin_unlock(&sbi->s_md_lock);
 }
 
+#ifdef CONFIG_EXT4_E2FSCK_RECOVER
+static void ext4_reboot(struct work_struct *work)
+{
+	printk(KERN_ERR "%s: reboot to run e2fsck\n", __func__);
+	kernel_restart("oem-22");
+}
+
+static void ext4_e2fsck(struct super_block *sb)
+{
+	static int reboot;
+	struct workqueue_struct *wq;
+	struct ext4_sb_info *sb_info;
+	if (reboot)
+		return;
+	printk(KERN_ERR "%s\n", __func__);
+	reboot = 1;
+	sb_info = EXT4_SB(sb);
+	if (!sb_info) {
+		printk(KERN_ERR "%s: no sb_info\n", __func__);
+		reboot = 0;
+		return;
+	}
+	sb_info->recover_wq = create_workqueue("ext4-recover");
+	if (!sb_info->recover_wq) {
+		printk(KERN_ERR "EXT4-fs: failed to create recover workqueue\n");
+		reboot = 0;
+		return;
+	}
+
+	INIT_WORK(&sb_info->reboot_work, ext4_reboot);
+	wq = sb_info->recover_wq;
+	/* queue the work to reboot */
+	queue_work(wq, &sb_info->reboot_work);
+}
+#endif
+
 /* Deal with the reporting of failure conditions on a filesystem such as
  * inconsistencies detected or read IO failures.
  *
@@ -403,6 +448,11 @@ static void ext4_handle_error(struct super_block *sb)
 	if (test_opt(sb, ERRORS_PANIC))
 		panic("EXT4-fs (device %s): panic forced after error\n",
 			sb->s_id);
+
+#ifdef CONFIG_EXT4_E2FSCK_RECOVER
+	if (test_opt(sb, ERRORS_RO) && strncmp(sb->s_id, "dm-", 3))
+		ext4_e2fsck(sb);
+#endif
 }
 
 void __ext4_error(struct super_block *sb, const char *function,
@@ -1807,11 +1857,13 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	int res = 0;
 
+#if 0
 	if (le32_to_cpu(es->s_rev_level) > EXT4_MAX_SUPP_REV) {
 		ext4_msg(sb, KERN_ERR, "revision level too high, "
 			 "forcing read-only mode");
 		res = MS_RDONLY;
 	}
+#endif
 	if (read_only)
 		goto done;
 	if (!(sbi->s_mount_state & EXT4_VALID_FS))
@@ -4377,6 +4429,18 @@ static int ext4_commit_super(struct super_block *sb, int sync)
 	struct buffer_head *sbh = EXT4_SB(sb)->s_sbh;
 	int error = 0;
 
+	if (cpu_to_le32(es->s_creator_os) != EXT4_OS_LINUX) {
+		ext4_msg(sb, KERN_ERR, "s_creator_os uncorrect: 0x%08x, try to recover"
+			, cpu_to_le32(es->s_creator_os));
+		es->s_creator_os = cpu_to_le32(EXT4_OS_LINUX);
+	}
+
+	if (cpu_to_le32(es->s_rev_level) != EXT4_DYNAMIC_REV) {
+		ext4_msg(sb, KERN_ERR, "s_rev_level uncorrect: 0x%08x, try to recover"
+			, cpu_to_le32(es->s_rev_level));
+		es->s_rev_level = cpu_to_le32(EXT4_DYNAMIC_REV);
+	}
+
 	if (!sbh || block_device_ejected(sb))
 		return error;
 	if (buffer_write_io_error(sbh)) {
@@ -4609,6 +4673,7 @@ struct ext4_mount_options {
 #endif
 };
 
+extern int mmc_blk_send_wp_info(struct block_device *bdev, unsigned long addr);
 static int ext4_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ext4_super_block *es;
@@ -4674,6 +4739,12 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 			err = -EINVAL;
 			goto restore_opts;
 		}
+	}
+
+	if (sb->s_bdev) {
+		struct block_device *bdev = sb->s_bdev;
+		struct hd_struct *p;
+		p = bdev->bd_part;
 	}
 
 	if (sbi->s_mount_flags & EXT4_MF_FS_ABORTED)

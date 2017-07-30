@@ -120,9 +120,10 @@
 	status = "disabled";
 };
 
-&i2c_8 {
+/* Removed due to we do not use this i2c */
+/* &i2c_8 {
 	status = "disabled";
-};
+}; */
 
 &blsp1_uart2 {
 	status = "ok";
