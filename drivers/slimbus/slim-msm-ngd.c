@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -281,6 +281,16 @@ static int ngd_get_tid(struct slim_controller *ctrl, struct slim_msg_txn *txn,
 	spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 	return 0;
 }
+
+static void slim_reinit_tx_msgq(struct msm_slim_ctrl *dev)
+{
+	if (dev->state != MSM_CTRL_DOWN) {
+		msm_slim_disconnect_endp(dev, &dev->tx_msgq,
+					&dev->use_tx_msgqs);
+		msm_slim_connect_endp(dev, &dev->tx_msgq);
+	}
+}
+
 static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
@@ -293,7 +303,7 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	u8 la = txn->la;
 	u8 txn_mt;
 	u16 txn_mc = txn->mc;
-	u8 wbuf[SLIM_MSGQ_BUF_LEN];
+	u8 wbuf[SLIM_MSGQ_BUF_LEN] = {0}; 
 	bool report_sat = false;
 	bool sync_wr = true;
 
@@ -326,6 +336,8 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 
 	
 	if (!report_sat) {
+		void __iomem *ngd;
+		u32 laddr;
 
 		if (dev->state == MSM_CTRL_DOWN) {
 			u8 mc = (u8)txn->mc;
@@ -363,13 +375,29 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 		ret = msm_slim_get_ctrl(dev);
 		mutex_lock(&dev->tx_lock);
 		if ((pm_runtime_enabled(dev->dev) && ret < 0) ||
-				dev->state == MSM_CTRL_DOWN) {
+				dev->state >= MSM_CTRL_ASLEEP) {
 			SLIM_ERR(dev, "slim ctrl vote failed ret:%d, state:%d",
 					ret, dev->state);
 			pm_runtime_set_suspended(dev->dev);
 			mutex_unlock(&dev->tx_lock);
 			msm_slim_put_ctrl(dev);
 			return -EREMOTEIO;
+		}
+		ngd = dev->base + NGD_BASE(dev->ctrl.nr, dev->ver);
+		laddr = readl_relaxed(ngd + NGD_STATUS);
+		if (!(laddr & NGD_LADDR)) {
+			
+			dev->state = MSM_CTRL_ASLEEP;
+			mutex_unlock(&dev->tx_lock);
+			ret = ngd_slim_runtime_resume(dev->dev);
+
+			if (ret) {
+				SLIM_ERR(dev, "slim resume ret:%d, state:%d",
+						ret, dev->state);
+				msm_slim_put_ctrl(dev);
+				return -EREMOTEIO;
+			}
+			mutex_lock(&dev->tx_lock);
 		}
 	}
 
@@ -532,14 +560,7 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 							i, *(pbuf + i));
 			if (idx < MSM_TX_BUFS)
 				dev->wr_comp[idx] = NULL;
-			if (dev->state != MSM_CTRL_DOWN) {
-				
-				sps_get_bam_debug_info(dev->bam.hdl, 93,
-							SPS_BAM_PIPE(4), 0, 2);
-				msm_slim_disconnect_endp(dev, &dev->tx_msgq,
-							&dev->use_tx_msgqs);
-				msm_slim_connect_endp(dev, &dev->tx_msgq);
-			}
+			slim_reinit_tx_msgq(dev);
 		} else if (!timeout) {
 			ret = -ETIMEDOUT;
 			SLIM_WARN(dev, "timeout non-BAM TX,len:%d", txn->rl);
@@ -665,15 +686,16 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 	struct msm_slim_ctrl *dev = slim_get_ctrldata(ctrl);
 	int i, ret;
 	struct msm_slim_endp *endpoint = &dev->tx_msgq;
-	struct sps_pipe *pipe = endpoint->sps;
 	u32 *header;
+	u32 laddr;
+	void __iomem *ngd = dev->base + NGD_BASE(dev->ctrl.nr, dev->ver);
 	DECLARE_COMPLETION_ONSTACK(done);
 
 	ret = msm_slim_get_ctrl(dev);
 	mutex_lock(&dev->tx_lock);
 
 	if ((pm_runtime_enabled(dev->dev) && ret < 0) ||
-			dev->state == MSM_CTRL_DOWN) {
+			dev->state >= MSM_CTRL_ASLEEP) {
 		SLIM_WARN(dev, "vote failed/SSR in-progress ret:%d, state:%d",
 				ret, dev->state);
 		pm_runtime_set_suspended(dev->dev);
@@ -688,6 +710,20 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		if (ret) {
 			SLIM_ERR(dev, "slim resume failed ret:%d, state:%d",
 					ret, dev->state);
+			return -EREMOTEIO;
+		}
+		mutex_lock(&dev->tx_lock);
+	}
+	laddr = readl_relaxed(ngd + NGD_STATUS);
+	if (!(laddr & NGD_LADDR)) {
+		dev->state = MSM_CTRL_ASLEEP;
+		mutex_unlock(&dev->tx_lock);
+		ret = ngd_slim_runtime_resume(dev->dev);
+
+		if (ret) {
+			SLIM_ERR(dev, "slim resume failed ret:%d, state:%d",
+					ret, dev->state);
+			msm_slim_put_ctrl(dev);
 			return -EREMOTEIO;
 		}
 		mutex_lock(&dev->tx_lock);
@@ -748,11 +784,6 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		}
 	}
 	header = dev->bulk.base;
-	
-	for (i = 0; i < (dev->bulk.size); i += 16, header += 4)
-		SLIM_INFO(dev, "bulk sz:%d:0x%x, 0x%x, 0x%x, 0x%x",
-			  dev->bulk.size, *header, *(header+1), *(header+2),
-			  *(header+3));
 	if (comp_cb) {
 		dev->bulk.cb = comp_cb;
 		dev->bulk.ctx = ctx;
@@ -767,8 +798,8 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		goto retpath;
 	}
 
-	ret = sps_transfer_one(pipe, dev->bulk.wr_dma, dev->bulk.size, NULL,
-				SPS_IOVEC_FLAG_EOT);
+	ret = sps_transfer_one(endpoint->sps, dev->bulk.wr_dma, dev->bulk.size,
+						NULL, SPS_IOVEC_FLAG_EOT);
 	if (ret) {
 		SLIM_WARN(dev, "sps transfer one returned error:%d", ret);
 		goto retpath;
@@ -784,8 +815,12 @@ static int ngd_bulk_wr(struct slim_controller *ctrl, u8 la, u8 mt, u8 mc,
 		}
 	}
 retpath:
-	if (ret)
+	if (ret) {
 		dev->bulk.in_progress = false;
+		dev->bulk.ctx = NULL;
+		dev->bulk.wr_dma = 0;
+		slim_reinit_tx_msgq(dev);
+	}
 	mutex_unlock(&dev->tx_lock);
 	msm_slim_put_ctrl(dev);
 	return ret;
@@ -796,8 +831,21 @@ static int ngd_xferandwait_ack(struct slim_controller *ctrl,
 {
 	struct msm_slim_ctrl *dev = slim_get_ctrldata(ctrl);
 	unsigned long flags;
+	int ret;
 
-	int ret = ngd_xfer_msg(ctrl, txn);
+	if (dev->state == MSM_CTRL_DOWN) {
+		if ((txn->mt == SLIM_MSG_MT_DEST_REFERRED_USER) &&
+			((txn->mc >= SLIM_USR_MC_CHAN_CTRL &&
+			  txn->mc <= SLIM_USR_MC_REQ_BW) ||
+			txn->mc == SLIM_USR_MC_DISCONNECT_PORT)) {
+			spin_lock_irqsave(&ctrl->txn_lock, flags);
+			ctrl->txnt[txn->tid] = NULL;
+			spin_unlock_irqrestore(&ctrl->txn_lock, flags);
+			return 0;
+		}
+	}
+
+	ret = ngd_xfer_msg(ctrl, txn);
 	if (!ret) {
 		int timeout;
 		timeout = wait_for_completion_timeout(txn->comp, HZ);
@@ -1001,7 +1049,7 @@ static void ngd_slim_setup(struct msm_slim_ctrl *dev)
 {
 	u32 cfg = readl_relaxed(dev->base +
 				 NGD_BASE(dev->ctrl.nr, dev->ver));
-	if (dev->state == MSM_CTRL_DOWN) {
+	if (dev->state >= MSM_CTRL_ASLEEP) {
 		
 		if (dev->use_tx_msgqs != MSM_MSGQ_RESET)
 			msm_slim_deinit_ep(dev, &dev->tx_msgq,
@@ -1126,7 +1174,7 @@ static void ngd_slim_rx(struct msm_slim_ctrl *dev, u8 *buf)
 static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 {
 	void __iomem *ngd;
-	int timeout, ret = 0;
+	int timeout, retries = 0, ret = 0;
 	enum msm_ctrl_state cur_state = dev->state;
 	u32 laddr;
 	u32 rx_msgq;
@@ -1179,6 +1227,7 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 		dev->state = MSM_CTRL_DOWN;
 	}
 
+init_retry:
 	writel_relaxed(ngd_int, dev->base + NGD_INT_EN +
 				NGD_BASE(dev->ctrl.nr, dev->ver));
 
@@ -1194,6 +1243,10 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 	timeout = wait_for_completion_timeout(&dev->reconf, HZ);
 	if (!timeout) {
 		SLIM_WARN(dev, "capability exchange timed-out\n");
+		if (retries < INIT_MX_RETRIES) {
+			retries++;
+			goto init_retry;
+		}
 #ifdef CONFIG_HTC_DEBUG_DSP
 		pr_info("%s:trigger ramdump to keep status\n",__func__);
 		BUG();
@@ -1365,11 +1418,13 @@ static void ngd_adsp_down(struct msm_slim_ctrl *dev)
 	struct slim_controller *ctrl = &dev->ctrl;
 	struct slim_device *sbdev;
 
+	mutex_lock(&dev->ssr_lock);
 	ngd_slim_enable(dev, false);
 	
 	list_for_each_entry(sbdev, &ctrl->devs, dev_list)
 		slim_report_absent(sbdev);
 	SLIM_INFO(dev, "SLIM ADSP SSR (DOWN) done\n");
+	mutex_unlock(&dev->ssr_lock);
 }
 
 static void ngd_adsp_up(struct work_struct *work)
@@ -1378,7 +1433,9 @@ static void ngd_adsp_up(struct work_struct *work)
 		container_of(work, struct msm_slim_qmi, ssr_up);
 	struct msm_slim_ctrl *dev =
 		container_of(qmi, struct msm_slim_ctrl, qmi);
+	mutex_lock(&dev->ssr_lock);
 	ngd_slim_enable(dev, true);
+	mutex_unlock(&dev->ssr_lock);
 }
 
 static ssize_t show_mask(struct device *device, struct device_attribute *attr,
@@ -1538,6 +1595,7 @@ static int ngd_slim_probe(struct platform_device *pdev)
 	init_completion(&dev->reconf);
 	init_completion(&dev->ctrl_up);
 	mutex_init(&dev->tx_lock);
+	mutex_init(&dev->ssr_lock);
 	spin_lock_init(&dev->tx_buf_lock);
 	spin_lock_init(&dev->rx_lock);
 	dev->ee = 1;
@@ -1718,13 +1776,10 @@ static int ngd_slim_runtime_suspend(struct device *device)
 	int ret = 0;
 	mutex_lock(&dev->tx_lock);
 	ret = ngd_slim_power_down(dev);
-	if (ret) {
-		if (ret != -EBUSY)
-			SLIM_INFO(dev, "slim resource not idle:%d\n", ret);
-		dev->state = MSM_CTRL_AWAKE;
-	} else {
+	if (ret && ret != -EBUSY)
+		SLIM_INFO(dev, "slim resource not idle:%d\n", ret);
+	if (!ret || ret == -ETIMEDOUT)
 		dev->state = MSM_CTRL_ASLEEP;
-	}
 	mutex_unlock(&dev->tx_lock);
 	SLIM_INFO(dev, "Slim runtime suspend: ret %d\n", ret);
 	return ret;

@@ -532,7 +532,7 @@ int bdi_setup_and_register(struct backing_dev_info *bdi, char *name,
 	if (err)
 		return err;
 
-	sprintf(tmp, "%.28s%s", name, "-%d");
+	snprintf(tmp, sizeof(tmp), "%.28s%s", name, "-%d");
 	err = bdi_register(bdi, NULL, tmp, atomic_long_inc_return(&bdi_seq));
 	if (err) {
 		bdi_destroy(bdi);

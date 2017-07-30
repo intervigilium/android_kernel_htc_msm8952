@@ -31,8 +31,10 @@
 #define HTC_AUDIO_TFA9887 	0x40
 #define HTC_AUDIO_TFA9887L 	0x80
 
+//HTC_AUD_START
 #define HTC_AUDIO_TFA9888   0x200
 #define HTC_AUDIO_RT5503    0x400
+//HTC_AUD_END
 
 #define ACOUSTIC_IOCTL_MAGIC 'p'
 #define ACOUSTIC_SET_Q6_EFFECT                  _IOW(ACOUSTIC_IOCTL_MAGIC, 43, unsigned)
@@ -44,6 +46,7 @@
 #define ACOUSTIC_GET_HW_REVISION                _IOR(ACOUSTIC_IOCTL_MAGIC, 49, struct device_info)
 #define ACOUSTIC_CONTROL_WAKELOCK               _IOW(ACOUSTIC_IOCTL_MAGIC, 77, unsigned)
 #define ACOUSTIC_DUMMY_WAKELOCK                 _IOW(ACOUSTIC_IOCTL_MAGIC, 78, unsigned)
+#define ACOUSTIC_TFA_CONTROL_WAKELOCK           _IOW(ACOUSTIC_IOCTL_MAGIC, 79, unsigned)
 #define ACOUSTIC_AMP_CTRL                       _IOWR(ACOUSTIC_IOCTL_MAGIC, 50, struct amp_ctrl)
 #define ACOUSTIC_GET_MID                        _IOR(ACOUSTIC_IOCTL_MAGIC, 51, unsigned)
 #define ACOUSTIC_RAMDUMP                        _IOW(ACOUSTIC_IOCTL_MAGIC, 99, unsigned)
@@ -53,12 +56,16 @@
 #define ACOUSTIC_NOTIFIY_FM_SSR                 _IOW(ACOUSTIC_IOCTL_MAGIC, 53, unsigned)
 #define ACOUSTIC_GET_TFA_VER                    _IOR(ACOUSTIC_IOCTL_MAGIC, 97, unsigned)
 
+/* For FTM mode BT PCM PINs */
 #define ACOUSTIC_FTM_BTPCM_SET_GPIO             _IOW(ACOUSTIC_IOCTL_MAGIC, 60, unsigned)
 #define ACOUSTIC_FTM_BTPCM_SET_PCM              _IOW(ACOUSTIC_IOCTL_MAGIC, 61, unsigned)
 #define ACOUSTIC_FTM_BTPCM_READ                 _IOR(ACOUSTIC_IOCTL_MAGIC, 62, unsigned)
 
+/* BT PCM GPIOs as GPIO input */
 #define ACOUSTIC_FTM_STRING_BTPCM_GPIO	("btpcm-gpio")
+/* BT PCM GPIOs as PCM */
 #define ACOUSTIC_FTM_STRING_BTPCM_PCM	("btpcm-pcm")
+/* BT PCM GPIOs simulation on non-BRCM projects */
 #define ACOUSTIC_FTM_STRING_BTPCM_SIM	("btpcm-sim")
 
 #define AUD_AMP_SLAVE_ALL	0xffff
@@ -140,15 +147,20 @@ struct avcs_crash_params {
 };
 
 struct aud_ftm_btpcm_func_t {
-	
+	/* structure initialized or not */
 	int init;
 
-	
+	/* simulation on projects without BRCM BT chip */
 	int sim;
 
-	
+	/* function to set BT PCM as GPIO input or PCM function */
 	int (*gpio_config)(void *user_data, enum AUD_FTM_BTPCM_MODE mode);
 
+	/* function to read BT PCM pin state
+	* state[0]: SYNC/Frame clock
+	* state[1]: Bit clock
+	* state[2]: Data In (BT to ACPU)
+	* state[3]: Data Out (ACPU to BT) */
 	int (*gpio_read)(void *user_data, int *state);
 
 	void *user_data;
@@ -160,6 +172,7 @@ void htc_acoustic_register_hs_amp(int (*aud_hs_amp_f)(int, int), struct file_ope
 int htc_acoustic_hs_amp_ctrl(int on, int dsp);
 void htc_acoustic_register_spk_amp(enum SPK_AMP_TYPE type,int (*aud_spk_amp_f)(int, int), struct file_operations* ops);
 int htc_acoustic_spk_amp_ctrl(enum SPK_AMP_TYPE type,int on, int dsp);
+/* To query if feature is enable */
 int htc_acoustic_query_feature(enum HTC_FEATURE feature);
 void htc_acoustic_register_hs_notify(enum HS_NOTIFY_TYPE type, struct hs_notify_t *notify);
 

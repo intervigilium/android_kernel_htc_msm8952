@@ -269,6 +269,7 @@ struct msm_vfe_hardware_info {
 	
 	int num_iommu_secure_ctx;
 	int vfe_clk_idx;
+	int runtime_axi_update;
 	struct msm_vfe_ops vfe_ops;
 	struct msm_vfe_axi_hardware_info *axi_hw_info;
 	struct msm_vfe_stats_hardware_info *stats_hw_info;
@@ -297,6 +298,9 @@ enum msm_vfe_axi_state {
 	PAUSING,
 	RESUMING,
 	UPDATING,
+	UPDATE_PENDING,
+	STARTED,
+	STOPPED,
 };
 
 enum msm_vfe_axi_cfg_update_state {

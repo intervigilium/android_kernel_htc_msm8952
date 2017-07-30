@@ -672,6 +672,8 @@ long compat_sys_timer_create(clockid_t which_clock,
 		struct sigevent kevent;
 
 		event = compat_alloc_user_space(sizeof(*event));
+		if (unlikely(!event))
+			return -EFAULT;
 		if (get_compat_sigevent(&kevent, timer_event_spec) ||
 		    copy_to_user(event, &kevent, sizeof(*event)))
 			return -EFAULT;

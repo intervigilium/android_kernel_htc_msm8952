@@ -398,7 +398,7 @@ static bool msm_pm_power_collapse_standalone(
 #ifdef CONFIG_HTC_POWER_DEBUG
 	if (cpu_online(cpu)) {
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask)){
-			msm_rpm_dump_stat();
+			msm_rpm_dump_stat(false);
 		}
 	}
 #endif
@@ -420,7 +420,7 @@ static bool msm_pm_power_collapse_standalone(
 #ifdef CONFIG_HTC_POWER_DEBUG
 	if (cpu_online(cpu)) {
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask))
-			msm_rpm_dump_stat();
+			msm_rpm_dump_stat(false);
 	}
 #endif
 
@@ -478,7 +478,7 @@ static bool msm_pm_power_collapse(bool from_idle)
 #ifdef CONFIG_HTC_POWER_DEBUG
 	if (cpu_online(cpu)) {
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask)){
-			msm_rpm_dump_stat();
+			msm_rpm_dump_stat(false);
 		}
 	}
 #endif
@@ -500,7 +500,7 @@ static bool msm_pm_power_collapse(bool from_idle)
 	if (cpu_online(cpu)) {
 #ifdef CONFIG_HTC_POWER_DEBUG
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask))
-			msm_rpm_dump_stat();
+			msm_rpm_dump_stat(false);
 		if ((!from_idle) && (MSM_PM_DEBUG_CLOCK & msm_pm_debug_mask))
 #else
 		if (MSM_PM_DEBUG_CLOCK & msm_pm_debug_mask)

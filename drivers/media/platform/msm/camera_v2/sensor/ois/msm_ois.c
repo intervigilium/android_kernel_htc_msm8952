@@ -18,6 +18,7 @@
 #include "msm_cci.h"
 
 DEFINE_MSM_MUTEX(msm_ois_mutex);
+/*#define MSM_OIS_DEBUG*/
 #undef CDBG
 #ifdef MSM_OIS_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -38,6 +39,10 @@ static int32_t msm_ois_write_settings(struct msm_ois_ctrl_t *o_ctrl,
 {
 	int32_t rc = -EFAULT;
 	int32_t i = 0;
+	//HTC_START, OIS
+	int32_t retry_cnt = 0;
+	uint8_t read_data[4] = {0};
+	//HTC_END, OIS
 	struct msm_camera_i2c_seq_reg_array reg_setting;
 	CDBG("Enter\n");
 
@@ -67,6 +72,25 @@ static int32_t msm_ois_write_settings(struct msm_ois_ctrl_t *o_ctrl,
 				reg_setting.reg_data[3] = (uint8_t)
 					(settings[i].reg_data & 0x000000FF);
 				reg_setting.reg_data_size = 4;
+
+				//HTC_START, OIS
+				if(o_ctrl->highlvcmd_check)
+				{
+					for (retry_cnt = 0; retry_cnt < 10; retry_cnt++) {
+						rc = o_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(&o_ctrl->i2c_client, 0xF100, read_data, 4);
+						if (rc < 0 || read_data[0] == 1) {
+							retry_cnt++;
+							pr_err("[OIS]%s: ois status isn't ready to enable, retry_cnt=%d", __func__, retry_cnt);
+							msleep(3);
+						}
+						else
+						{
+							break;
+						}
+					}
+				}
+				//HTC_START, OIS
+
 				rc = o_ctrl->i2c_client.i2c_func_tbl->
 					i2c_write_seq(&o_ctrl->i2c_client,
 					reg_setting.reg_addr,
@@ -205,12 +229,22 @@ static int32_t msm_ois_control(struct msm_ois_ctrl_t *o_ctrl,
 		cci_client->retries = 3;
 		cci_client->id_map = 0;
 		cci_client->cci_i2c_master = o_ctrl->cci_master;
+/*HTC_START*/
+//		cci_client->i2c_freq_mode = set_info->ois_params.i2c_freq_mode;
 		cci_client->i2c_freq_mode = I2C_FAST_MODE;
+/*HTC_END*/
 	} else {
 		o_ctrl->i2c_client.client->addr =
 			set_info->ois_params.i2c_addr;
 	}
 	o_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+
+	//HTC_START, OIS
+	if(!strncmp(set_info->ois_params.OIS_NAME, "lc898123", sizeof("lc898123") -1))
+		o_ctrl->highlvcmd_check = 1;
+	else
+		o_ctrl->highlvcmd_check = 0;
+	//HTC_END, OIS
 
 
 	if (set_info->ois_params.setting_size > 0 &&
@@ -385,7 +419,7 @@ static int msm_ois_close(struct v4l2_subdev *sd,
 	struct msm_ois_ctrl_t *o_ctrl =  v4l2_get_subdevdata(sd);
 	CDBG("Enter\n");
 	if (!o_ctrl || !o_ctrl->i2c_client.i2c_func_tbl) {
-		
+		/* check to make sure that init happens before release */
 		pr_err("failed\n");
 		return -EINVAL;
 	}
@@ -414,7 +448,7 @@ static long msm_ois_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_ois_ctrl_t *o_ctrl = v4l2_get_subdevdata(sd);
 	void __user *argp = (void __user *)arg;
 	CDBG("Enter\n");
-	CDBG("%s:%d o_ctrl %p argp %p\n", __func__, __LINE__, o_ctrl, argp);
+	CDBG("%s:%d o_ctrl %pK argp %pK\n", __func__, __LINE__, o_ctrl, argp);
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_GET_SUBDEV_ID:
 		return msm_ois_get_subdev_id(o_ctrl, argp);
@@ -491,7 +525,7 @@ static int32_t msm_ois_i2c_probe(struct i2c_client *client,
 		goto probe_failure;
 	}
 
-	CDBG("client = 0x%p\n",  client);
+	CDBG("client = 0x%pK\n",  client);
 
 	rc = of_property_read_u32(client->dev.of_node, "cell-index",
 		&ois_ctrl_t->subdev_id);
@@ -503,17 +537,17 @@ static int32_t msm_ois_i2c_probe(struct i2c_client *client,
 
 	ois_ctrl_t->i2c_driver = &msm_ois_i2c_driver;
 	ois_ctrl_t->i2c_client.client = client;
-	
+	/* Set device type as I2C */
 	ois_ctrl_t->ois_device_type = MSM_CAMERA_I2C_DEVICE;
 	ois_ctrl_t->i2c_client.i2c_func_tbl = &msm_sensor_qup_func_tbl;
 	ois_ctrl_t->ois_v4l2_subdev_ops = &msm_ois_subdev_ops;
 	ois_ctrl_t->ois_mutex = &msm_ois_mutex;
 
-	
+	/* Assign name for sub device */
 	snprintf(ois_ctrl_t->msm_sd.sd.name, sizeof(ois_ctrl_t->msm_sd.sd.name),
 		"%s", ois_ctrl_t->i2c_driver->driver.name);
 
-	
+	/* Initialize sub device */
 	v4l2_i2c_subdev_init(&ois_ctrl_t->msm_sd.sd,
 		ois_ctrl_t->i2c_client.client,
 		ois_ctrl_t->ois_v4l2_subdev_ops);
@@ -569,6 +603,10 @@ static long msm_ois_subdev_do_ioctl(
 			ois_data.cfg.set_info.ois_params.settings =
 				compat_ptr(u32->cfg.set_info.ois_params.
 				settings);
+			/*HTC_START, OIS*/
+			if (u32->cfg.set_info.ois_params.OIS_NAME != NULL)
+				strlcpy(ois_data.cfg.set_info.ois_params.OIS_NAME, u32->cfg.set_info.ois_params.OIS_NAME, sizeof(ois_data.cfg.set_info.ois_params.OIS_NAME));
+			/*HTC_END, OIS*/
 			parg = &ois_data;
 			break;
 		case CFG_OIS_I2C_WRITE_SEQ_TABLE:
@@ -659,9 +697,9 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	msm_ois_t->ois_v4l2_subdev_ops = &msm_ois_subdev_ops;
 	msm_ois_t->ois_mutex = &msm_ois_mutex;
 
-	
+	/* Set platform device handle */
 	msm_ois_t->pdev = pdev;
-	
+	/* Set device type as platform device */
 	msm_ois_t->ois_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 	msm_ois_t->i2c_client.i2c_func_tbl = &msm_sensor_cci_func_tbl;
 	msm_ois_t->i2c_client.cci_client = kzalloc(sizeof(

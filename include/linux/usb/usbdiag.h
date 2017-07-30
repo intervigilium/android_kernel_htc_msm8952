@@ -23,6 +23,8 @@
 
 #include <linux/err.h>
 
+/*++ 2015/06/10, USB Team, PCN00033 ++*/
+/*DRIVER_DIAG_FUNCTION*/
 #define DIAG_ERR(fmt, args...) \
 	printk(KERN_ERR "[USBDIAG:ERR] " fmt, ## args)
 #define DIAG_WARNING(fmt, args...) \
@@ -37,6 +39,7 @@
 			pr_debug("[USBDIAG] " fmt, ## args); \
 	} while (0)
 
+/*DRIVER_DIAGFWD_FUNCTION*/
 #define DIAGFWD_ERR(fmt, args...) \
 	printk(KERN_ERR "[DIAGFWD:ERR] " fmt, ## args)
 #define DIAGFWD_WARNING(fmt, args...) \
@@ -52,6 +55,7 @@
 	} while (0)
 
 
+/* DRIVER_SDLOG_FUNCTION*/
 #define SDLOG_ERR(fmt, args...) \
 	printk(KERN_ERR "[DIAGSDLOG:ERR] " fmt, ## args)
 #define SDLOG_WARNING(fmt, args...) \
@@ -65,7 +69,10 @@
 		else \
 			pr_debug("[DIAGSDLOG] " fmt, ## args); \
 	} while (0)
+/*-- 2015/06/10, USB Team, PCN00033 --*/
 
+/*++ 2015/12/01, USB Team, PCN00095 ++*/
+/* DRIVER_SOCKET_FUNCTION*/
 #define DIAGSOCKET_ERR(fmt, args...) \
 	printk(KERN_ERR "[DIAGSOCKET:ERR] " fmt, ## args)
 #define DIAGSOCKET_WARNING(fmt, args...) \
@@ -80,8 +87,9 @@
 			pr_debug("[DIAGSOCKET] " fmt, ## args); \
 	} while (0)
 
+/*-- 2015/12/01, USB Team, PCN00095 --*/
 
-#define DIAG_XPST 1		
+#define DIAG_XPST 1		/*++ 2015/06/30, USB Team, PCN00052 ++*/
 #define DIAG_LEGACY		"diag"
 #define DIAG_MDM		"diag_mdm"
 #define DIAG_QSC		"diag_qsc"
@@ -141,8 +149,10 @@ int usb_diag_write(struct usb_diag_ch *ch, struct diag_request *d_req)
 	return -ENODEV;
 }
 
-#endif 
+#endif /* CONFIG_USB_G_ANDROID */
+/*++ 2015/06/30, USB Team, PCN00052 ++*/
 int checkcmd_modem_epst(unsigned char *buf);
 int modem_to_userspace(void *buf, int r, int cmdtype, int is9k);
 extern int diag_initialized;
-#endif 
+/*-- 2015/06/30, USB Team, PCN00052 --*/
+#endif /* _DRIVERS_USB_DIAG_H_ */

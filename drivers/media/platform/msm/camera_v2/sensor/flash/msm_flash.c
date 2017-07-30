@@ -303,6 +303,16 @@ static int32_t msm_flash_i2c_init(
 	flash_ctrl->power_info.power_down_setting_size =
 		flash_ctrl->power_setting_array.size_down;
 
+	if ((flash_ctrl->power_info.power_setting_size > MAX_POWER_CONFIG) ||
+	(flash_ctrl->power_info.power_down_setting_size > MAX_POWER_CONFIG)) {
+		pr_err("%s:%d invalid power setting size=%d size_down=%d\n",
+			__func__, __LINE__,
+			flash_ctrl->power_info.power_setting_size,
+			flash_ctrl->power_info.power_down_setting_size);
+		rc = -EINVAL;
+		goto msm_flash_i2c_init_fail;
+	}
+
 	rc = msm_camera_power_up(&flash_ctrl->power_info,
 		flash_ctrl->flash_device_type,
 		&flash_ctrl->flash_i2c_client);
@@ -382,7 +392,7 @@ static int32_t msm_flash_i2c_release(
 	int32_t rc = 0;
 
 	if (!(&flash_ctrl->power_info) || !(&flash_ctrl->flash_i2c_client)) {
-		pr_err("%s:%d failed: %p %p\n",
+		pr_err("%s:%d failed: %pK %pK\n",
 			__func__, __LINE__, &flash_ctrl->power_info,
 			&flash_ctrl->flash_i2c_client);
 		return -EINVAL;
@@ -416,11 +426,28 @@ static int32_t msm_flash_off(struct msm_flash_ctrl_t *flash_ctrl,
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_flash_main && htc_torch_main)
 	{
-		htc_flash_main(0, 0);
-		htc_torch_main(0, 0);
+		if (flash_ctrl->pdev->id == 0)
+		{
+			htc_flash_main(0, 0);
+			htc_torch_main(0, 0);
+		}
 	}
 	else
 		pr_err("[CAM][FL] msm_flash_off, flashlight control is NULL\n");
+
+	#ifdef CONFIG_HTC_FLASHLIGHT
+	if(htc_flash_front && htc_torch_front)
+	{
+		if (flash_ctrl->pdev->id == 1)
+		{
+			htc_flash_front(0, 0);
+			htc_torch_front(0, 0);
+		}
+	}
+	else
+		pr_err("[CAM][FL]Front msm_flash_off, flashlight control is NULL\n");
+	#endif
+
 	#else
 	
 
@@ -531,8 +558,11 @@ static int32_t msm_flash_init(
 			flash_data->cfg.flash_init_info->flash_driver_type);
 	}
 
-	rc = flash_ctrl->func_tbl->camera_flash_init(
-			flash_ctrl, flash_data);
+	
+	if (flash_ctrl->pdev->id == 0)
+	
+		rc = flash_ctrl->func_tbl->camera_flash_init(
+				flash_ctrl, flash_data);
 	if (rc < 0) {
 		pr_err("%s:%d camera_flash_init failed rc = %d",
 			__func__, __LINE__, rc);
@@ -559,15 +589,30 @@ static int32_t msm_flash_low(
 	
 
 	CDBG("Enter\n");
+	
+	CDBG("pdev->id = %d\n", flash_ctrl->pdev->id);
+	
 
 	
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_torch_main && htc_flash_main)
 	{
-		htc_torch_main(50, 50);
+		if (flash_ctrl->pdev->id == 0)
+			htc_torch_main(50, 50);
 	}
 	else
-		pr_err("[CAM][FL] msm_flash_low, flashlight control is NULL\n");
+		pr_err("[CAM][FL] Main msm_flash_low, flashlight control is NULL\n");
+
+	#ifdef CONFIG_HTC_FLASHLIGHT
+	if(htc_flash_front && htc_torch_front)
+	{
+		if (flash_ctrl->pdev->id == 1)
+			htc_torch_front(50,50);
+	}
+	else
+		pr_err("[CAM][FL] Front msm_flash_low, flashlight control is NULL\n");
+	#endif
+
 	#else
 	
 
@@ -625,11 +670,28 @@ static int32_t msm_flash_high(
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_flash_main && htc_torch_main)
 	{
-		pr_info("[CAM][FL] msm_flash_high, called linear flashlight current value (%d, %d)\n", flash_data->flash_current[0], flash_data->flash_current[1]);
-		htc_flash_main((int)flash_data->flash_current[0], (int)flash_data->flash_current[1]);
+		if(flash_ctrl->pdev->id ==0)
+		{
+		    pr_info("[CAM][FL] Main msm_flash_high, called linear flashlight current value (%d, %d)\n", flash_data->flash_current[0], flash_data->flash_current[1]);
+		    htc_flash_main((int)flash_data->flash_current[0], (int)flash_data->flash_current[1]);
+		}
 	}
 	else
-		pr_err("[CAM][FL] msm_flash_high, flashlight control is NULL\n");
+		pr_err("[CAM][FL] Main msm_flash_high, flashlight control is NULL\n");
+
+	#ifdef CONFIG_HTC_FLASHLIGHT
+	if(htc_flash_front && htc_torch_front)
+	{
+		if(flash_ctrl->pdev->id ==1)
+		{
+		    pr_info("[CAM][FL] Front msm_flash_high, called linear flashlight current value (%d, %d)\n", flash_data->flash_current[0], flash_data->flash_current[1]);
+		    htc_flash_front((int)flash_data->flash_current[0], (int)flash_data->flash_current[1]);
+		}
+	}
+	else
+		pr_err("[CAM][FL] Front msm_flash_high, flashlight control is NULL\n");
+	#endif
+
 	#else
 	
 
@@ -702,8 +764,11 @@ static int32_t msm_flash_config(struct msm_flash_ctrl_t *flash_ctrl,
 		break;
 	case CFG_FLASH_RELEASE:
 		if (flash_ctrl->flash_state == MSM_CAMERA_FLASH_INIT)
-			rc = flash_ctrl->func_tbl->camera_flash_release(
-				flash_ctrl);
+			
+			if (flash_ctrl->pdev->id == 0)
+			
+				rc = flash_ctrl->func_tbl->camera_flash_release(
+					flash_ctrl);
 		break;
 	case CFG_FLASH_OFF:
 		if (flash_ctrl->flash_state == MSM_CAMERA_FLASH_INIT)
@@ -761,7 +826,10 @@ static long msm_flash_subdev_ioctl(struct v4l2_subdev *sd,
 			pr_err("fctrl->func_tbl NULL\n");
 			return -EINVAL;
 		} else {
- 			return fctrl->func_tbl->camera_flash_release(fctrl);
+			
+			if (fctrl->pdev->id == 0)
+			
+				return fctrl->func_tbl->camera_flash_release(fctrl);
 		}
 	default:
 		pr_err_ratelimited("invalid cmd %d\n", cmd);
@@ -1340,7 +1408,7 @@ static uint32_t led_ril_status_value;
 static uint32_t led_wimax_status_value;
 static uint32_t led_hotspot_status_value;
 static uint16_t led_low_temp_limit = 5;
-static uint16_t led_low_cap_limit = 15;
+static uint16_t led_low_cap_limit = 14;
 static uint16_t led_low_cap_limit_dual = 15;
 
 static ssize_t led_ril_status_get(struct device *dev,

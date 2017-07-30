@@ -15,9 +15,11 @@
 
 #include "diagfwd.h"
 
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 #define DQ_FILTER_MASK      0x1
 #define UNUSED_FILTER_MASK  0x2
 #define WCNSS_FILTER_MASK   0x4
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 
 
 struct diag_log_mask_t {

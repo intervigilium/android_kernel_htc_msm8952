@@ -273,6 +273,11 @@ static long do_compat_semctl(int first, int second, int third, u32 pad)
 	case IPC_STAT:
 	case SEM_STAT:
 		up64 = compat_alloc_user_space(sizeof(s64));
+		if (unlikely(!up64))
+		{
+			err = -EFAULT;
+			break;
+		}
 		fourth = (unsigned long)up64;
 		err = sys_semctl(first, second, third, fourth);
 		if (err < 0)
@@ -294,6 +299,11 @@ static long do_compat_semctl(int first, int second, int third, u32 pad)
 			err = get_compat_semid_ds(&s64, compat_ptr(pad));
 		}
 		up64 = compat_alloc_user_space(sizeof(s64));
+		if (unlikely(!up64))
+		{
+			err = -EFAULT;
+			break;
+		}
 		if (copy_to_user(up64, &s64, sizeof(s64)))
 			err = -EFAULT;
 		if (err)
@@ -523,6 +533,11 @@ long compat_sys_msgctl(int first, int second, void __user *uptr)
 		if (err)
 			break;
 		p = compat_alloc_user_space(sizeof(m64));
+		if (unlikely(!p))
+		{
+			err = -EFAULT;
+			break;
+		}
 		if (copy_to_user(p, &m64, sizeof(m64)))
 			err = -EFAULT;
 		else
@@ -532,6 +547,11 @@ long compat_sys_msgctl(int first, int second, void __user *uptr)
 	case IPC_STAT:
 	case MSG_STAT:
 		p = compat_alloc_user_space(sizeof(m64));
+		if (unlikely(!p))
+		{
+			err = -EFAULT;
+			break;
+		}
 		err = sys_msgctl(first, second, p);
 		if (err < 0)
 			break;
@@ -687,6 +707,11 @@ long compat_sys_shmctl(int first, int second, void __user *uptr)
 
 	case IPC_INFO:
 		p = compat_alloc_user_space(sizeof(smi));
+		if (unlikely(!p))
+		{
+			err = -EFAULT;
+			break;
+		}
 		err = sys_shmctl(first, second, p);
 		if (err < 0)
 			break;
@@ -710,6 +735,11 @@ long compat_sys_shmctl(int first, int second, void __user *uptr)
 		if (err)
 			break;
 		p = compat_alloc_user_space(sizeof(s64));
+		if (unlikely(!p))
+		{
+			err = -EFAULT;
+			break;
+		}
 		if (copy_to_user(p, &s64, sizeof(s64)))
 			err = -EFAULT;
 		else
@@ -756,6 +786,8 @@ long compat_sys_semtimedop(int semid, struct sembuf __user *tsems,
 	if (timeout) {
 		struct timespec ts;
 		ts64 = compat_alloc_user_space(sizeof(*ts64));
+		if (unlikely(!ts64))
+			return -EFAULT;
 		if (get_compat_timespec(&ts, timeout))
 			return -EFAULT;
 		if (copy_to_user(ts64, &ts, sizeof(ts)))

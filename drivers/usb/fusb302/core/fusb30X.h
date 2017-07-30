@@ -3,13 +3,20 @@
 
 #include "platform.h"
 
-BOOL DeviceWrite(UINT8 regAddr, UINT8 length, UINT8* data);
-BOOL DeviceRead(UINT8 regAddr, UINT8 length, UINT8* data);
+// 302 Device ID
+#define VERSION_302A 0x08
+#define VERSION_302B 0x09
 
+// Convenience interfaces to I2C_WriteData() and I2C_ReadData()
+FSC_BOOL DeviceWrite(FSC_U8 regAddr, FSC_U8 length, FSC_U8* data);
+FSC_BOOL DeviceRead(FSC_U8 regAddr, FSC_U8 length, FSC_U8* data);
+
+// FUSB300 I2C Configuration
 #define FUSB300SlaveAddr   0x44
-#define FUSB300AddrLength  1        
-#define FUSB300IncSize     1        
+#define FUSB300AddrLength  1        // One byte address
+#define FUSB300IncSize     1        // One byte increment
 
+// FUSB300 Register Addresses
 #define regDeviceID     0x01
 #define regSwitches0    0x02
 #define regSwitches1    0x03
@@ -35,43 +42,50 @@ BOOL DeviceRead(UINT8 regAddr, UINT8 length, UINT8* data);
 #define regInterrupt    0x42
 #define regFIFO         0x43
 
+/* Note: MDAC values are actually (MDAC + 1) * 42/420mV *
+ * Data sheet is incorrect                              */
 #ifdef FPGA_BOARD
-    #define SDAC_DEFAULT        0x2A
-    #define MDAC_0P2V           0x04
-    #define MDAC_0P4V           0x08
-    #define MDAC_0P8V           0x10
-    #define MDAC_1P6V           0x1F
-    #define MDAC_2P05V          0x28
-    #define MDAC_2P6V           0x32
+    #define SDAC_DEFAULT        0x29
+    #define MDAC_0P210V         0x03
+    #define MDAC_0P420V         0x07
+    #define MDAC_0P798V         0x0F
+    #define MDAC_1P596V         0x1E
+    #define MDAC_2P058V         0x27
+    #define MDAC_2P604V         0x31
 
-    #define VBUS_MDAC_0P8V      0x01
+    #define VBUS_MDAC_0P84V     0x00
 #else
-    #define SDAC_DEFAULT        0x20
-    #define MDAC_0P2V           0x05
-    #define MDAC_0P4V           0x0A
-    #define MDAC_0P8V           0x13
-    #define MDAC_1P6V           0x26
-    #define MDAC_2P05V          0x31
-    #define MDAC_2P6V           0x3E
+    #define SDAC_DEFAULT        0x1F
+    #define MDAC_0P210V         0x04
+    #define MDAC_0P420V         0x09
+    #define MDAC_0P798V         0x12
+    #define MDAC_1P596V         0x25
+    #define MDAC_2P058V         0x30
+    #define MDAC_2P604V         0x3D
 
-    #define VBUS_MDAC_0P8V      0x01
-    #define VBUS_MDAC_3p8       0x09
-    #define VBUS_MDAC_4p2       0x0A
+    #define VBUS_MDAC_0P84V     0x01
+    #define VBUS_MDAC_3P78      0x08
+    #define VBUS_MDAC_4P20      0x09
+    #define VBUS_MDAC_4P62      0x0A
+    #define VBUS_MDAC_5P04      0x0B
+    #define VBUS_MDAC_5P46      0x0C
+    #define VBUS_MDAC_11P76     0x1B
 #endif
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
-        unsigned REVISION:3;
-        unsigned VERSION:5;
+        unsigned REVISION_ID:2;
+        unsigned PRODUCT_ID:2;
+        unsigned VERSION_ID:4;
     };
 } regDeviceID_t;
 
 typedef union {
-    UINT16 word;
-    UINT8 byte[2] __PACKED;
+    FSC_U16 word;
+    FSC_U8 byte[2] __PACKED;
     struct {
-        
+        // Switches0
         unsigned PDWN1:1;
         unsigned PDWN2:1;
         unsigned MEAS_CC1:1;
@@ -80,7 +94,7 @@ typedef union {
         unsigned VCONN_CC2:1;
         unsigned PU_EN1:1;
         unsigned PU_EN2:1;
-        
+        // Switches1
         unsigned TXCC1:1;
         unsigned TXCC2:1;
         unsigned AUTO_CRC:1;
@@ -92,7 +106,7 @@ typedef union {
 } regSwitches_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned MDAC:6;
         unsigned MEAS_VBUS:1;
@@ -101,18 +115,18 @@ typedef union {
 } regMeasure_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned SDAC:6;
-        unsigned :2;
+        unsigned SDAC_HYS:2;
     };
 } regSlice_t;
 
 typedef union {
-    UINT32 dword;
-    UINT8 byte[4] __PACKED;
+    FSC_U32 dword;
+    FSC_U8 byte[4] __PACKED;
     struct {
-        
+        // Control0
         unsigned TX_START:1;
         unsigned AUTO_PRE:1;
         unsigned HOST_CUR:2;
@@ -120,7 +134,7 @@ typedef union {
         unsigned INT_MASK:1;
         unsigned TX_FLUSH:1;
         unsigned :1;
-        
+        // Control1
         unsigned ENSOP1:1;
         unsigned ENSOP2:1;
         unsigned RX_FLUSH:1;
@@ -129,26 +143,26 @@ typedef union {
         unsigned ENSOP1DP:1;
         unsigned ENSOP2DB:1;
         unsigned :1;
-        
+        // Control2
         unsigned TOGGLE:1;
         unsigned MODE:2;
         unsigned WAKE_EN:1;
         unsigned WAKE_SELF:1;
         unsigned TOG_RD_ONLY:1;
         unsigned :2;
-        
+        // Control3
         unsigned AUTO_RETRY:1;
         unsigned N_RETRIES:2;
         unsigned AUTO_SOFTRESET:1;
         unsigned AUTO_HARDRESET:1;
-        unsigned :1;
+        unsigned BIST_TMODE:1;          // 302B Only
         unsigned SEND_HARDRESET:1;
         unsigned :1;
     };
 } regControl_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned M_BC_LVL:1;
         unsigned M_COLLISION:1;
@@ -162,7 +176,7 @@ typedef union {
 } regMask_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned PWR:4;
         unsigned :4;
@@ -170,7 +184,7 @@ typedef union {
 } regPower_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned SW_RES:1;
         unsigned :7;
@@ -178,7 +192,7 @@ typedef union {
 } regReset_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned OCP_CUR:3;
         unsigned OCP_RANGE:1;
@@ -187,26 +201,26 @@ typedef union {
 } regOCPreg_t;
 
 typedef union {
-    UINT16 word;
-    UINT8 byte[2] __PACKED;
+    FSC_U16 word;
+    FSC_U8 byte[2] __PACKED;
     struct {
-        
+        // Maska
         unsigned M_HARDRST:1;
         unsigned M_SOFTRST:1;
-        unsigned M_TXCRCSENT:1;
+        unsigned M_TXSENT:1;
         unsigned M_HARDSENT:1;
         unsigned M_RETRYFAIL:1;
         unsigned M_SOFTFAIL:1;
         unsigned M_TOGDONE:1;
         unsigned M_OCP_TEMP:1;
-        
+        // Maskb
         unsigned M_GCRCSENT:1;
         unsigned :7;
     };
 } regMaskAdv_t;
 
 typedef union {
-    UINT8 byte;
+    FSC_U8 byte;
     struct {
         unsigned TOG_USRC_EXIT:1;
         unsigned :7;
@@ -214,15 +228,15 @@ typedef union {
 } regControl4_t;
 
 typedef union {
-    UINT8 byte[7] __PACKED;
+    FSC_U8 byte[7] __PACKED;
     struct {
-        UINT16  StatusAdv;
-        UINT16  InterruptAdv;
-        UINT16  Status;
-        UINT8   Interrupt1;
+        FSC_U16  StatusAdv;
+        FSC_U16  InterruptAdv;
+        FSC_U16  Status;
+        FSC_U8   Interrupt1;
     };
     struct {
-        
+        // Status0a
         unsigned HARDRST:1;
         unsigned SOFTRST:1;
         unsigned POWER23:2;
@@ -230,13 +244,13 @@ typedef union {
         unsigned SOFTFAIL:1;
         unsigned TOGDONE:1;
         unsigned M_OCP_TEMP:1;
-        
+        // Status1a
         unsigned RXSOP:1;
         unsigned RXSOP1DB:1;
         unsigned RXSOP2DB:1;
         unsigned TOGSS:3;
         unsigned :2;
-        
+        // Interrupta
         unsigned I_HARDRST:1;
         unsigned I_SOFTRST:1;
         unsigned I_TXSENT:1;
@@ -245,10 +259,10 @@ typedef union {
         unsigned I_SOFTFAIL:1;
         unsigned I_TOGDONE:1;
         unsigned I_OCP_TEMP:1;
-        
+        // Interruptb
         unsigned I_GCRCSENT:1;
         unsigned :7;
-        
+        // Status0
         unsigned BC_LVL:2;
         unsigned WAKE:1;
         unsigned ALERT:1;
@@ -256,7 +270,7 @@ typedef union {
         unsigned COMP:1;
         unsigned ACTIVITY:1;
         unsigned VBUSOK:1;
-        
+        // Status1
         unsigned OCP:1;
         unsigned OVRTEMP:1;
         unsigned TX_FULL:1;
@@ -265,7 +279,7 @@ typedef union {
         unsigned RX_EMPTY:1;
         unsigned RXSOP1:1;
         unsigned RXSOP2:1;
-        
+        // Interrupt
         unsigned I_BC_LVL:1;
         unsigned I_COLLISION:1;
         unsigned I_WAKE:1;
@@ -281,6 +295,7 @@ typedef struct
 {
     regDeviceID_t   DeviceID;
     regSwitches_t   Switches;
+    regSwitches_t   Switches_temp;/*++ 2015/12/30, USB Team, PCN00006 ++*/
     regMeasure_t    Measure;
     regSlice_t      Slice;
     regControl_t    Control;
@@ -294,4 +309,4 @@ typedef struct
 	regStatus_t     Status2;
 } DeviceReg_t;
 
-#endif 
+#endif // _FUSB30X_H_

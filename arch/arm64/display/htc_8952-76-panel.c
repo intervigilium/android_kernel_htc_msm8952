@@ -8,11 +8,13 @@
 #include <asm/debug_display.h>
 #include "../../../drivers/video/msm/mdss/mdss_dsi.h"
 
+/* HTC: dsi_power_data overwrite the role of dsi_drv_cm_data
+   in mdss_dsi_ctrl_pdata structure */
 struct dsi_power_data {
-	uint32_t sysrev;         
-	struct regulator *vci; 	 
-	struct regulator *lab; 	 
-	struct regulator *ibb; 	 
+	uint32_t sysrev;         /* system revision info */
+	struct regulator *vci; 	 /* VCI: 3v */
+	struct regulator *lab; 	 /* lab: +5v */
+	struct regulator *ibb; 	 /* ibb: -5v */
 	int vdd1v8;
 
 	int vci_post_on_sleep;
@@ -21,9 +23,11 @@ struct dsi_power_data {
 	int lab_post_on_sleep;
 	int lab_post_off_sleep;
 
+	int ibb_pre_off_sleep;
 	int ibb_post_on_sleep;
 	int ibb_post_off_sleep;
 
+	int vdd1v8_pre_off_sleep;
 	int vdd1v8_post_on_sleep;
 	int vdd1v8_post_off_sleep;
 
@@ -36,6 +40,7 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct dsi_power_data *pwrdata = NULL;
 	u32 tmp = 0;
+	struct mdss_panel_info *pinfo = NULL;
 
 	PR_DISP_INFO("%s\n", __func__);
 	if (!pdev) {
@@ -65,7 +70,7 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 		pwrdata->vci = 0;
 	} else {
 
-		
+		//MIPI L17 3V
 		ret = regulator_set_voltage(pwrdata->vci, 3000000, 3000000);
 		if (ret) {
 			PR_DISP_ERR("%s: set voltage failed on vdda vreg, rc=%d\n",
@@ -89,8 +94,11 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 			__func__, PTR_ERR(pwrdata->lab));
 		pwrdata->lab = 0;
 	} else {
-		
-		ret = regulator_set_voltage(pwrdata->lab, 4600000, 6000000);
+		//+5v
+		pinfo = &ctrl_pdata->panel_data.panel_info;
+		PR_DISP_INFO("lab_voltage=%d\n",pinfo->mdss_lab_voltage);
+
+		ret = regulator_set_voltage(pwrdata->lab, pinfo->mdss_lab_voltage, pinfo->mdss_lab_voltage);
 		if (ret) {
 			PR_DISP_ERR("%s: set voltage failed on lab vreg, rc=%d\n",
 			__func__, ret);
@@ -113,19 +121,26 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 			__func__, PTR_ERR(pwrdata->ibb));
 		pwrdata->ibb = 0;
 	} else {
-		
-		ret = regulator_set_voltage(pwrdata->ibb, 4600000, 6000000);
+		//-5v
+		pinfo = &ctrl_pdata->panel_data.panel_info;
+		PR_DISP_INFO("ibb_voltage=%d\n",pinfo->mdss_ibb_voltage);
+
+		ret = regulator_set_voltage(pwrdata->ibb, pinfo->mdss_ibb_voltage, pinfo->mdss_ibb_voltage);
 		if (ret) {
 			PR_DISP_ERR("%s: set voltage failed on ibb vreg, rc=%d\n",
 			__func__, ret);
 			return ret;
 		}
+		ret = of_property_read_u32(pdev->dev.of_node,"htc,ibb-pre-off-sleep", &tmp);
+		pwrdata->ibb_pre_off_sleep = (!ret ? tmp : 0);
+
 		ret = of_property_read_u32(pdev->dev.of_node,"htc,ibb-post-on-sleep", &tmp);
 		pwrdata->ibb_post_on_sleep = (!ret ? tmp : 0);
 
 		ret = of_property_read_u32(pdev->dev.of_node,"htc,ibb-post-off-sleep", &tmp);
 		pwrdata->ibb_post_off_sleep = (!ret ? tmp : 0);
-		PR_DISP_INFO("%s ibb_post_on_sleep=%d,ibb_post_off_sleep=%d\n", __func__,
+		PR_DISP_INFO("%s ibb_pre_off_sleep=%d,ibb_post_on_sleep=%d,ibb_post_off_sleep=%d\n", __func__,
+					pwrdata->ibb_pre_off_sleep,
 					pwrdata->ibb_post_on_sleep,
 					pwrdata->ibb_post_off_sleep);
 	}
@@ -136,12 +151,16 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 		pr_err("%s pwrdata->vdd1v8 fail\n", __func__);
 		pwrdata->vdd1v8 = 0;
 	} else {
+		ret = of_property_read_u32(pdev->dev.of_node,"htc,vdd1v8-pre-off-sleep", &tmp);
+		pwrdata->vdd1v8_pre_off_sleep = (!ret ? tmp : 0);
+
 		ret = of_property_read_u32(pdev->dev.of_node,"htc,vdd1v8-post-on-sleep", &tmp);
 		pwrdata->vdd1v8_post_on_sleep = (!ret ? tmp : 0);
 
 		ret = of_property_read_u32(pdev->dev.of_node,"htc,vdd1v8-post-off-sleep", &tmp);
 		pwrdata->vdd1v8_post_off_sleep = (!ret ? tmp : 0);
-		PR_DISP_INFO("%s vdd1v8_post_on_sleep=%d,vdd1v8_post_off_sleep=%d\n", __func__,
+		PR_DISP_INFO("%s vdd1v8_pre_off_sleep=%d,vdd1v8_post_on_sleep=%d,vdd1v8_post_off_sleep=%d\n", __func__,
+					pwrdata->vdd1v8_pre_off_sleep,
 					pwrdata->vdd1v8_post_on_sleep,
 					pwrdata->vdd1v8_post_off_sleep);
 	}
@@ -157,7 +176,9 @@ static int htc_8952_76_regulator_init(struct platform_device *pdev)
 
 static int htc_8952_76_regulator_deinit(struct platform_device *pdev)
 {
-	
+	/* devm_regulator() will automatically free regulators
+	   while dev detach. */
+	/* nothing */
 	return 0;
 }
 
@@ -173,11 +194,17 @@ void htc_8952_76_panel_reset(struct mdss_panel_data *pdata, int enable)
 		return;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
-	if ((mdss_dsi_is_right_ctrl(ctrl_pdata) &&
+	if (enable && (mdss_dsi_is_right_ctrl(ctrl_pdata) &&
 		mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data))) {
-		pr_err("%s gpio configuration not needed!\n", __func__);
+		pr_info("%s not need for dsi right!\n", __func__);
 		return;
 	}
+	if (!enable && (mdss_dsi_is_left_ctrl(ctrl_pdata) &&
+		mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data))) {
+		pr_info("%s not need for dsi left!\n", __func__);
+		return;
+	}
+
 
 	pwrdata = ctrl_pdata->dsi_pwrctrl_data;
 	pinfo = &ctrl_pdata->panel_data.panel_info;
@@ -226,9 +253,14 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata, panel_data);
 
-	if ((mdss_dsi_is_right_ctrl(ctrl_pdata) &&
+	if (enable && (mdss_dsi_is_right_ctrl(ctrl_pdata) &&
 		mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data))) {
-		pr_err("%s gpio configuration not needed!\n", __func__);
+		pr_info("%s not need for dsi right!\n", __func__);
+		return 0;
+	}
+	if (!enable && (mdss_dsi_is_left_ctrl(ctrl_pdata) &&
+		mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data))) {
+		pr_info("%s not need for dsi left!\n", __func__);
 		return 0;
 	}
 
@@ -241,7 +273,7 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 
 	if (enable) {
 		if (pwrdata->vci) {
-			
+			/*enable VCI L17 3v*/
 			ret = regulator_set_optimum_mode(pwrdata->vci, 100000);
 			if (ret < 0) {
 				PR_DISP_ERR("%s: vdda set opt mode failed.\n",
@@ -258,13 +290,13 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 		}
 
 		if (pwrdata->vdd1v8) {
-			
+			/* enable 1v8 */
 			gpio_set_value(pwrdata->vdd1v8, 1);
 			if (pwrdata->vdd1v8_post_on_sleep)
 				usleep_range((pwrdata->vdd1v8_post_on_sleep * 1000),(pwrdata->vdd1v8_post_on_sleep * 1000) + 500);
 		}
 		if (pwrdata->lab) {
-			
+			/* enable +5v */
 			ret = regulator_set_optimum_mode(pwrdata->lab, 100000);
 			if (ret < 0) {
 				PR_DISP_ERR("%s: lab set opt mode failed.\n",
@@ -281,7 +313,7 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 				usleep_range((pwrdata->lab_post_on_sleep * 1000),(pwrdata->lab_post_on_sleep * 1000) + 500);
 		}
 		if (pwrdata->ibb) {
-			
+			/* enable -5v */
 			ret = regulator_set_optimum_mode(pwrdata->ibb, 100000);
 			if (ret < 0) {
 				PR_DISP_ERR("%s: ibb set opt mode failed.\n",
@@ -297,23 +329,10 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 				usleep_range((pwrdata->ibb_post_on_sleep * 1000),(pwrdata->ibb_post_on_sleep * 1000) + 500);
 		}
 	} else {
-		if (pwrdata->lab) {
-			
-			ret = regulator_disable(pwrdata->lab);
-			if (ret) {
-				PR_DISP_ERR("%s: Failed to disable lab regulator.\n",__func__);
-				return ret;
-			}
-			ret = regulator_set_optimum_mode(pwrdata->lab, 100);
-			if (ret < 0) {
-				PR_DISP_ERR("%s: lab set opt mode failed.\n",__func__);
-				return ret;
-			}
-			if (pwrdata->lab_post_off_sleep)
-				usleep_range((pwrdata->lab_post_off_sleep * 1000),(pwrdata->lab_post_off_sleep * 1000) + 500);
-		}
 		if (pwrdata->ibb) {
-			
+			if (pwrdata->ibb_pre_off_sleep)
+				usleep_range((pwrdata->ibb_pre_off_sleep * 1000),(pwrdata->ibb_pre_off_sleep * 1000) + 500);
+			/* disable -5v */
 			ret = regulator_disable(pwrdata->ibb);
 			if (ret) {
 				PR_DISP_ERR("%s: Failed to disable ibb regulator.\n", __func__);
@@ -327,16 +346,33 @@ static int htc_8952_76_panel_power_on(struct mdss_panel_data *pdata, int enable)
 			if (pwrdata->ibb_post_off_sleep)
 				usleep_range((pwrdata->ibb_post_off_sleep * 1000),(pwrdata->ibb_post_off_sleep * 1000) + 500);
 		}
+		if (pwrdata->lab) {
+			/* disable +5v */
+			ret = regulator_disable(pwrdata->lab);
+			if (ret) {
+				PR_DISP_ERR("%s: Failed to disable lab regulator.\n",__func__);
+				return ret;
+			}
+			ret = regulator_set_optimum_mode(pwrdata->lab, 100);
+			if (ret < 0) {
+				PR_DISP_ERR("%s: lab set opt mode failed.\n",__func__);
+				return ret;
+			}
+			if (pwrdata->lab_post_off_sleep)
+				usleep_range((pwrdata->lab_post_off_sleep * 1000),(pwrdata->lab_post_off_sleep * 1000) + 500);
+		}
 
 		if (pwrdata->vdd1v8) {
-			
+			if (pwrdata->vdd1v8_pre_off_sleep)
+				usleep_range((pwrdata->vdd1v8_pre_off_sleep * 1000),(pwrdata->vdd1v8_pre_off_sleep * 1000) + 500);
+			/* disable 1v8 */
 			gpio_set_value(pwrdata->vdd1v8, 0);
 			if (pwrdata->vdd1v8_post_off_sleep)
 				usleep_range((pwrdata->vdd1v8_post_off_sleep * 1000),(pwrdata->vdd1v8_post_off_sleep * 1000) + 500);
 		}
 
 		if (pwrdata->vci) {
-			
+			/*disable VCI L17 3v*/
 			ret = regulator_disable(pwrdata->vci);
 			if (ret) {
 				PR_DISP_ERR("%s: Failed to disable vdda regulator.\n",

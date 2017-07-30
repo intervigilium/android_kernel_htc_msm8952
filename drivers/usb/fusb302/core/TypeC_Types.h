@@ -4,7 +4,8 @@
 typedef enum {
     USBTypeC_Sink = 0,
     USBTypeC_Source,
-    USBTypeC_DRP
+    USBTypeC_DRP,
+    USBTypeC_UNDEFINED = 99
 } USBTypeCPort;
 
 typedef enum {
@@ -72,4 +73,4 @@ typedef enum {
     utcc3p0A
 } USBTypeCCurrent;
 
-#endif 
+#endif // __FSC_TYPEC_TYPES_H__

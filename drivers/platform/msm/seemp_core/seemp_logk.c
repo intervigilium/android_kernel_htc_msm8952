@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,16 +22,25 @@
 
 #define MASK_BUFFER_SIZE 256
 #define FOUR_MB 4
-#define USER_APP_START_UID 10000
 #define YEAR_BASE 1900
 
 static struct seemp_logk_dev *slogk_dev;
 
 static unsigned int ring_sz = FOUR_MB;
 
+/*
+ * default is besteffort, apps do not get blocked
+ */
 static unsigned int block_apps;
 
 
+/*
+ * When this flag is turned on,
+ * kmalloc should be used for ring buf allocation
+ * otherwise it is vmalloc.
+ * default is to use vmalloc
+ * kmalloc has a limit of 4MB
+ */
 unsigned int kmalloc_flag;
 
 static struct class *cl;
@@ -45,12 +54,19 @@ static long seemp_logk_reserve_rdblks(
 static long seemp_logk_set_mask(unsigned long arg);
 static long seemp_logk_set_mapping(unsigned long arg);
 static long seemp_logk_check_filter(unsigned long arg);
-static int get_uid_from_message_for_system_event(const char *buffer);
 
 void* (*seemp_logk_kernel_begin)(char **buf);
 
 void (*seemp_logk_kernel_end)(void *blck);
 
+/*
+ * the last param is the permission bits *
+ * kernel logging is done in three steps:
+ * (1)  fetch a block, fill everything except payload.
+ * (2)  return payload pointer to the caller.
+ * (3)  caller fills its data directly into the payload area.
+ * (4)  caller invoked finish_record(), to finish writing.
+ */
 void *seemp_logk_kernel_start_record(char **buf)
 {
 	struct seemp_logk_blk *blk;
@@ -60,24 +76,27 @@ void *seemp_logk_kernel_start_record(char **buf)
 	int ret;
 
 	DEFINE_WAIT(write_wait);
-
 	ret = 0;
 	idx = 0;
 	now = current_kernel_time();
 	blk = ringbuf_fetch_wr_block(slogk_dev);
 	if (!blk) {
+		/*
+		 * there is no blk to write
+		 * if block_apps == 0; quietly return
+		 */
 		if (!block_apps) {
 			*buf = NULL;
 			return NULL;
 		}
-		
+		/*else wait for the blks to be available*/
 		while (1) {
 			mutex_lock(&slogk_dev->lock);
 			prepare_to_wait(&slogk_dev->writers_wq,
 				&write_wait, TASK_INTERRUPTIBLE);
 			ret = (slogk_dev->num_write_avail_blks <= 0);
 			if (!ret) {
-				
+				/* don't have to wait*/
 				break;
 			}
 			mutex_unlock(&slogk_dev->lock);
@@ -100,7 +119,7 @@ void *seemp_logk_kernel_start_record(char **buf)
 		slogk_dev->num_writers++;
 
 		blk = &slogk_dev->ring[idx];
-		
+		/*mark block invalid*/
 		blk->status = 0x0;
 		mutex_unlock(&slogk_dev->lock);
 	}
@@ -127,74 +146,15 @@ void *seemp_logk_kernel_start_record(char **buf)
 
 void seemp_logk_kernel_end_record(void *blck)
 {
-	int current_uid = 0;
-	int parsed_current_uid = 0;
 	struct seemp_logk_blk *blk = (struct seemp_logk_blk *)blck;
 
 	if (blk) {
-		
+		/*update status at the very end*/
 		blk->status |= 0x1;
-		current_uid = current_uid();
-		if (current_uid < USER_APP_START_UID) {
-			parsed_current_uid =
-			get_uid_from_message_for_system_event(blk->payload.msg);
-			if (parsed_current_uid != -1)
-				blk->uid = parsed_current_uid;
-			else
-				blk->uid = current_uid;
-		} else
-			blk->uid = current_uid;
+		blk->uid = current_uid();
 
 		ringbuf_finish_writer(slogk_dev, blk);
 	}
-}
-
-static int get_uid_from_message_for_system_event(const char *buffer)
-{
-	char asciiuid[6];
-	long appuid = 0;
-	int aindex = 0;
-	char *comparator_string = "app_uid=";
-	int ret = 0;
-
-	char *p1 = (char *)buffer;
-
-	while (*p1) {
-		char *p1begin = p1;
-		char *p2 = (char *)comparator_string;
-
-		aindex = 0;
-
-		while (*p1 && *p2 && *p1 == *p2) {
-			p1++;
-			p2++;
-		}
-
-		if (*p2 == '\0') {
-			while ((*p1) && (aindex < 5)
-				&& (*p1 != ',')) {
-				asciiuid[aindex++] = *p1;
-				p1++;
-			}
-			if (*p1 != ',') {
-				pr_err("Failed to get app_id\n");
-				return -EPERM;
-			}
-			asciiuid[aindex] = '\0';
-
-			ret = kstrtol(asciiuid, 10, &appuid);
-			if (ret != 0) {
-				pr_err("failed in the kstrtol function uid:%s\n",
-						asciiuid);
-				return ret;
-			} else {
-				return (int)(appuid);
-			}
-		}
-
-		p1 = p1begin + 1;
-	}
-	return -EPERM;
 }
 
 static int seemp_logk_usr_record(const char __user *buf, size_t count)
@@ -205,8 +165,6 @@ static int seemp_logk_usr_record(const char __user *buf, size_t count)
 	struct timespec now;
 	struct tm ts;
 	int idx, ret;
-	int currentuid;
-	int parsedcurrentuid;
 	DEFINE_WAIT(write_wait);
 
 	memset(&usr_blk, 0, sizeof(usr_blk));
@@ -260,7 +218,7 @@ static int seemp_logk_usr_record(const char __user *buf, size_t count)
 		slogk_dev->num_write_in_prog_blks++;
 		slogk_dev->num_writers++;
 		blk = &slogk_dev->ring[idx];
-		
+		/*mark block invalid*/
 		blk->status = 0x0;
 		mutex_unlock(&slogk_dev->lock);
 	}
@@ -269,16 +227,7 @@ static int seemp_logk_usr_record(const char __user *buf, size_t count)
 
 	memcpy(&blk->payload, &usr_blk.payload, sizeof(struct blk_payload));
 	blk->pid = usr_blk.pid;
-	currentuid = usr_blk.uid;
-	if (currentuid <= USER_APP_START_UID) {
-		parsedcurrentuid = get_uid_from_message_for_system_event
-							(blk->payload.msg);
-		if (parsedcurrentuid != -EPERM)
-			blk->uid = parsedcurrentuid;
-		else
-			blk->uid = currentuid;
-	} else
-		blk->uid = currentuid;
+	blk->uid = usr_blk.uid;
 	blk->tid = usr_blk.tid;
 	blk->sec = now.tv_sec;
 	blk->nsec = now.tv_nsec;
@@ -318,7 +267,7 @@ seemp_logk_open(struct inode *inode, struct file *filp)
 {
 	int ret;
 
-	
+	/*disallow seeks on this file*/
 	ret = nonseekable_open(inode, filp);
 	if (ret) {
 		pr_err("ret= %d\n", ret);
@@ -357,11 +306,10 @@ static long seemp_logk_ioctl(struct file *filp, unsigned int cmd,
 		sdev->num_write_avail_blks += sdev->num_read_in_prog_blks;
 		ret = sdev->num_read_in_prog_blks;
 		sdev->num_read_in_prog_blks = 0;
-		
+		/*wake up any waiting writers*/
 		mutex_unlock(&sdev->lock);
 		if (ret && block_apps)
 			wake_up_interruptible(&sdev->writers_wq);
-		return 0;
 	} else if (cmd == SEEMP_CMD_GET_RINGSZ) {
 		if (copy_to_user((unsigned int *)arg, &sdev->ring_sz,
 				sizeof(unsigned int)))
@@ -376,9 +324,11 @@ static long seemp_logk_ioctl(struct file *filp, unsigned int cmd,
 		return seemp_logk_set_mapping(arg);
 	} else if (SEEMP_CMD_CHECK_FILTER == cmd) {
 		return seemp_logk_check_filter(arg);
+	} else {
+		pr_err("Invalid Request %X\n", cmd);
+		return -ENOIOCTLCMD;
 	}
-	pr_err("Invalid Request %X\n", cmd);
-	return -ENOIOCTLCMD;
+	return 0;
 }
 
 static long seemp_logk_reserve_rdblks(
@@ -388,7 +338,6 @@ static long seemp_logk_reserve_rdblks(
 	struct read_range rrange;
 
 	DEFINE_WAIT(read_wait);
-
 	mutex_lock(&sdev->lock);
 	if (sdev->num_writers > 0 || sdev->num_read_avail_blks <= 0) {
 		ret = -EPERM;
@@ -397,6 +346,11 @@ static long seemp_logk_reserve_rdblks(
 		sdev->num_writers,
 				sdev->num_read_avail_blks);
 		mutex_unlock(&sdev->lock);
+		/*
+		 * unlock the device
+		 * wait on a wait queue
+		 * after wait, grab the dev lock again
+		 */
 		while (1) {
 			mutex_lock(&sdev->lock);
 			prepare_to_wait(&sdev->readers_wq, &read_wait,
@@ -404,7 +358,7 @@ static long seemp_logk_reserve_rdblks(
 			ret = (sdev->num_writers > 0 ||
 					sdev->num_read_avail_blks <= 0);
 			if (!ret) {
-				
+				/*don't have to wait*/
 				break;
 			}
 			mutex_unlock(&sdev->lock);
@@ -420,7 +374,7 @@ static long seemp_logk_reserve_rdblks(
 			return -EINTR;
 	}
 
-	
+	/*sdev->lock is held at this point*/
 	sdev->num_read_in_prog_blks = sdev->num_read_avail_blks;
 	sdev->num_read_avail_blks = 0;
 	rrange.start_idx = sdev->read_idx;
@@ -495,6 +449,10 @@ static long seemp_logk_set_mapping(unsigned long arg)
 
 	write_lock(&filter_lock);
 	if (NULL != pmask) {
+		/*
+		 * Mask is getting set again.
+		 * seemp_core was probably restarted.
+		 */
 		struct seemp_source_mask *ptempmask;
 
 		num_sources = 0;
@@ -508,15 +466,23 @@ static long seemp_logk_set_mapping(unsigned long arg)
 	if (NULL == pbuffer)
 		return -ENOMEM;
 
+	/*
+	 * Use our new table as scratch space for now.
+	 * We copy an ordered list of hash values into our buffer.
+	 */
 	if (copy_from_user(pbuffer, &((__u32 __user *)arg)[1],
 					num_elements*sizeof(unsigned int))) {
 		kfree(pbuffer);
 		return -EFAULT;
 	}
+	/*
+	 * We arrange the user data into a more usable form.
+	 * This is done in-place.
+	 */
 	pnewmask = (struct seemp_source_mask *) pbuffer;
 	for (i = num_elements - 1; i >= 0; i--) {
 		pnewmask[i].hash = pbuffer[i];
-		
+		/* Observer is off by default*/
 		pnewmask[i].isOn = 0;
 	}
 	write_lock(&filter_lock);
@@ -531,6 +497,10 @@ static long seemp_logk_check_filter(unsigned long arg)
 	int i;
 	unsigned int hash = (unsigned int) arg;
 
+	/*
+	 * This lock may be a bit long.
+	 * If it is a problem, it can be fixed.
+	 */
 	read_lock(&filter_lock);
 	for (i = 0; i < num_sources; i++) {
 		if (hash == pmask[i].hash) {
@@ -625,12 +595,12 @@ __init int seemp_logk_init(void)
 	}
 
 	slogk_dev = kmalloc(sizeof(*slogk_dev), GFP_KERNEL);
-	if (!slogk_dev)
+	if (slogk_dev == NULL)
 		return -ENOMEM;
 
 	slogk_dev->ring_sz = ring_sz;
 	slogk_dev->blk_sz = sizeof(struct seemp_logk_blk);
-	
+	/*initialize ping-pong buffers*/
 	ret = ringbuf_init(slogk_dev);
 	if (ret < 0) {
 		pr_err("Init Failed, ret = %d\n", ret);

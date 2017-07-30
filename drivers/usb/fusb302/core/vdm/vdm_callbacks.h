@@ -28,6 +28,12 @@
  *
  *****************************************************************************/
 
+/*
+ * Using this file to emulate the callbacks that a real DPM would set up for the VDM block.
+ * Setting default values etc in here too.
+ */
+#ifdef FSC_HAVE_VDM
+
 #ifndef __DPM_EMULATION_H__
 #define __DPM_EMULATION_H__
 
@@ -35,18 +41,20 @@
 #include "vdm_types.h"
 #include "../PD_Types.h"
 
-Identity 	vdmRequestIdentityInfo		(VOID);
-SvidInfo 	vdmRequestSvidInfo			(VOID);
-ModesInfo 	vdmRequestModesInfo         (UINT16 svid);
-BOOL		vdmModeEntryRequest         (UINT16 svid, UINT32 mode_index);
-BOOL		vdmModeExitRequest			(UINT16 svid, UINT32 mode_index);
-BOOL 		vdmEnterModeResult			(BOOL success, UINT16 svid, UINT32 mode_index);
-void		vdmExitModeResult			(BOOL success, UINT16 svid, UINT32 mode_index);
-void		vdmInformIdentity			(BOOL success, SopType sop, Identity id);
-void 		vdmInformSvids				(BOOL success, SopType sop, SvidInfo svid_info);
-void		vdmInformModes				(BOOL success, SopType sop, ModesInfo modes_info);
-void 		vdmInformAttention			(UINT16 svid, UINT8 mode_index);
+Identity 	vdmRequestIdentityInfo		(void);
+SvidInfo 	vdmRequestSvidInfo			(void);
+ModesInfo 	vdmRequestModesInfo         (FSC_U16 svid);
+FSC_BOOL	vdmModeEntryRequest         (FSC_U16 svid, FSC_U32 mode_index);
+FSC_BOOL	vdmModeExitRequest			(FSC_U16 svid, FSC_U32 mode_index);
+FSC_BOOL 	vdmEnterModeResult			(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index);
+void		vdmExitModeResult			(FSC_BOOL success, FSC_U16 svid, FSC_U32 mode_index);
+void		vdmInformIdentity			(FSC_BOOL success, SopType sop, Identity id);
+void 		vdmInformSvids				(FSC_BOOL success, SopType sop, SvidInfo svid_info);
+void		vdmInformModes				(FSC_BOOL success, SopType sop, ModesInfo modes_info);
+void 		vdmInformAttention			(FSC_U16 svid, FSC_U8 mode_index);
 
-void        vdmInitDpm                 (VOID);
+void        vdmInitDpm                  (void);
 
-#endif
+#endif // __DPM_EMULATION_H__
+
+#endif // FSC_HAVE_VDM

@@ -69,6 +69,7 @@ struct cpe_lsm_session {
 	u16 cmd_err_code;
 	u8 id;
 	u8 num_confidence_levels;
+	u16 afe_out_port_id;
 	struct task_struct *lsm_lab_thread;
 	bool started;
 
@@ -80,7 +81,8 @@ struct cpe_lsm_session {
 
 struct wcd_cpe_afe_ops {
 	int (*afe_set_params) (void *core_handle,
-			       struct wcd_cpe_afe_port_cfg *cfg);
+			       struct wcd_cpe_afe_port_cfg *cfg,
+			       bool afe_mad_ctl);
 
 	int (*afe_port_start) (void *core_handle,
 			       struct wcd_cpe_afe_port_cfg *cfg);
@@ -127,6 +129,9 @@ struct wcd_cpe_lsm_ops {
 
 	int (*lsm_deregister_snd_model) (void *core_handle,
 					 struct cpe_lsm_session *);
+
+	int (*lsm_get_afe_out_port_id)(void *core_handle,
+			       struct cpe_lsm_session *session);
 
 	int (*lsm_start) (void *core_handle,
 			  struct cpe_lsm_session *);

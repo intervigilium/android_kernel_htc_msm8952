@@ -23,6 +23,7 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/i2c.h>
 #include <linux/delay.h>
+//#include <linux/i2c/tca6418_ioexpander.h>
 
 enum {
 	VREG_TYPE_BUCK,
@@ -87,7 +88,7 @@ static int twl80125_enable(struct twl80125_regulator *reg, bool enable)
 		gpio_direction_output(reg->en_gpio, 1);
 		if (enable) {
 			gpio_set_value(reg->en_gpio, 1);
-			mdelay(5); 
+			mdelay(5); // delay 5ms to wait for chip power-on
 			reg->is_enable = true;
 			pr_info("[TWL80125] %s: gpio[%d]=%d\n", __func__, reg->en_gpio, gpio_get_value(reg->en_gpio));
 		} else {
@@ -96,6 +97,17 @@ static int twl80125_enable(struct twl80125_regulator *reg, bool enable)
 			pr_info("[TWL80125] %s: gpio[%d]=%d\n", __func__, reg->en_gpio, gpio_get_value(reg->en_gpio));
 		}
 	}
+	/* TWL80125 not use io expander
+	else {
+		if (enable) {
+			ioexp_gpio_set_value(reg->en_gpio, 1);
+			reg->is_enable = true;
+		} else {
+			ioexp_gpio_set_value(reg->en_gpio, 0);
+			reg->is_enable = false;
+		}
+	}
+	*/
 	return ret;
 }
 
@@ -123,15 +135,19 @@ static int twl80125_i2c_write(struct device *dev, u8 reg_addr, u8 data)
 
 	mutex_lock(&reg->i2clock);
 	orig_state = twl80125_is_enable(reg);
-	
-	
+	//if (orig_state == false)
+	//	twl80125_enable(reg, true);
 	res = i2c_transfer(client->adapter, msg, 1);
 
-	
+	//pr_info("[TWL80125] %s, i2c: addr: %x, val: %x, %d\n", __func__, reg_addr, data, res);
 
-	
-	
-	
+	/* Set back to original gpio state */
+	/* If original disable and doesn't request enable -> Back to disable */
+	/* If original enable and request all regualtor disable -> Set to disable */
+	/*if ((orig_state == false && !(reg_addr == TWL80125_REG_ENABLE_ADDR && data != 0x00)) ||
+	    (reg_addr == TWL80125_REG_ENABLE_ADDR && data == 0x00)) {
+		twl80125_enable(reg, false);
+	}*/
 	mutex_unlock(&reg->i2clock);
 	if (res > 0)
 		res = 0;
@@ -177,15 +193,15 @@ static int twl80125_i2c_read(struct device *dev, u8 reg_addr, u8 *data)
 
 	mutex_lock(&reg->i2clock);
 	curr_state = twl80125_is_enable(reg);
-	
-	
+	//if (curr_state == 0)
+	//	twl80125_enable(reg, true);
 	res = i2c_transfer(client->adapter, msg, 2);
 
-	
+	//pr_info("[TWL80125] %s, i2c: base: %x, data: %x, %d\n", __func__, reg_addr, *data, res);
 
-	
-	
-	
+	/* Set back to original gpio state */
+	//if (curr_state == 0)
+	//	twl80125_enable(reg, false);
 	mutex_unlock(&reg->i2clock);
 	if (res >= 0)
 		res = 0;
@@ -349,7 +365,7 @@ static int twl80125_vreg_enable(struct regulator_dev *rdev)
 	uint8_t val = 0;
 	int rc = 0;
 
-	
+	// Clear error code before enable regualtor
 	twl80125_check_error();
 	twl80125_clear_error();
 	mutex_lock(&vreg->mlock);
@@ -397,7 +413,7 @@ static int twl80125_vreg_set_voltage(struct regulator_dev *rdev, int min_uV, int
 			max_uV = LDO_UV_VMAX;
 		uv_step = (max_uV - LDO_UV_VMIN) / LDO_UV_STEP;
 
-		
+		//pr_info("%s: type: VREG_TYPE_LDO, uv_step: %d (max:%d)\n", __func__, uv_step, max_uV);
 		twl80125_i2c_write(dev, vreg->base_addr, uv_step);
 	} else if (vreg->regulator_type == VREG_TYPE_BUCK) {
 		int vsel = 0;
@@ -416,7 +432,7 @@ static int twl80125_vreg_set_voltage(struct regulator_dev *rdev, int min_uV, int
                         max_uV = BUCK_UV_VMAX;
 
 	        uv_step = (max_uV - BUCK_UV_VMIN) / BUCK_UV_STEP;
-		
+		//pr_info("%s: type: 0, uv_step: %d (max:%d)\n", __func__, uv_step, max_uV);
 	        twl80125_i2c_write(dev, vreg->base_addr, uv_step);
 	} else
 		pr_err("%s: non support vreg type %d\n", __func__, vreg->regulator_type);
@@ -433,7 +449,7 @@ static int twl80125_vreg_get_voltage(struct regulator_dev *rdev)
 	uint32_t vol = 0;
 
 	if (vreg->inited != 1) {
-		
+		//pr_info("%s: vreg not inited ready: %s\n", __func__, vreg->regulator_name);
 		return -1;
 	}
 
@@ -476,6 +492,7 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 	int num_vregs = 0;
 	int vreg_idx = 0;
 	int ret = 0;
+	int i = 0;
 	u32 init_volt;
 
 	pr_info("%s007.\n", __func__);
@@ -507,13 +524,13 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 			reg->en_gpio = en_gpio;
 			gpio_request(reg->en_gpio, "TWL80125_EN_GPIO");
 			gpio_direction_output(reg->en_gpio, 1);
-			mdelay(5); 
+			mdelay(5); // delay 5ms to wait ext PMIC power on
 		} else {
 			pr_err("%s: Fail to read TWL80125_enable gpio: %d\n", __func__, en_gpio);
 			goto fail_free_regulator;
 		}
 	}
-	
+	/* Calculate number of regulators */
 	for_each_child_of_node(node, child)
 		num_vregs++;
 	reg->total_vregs = num_vregs;
@@ -525,7 +542,7 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 		return -ENOMEM;
 	}
 
-	
+	/* Get device tree properties */
 	for_each_child_of_node(node, child) {
 		twl80125_vreg = &reg->twl80125_vregs[vreg_idx++];
 		ret = of_property_read_string(child, "regulator-name",
@@ -596,6 +613,8 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 			goto fail_free_vreg;
 		}
 
+		/*if (of_property_read_bool(child, "parent-supply"))
+			init_data->supply_regulator = "twl80125_ldo45";*/
 
 		if(!of_property_read_u32(child, "twl,init-microvolt", &init_volt)) {
 			pr_info("%s: init vreg voltage: %d.\n", __func__, init_volt);
@@ -618,7 +637,7 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 		reg_config.driver_data = twl80125_vreg;
 		reg_config.of_node = child;
 		twl80125_vreg->rdev = regulator_register(&twl80125_vreg->rdesc, &reg_config);
-		
+		//pr_info("%s: register regulator, name=%s, type=%d.\n", __func__, twl80125_vreg->regulator_name, twl80125_vreg->regulator_type);
 		if (IS_ERR(twl80125_vreg->rdev)) {
 			ret = PTR_ERR(twl80125_vreg->rdev);
 			twl80125_vreg->rdev = NULL;
@@ -634,18 +653,26 @@ static int twl80125_probe(struct i2c_client *client, const struct i2c_device_id 
 	twl80125_buck1_set_vsel(1);
 	twl80125_buck2_set_vsel(1);
 
-	twl80125_vreg_enable(regulator->twl80125_vregs[0].rdev); 
-	mdelay(2);
+	for ( i = 0 ; i < 3; i++) { // added retry mechanism to reduce failed rate
+		twl80125_vreg_enable(regulator->twl80125_vregs[0].rdev); //Hard-code enable SW-Buck1
+		mdelay(2);
 
-	twl80125_vreg_set_voltage(regulator->twl80125_vregs[6].rdev, 1800000, 1800000, NULL);
-	twl80125_vreg_enable(regulator->twl80125_vregs[6].rdev); 
-	mdelay(2);
+		twl80125_vreg_set_voltage(regulator->twl80125_vregs[6].rdev, 1800000, 1800000, NULL);
+		twl80125_vreg_enable(regulator->twl80125_vregs[6].rdev); //Hard-code enable LDO5
+		mdelay(2);
 
-	twl80125_vreg_disable(regulator->twl80125_vregs[0].rdev); 
-	mdelay(2);
+		twl80125_vreg_disable(regulator->twl80125_vregs[0].rdev); //Disable SW-Buck1
+		mdelay(2);
 
-	twl80125_clear_error(); 
+		twl80125_clear_error(); //Clear error bit to prevent LDO5 cannot power on
 
+		if (twl80125_vreg_is_enabled(regulator->twl80125_vregs[6].rdev)) {
+                        pr_err("%s: ldo5 enable successed\n", __func__);
+                        break;
+                } else
+                        pr_err("%s: ldo5 enable try %d times, failed\n", __func__, i+1);
+		mdelay(10);
+	}
 	return ret;
 
 fail_free_vreg:

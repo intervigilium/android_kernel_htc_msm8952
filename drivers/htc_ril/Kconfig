@@ -38,3 +38,8 @@ config HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
     ---help---
       Dump IPC router unread package
 
+config HTC_DEBUG_RIL_PCN0012_HTC_NET_MONITOR
+    tristate "HTC_DEBUG_RIL_PCN0012_HTC_NET_MONITOR"
+    default y
+    ---help---
+      Dump net package information

@@ -1513,11 +1513,12 @@ phcd_retry:
 	atomic_set(&motg->in_lpm, 1);
 	wake_up(&motg->host_suspend_wait);
 
-	
-
-	
-	if (host_bus_suspend)
+	if (host_bus_suspend || device_bus_suspend) {
+		
 		enable_irq(motg->async_irq);
+		enable_irq(motg->irq);
+	}
+
 	if (motg->phy_irq)
 		enable_irq(motg->phy_irq);
 	if (host_bus_suspend)
@@ -1573,10 +1574,8 @@ static int msm_otg_resume(struct msm_otg *motg)
 
 	msm_bam_notify_lpm_resume(CI_CTRL);
 
-	
-	if (motg->host_bus_suspend)
+	if (motg->host_bus_suspend || motg->device_bus_suspend)
 		disable_irq(motg->irq);
-	
 
 	wake_lock(&motg->wlock);
 
@@ -1725,10 +1724,8 @@ skip_phy_resume:
 	enable_irq(motg->irq);
 
 	
-	
-	if (motg->host_bus_suspend)
+	if (motg->host_bus_suspend || motg->device_bus_suspend)
 		disable_irq(motg->async_irq);
-	
 
 	if (motg->phy_irq_pending) {
 		motg->phy_irq_pending = false;
@@ -2373,7 +2370,8 @@ static void msm_otg_chg_check_timer_func(unsigned long data)
 		!test_bit(B_SESS_VLD, &motg->inputs) ||
 		otg->phy->state != OTG_STATE_B_PERIPHERAL ||
 		otg->gadget->speed != USB_SPEED_UNKNOWN) {
-		dev_dbg(otg->phy->dev, "Nothing to do in chg_check_timer\n");
+		USB_INFO("%s: Nothing to do in chg_check_timer. atomic_read(&motg->in_lpm):%d, test_bit(B_SESS_VLD, &motg->inputs):%d, otg->phy->state:%s, otg->gadget->speed:%d, \n",
+			__func__, atomic_read(&motg->in_lpm), test_bit(B_SESS_VLD, &motg->inputs), usb_otg_state_string(otg->phy->state), otg->gadget->speed);
 		return;
 	}
 

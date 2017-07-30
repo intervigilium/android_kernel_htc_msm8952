@@ -78,6 +78,7 @@ static int parse_config(struct device *dev, struct synaptics_dsx_board_data *bda
 	uint8_t cnt = 0, i = 0;
 	u32 data = 0;
 	int len = 0, size = 0;
+	const char *panel_id = NULL;
 
 	pr_info(" %s\n", __func__);
 	node = dev->of_node;
@@ -103,6 +104,16 @@ static int parse_config(struct device *dev, struct synaptics_dsx_board_data *bda
 
 		if (of_property_read_u32(pp, "pr_number", &data) == 0)
 			cfg_table[i].pr_number = data;
+
+		if (of_property_read_string(pp, "disp_panel", &panel_id))
+			cfg_table[i].disp_panel = NULL;
+		else
+			cfg_table[i].disp_panel = panel_id;
+
+		if (of_property_read_u32(pp, "module_src", &data) == 0)
+			cfg_table[i].tp_lcm_src = data;
+		else
+			cfg_table[i].tp_lcm_src = 0;
 
 		if (of_property_read_u32(pp, "eng_id", &data) == 0)
 			cfg_table[i].eng_id = data;
@@ -211,26 +222,6 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 		bdata->power_gpio = -1;
 	}
 	pr_info("%s: power_gpio = %d\n", __func__, bdata->power_gpio);
-
-#ifdef MTK_PLATFORM
-	if (of_property_read_u32(np, "synaptics,power-gpio-1v8", &value) == 0) {
-		bdata->power_gpio_1v8 = value;
-#else
-	gpio = of_get_named_gpio_flags(np,
-			"synaptics,power-gpio-1v8", 0, NULL);
-	if (gpio >= 0) {
-		bdata->power_gpio_1v8 = gpio;
-#endif
-		retval = of_property_read_u32(np, "synaptics,power-on-state",
-				&value);
-		if (retval < 0)
-			return retval;
-		else
-			bdata->power_on_state = value;
-	} else {
-		bdata->power_gpio_1v8 = -1;
-	}
-	pr_info("%s: power_gpio_1v8 = %d\n", __func__, bdata->power_gpio_1v8);
 
 	retval = of_property_read_u32(np, "synaptics,power-delay-ms",
 			&value);
@@ -341,6 +332,13 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 		bdata->support_cover = 0;
 	else
 		bdata->support_cover = value;
+
+	retval = of_property_read_u32(np, "synaptics,setting-group",
+			&value);
+	if (retval < 0)
+		bdata->setting_group = 0;
+	else
+		bdata->setting_group = value;
 
 	retval = of_property_read_u32(np, "synaptics,hall-block-time",
 			&value);
@@ -509,11 +507,11 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 #if GTP_SUPPORT_I2C_DMA
 	unsigned char *buf = gpDMABuf_va;
 #else
-	unsigned char buf[length + 1];
+	unsigned char *buf;
 #endif
 	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
-	struct i2c_msg msg[] = {
 #if GTP_SUPPORT_I2C_DMA
+	struct i2c_msg msg[] = {
 		{
 			.addr = (i2c->addr & I2C_MASK_FLAG),
 			.ext_flag = (i2c->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG),
@@ -522,15 +520,18 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 			.buf = gpDMABuf_pa,
 			.timing = I2C_MASTER_CLOCK,
 		}
-#else
-		{
-			.addr = i2c->addr,
-			.flags = 0,
-			.len = length + 1,
-			.buf = buf,
-		}
-#endif
 	};
+#else
+	struct i2c_msg msg[1];
+
+	buf = kzalloc(length + 1, GFP_KERNEL);
+	if (!buf) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Failed to alloc mem for buffer\n",
+				__func__);
+		return -ENOMEM;
+	}
+#endif
 
 	mutex_lock(&rmi4_data->rmi4_io_ctrl_mutex);
 
@@ -539,7 +540,12 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 		retval = -EIO;
 		goto exit;
 	}
-
+#if !GTP_SUPPORT_I2C_DMA
+	msg[0].addr = i2c->addr;
+	msg[0].flags = 0;
+	msg[0].len = length + 1;
+	msg[0].buf = buf;
+#endif
 	buf[0] = addr & MASK_8BIT;
 	memcpy(&buf[1], &data[0], length);
 
@@ -563,7 +569,9 @@ static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
 
 exit:
 	mutex_unlock(&rmi4_data->rmi4_io_ctrl_mutex);
-
+#if !GTP_SUPPORT_I2C_DMA
+	kfree(buf);
+#endif
 	return retval;
 }
 

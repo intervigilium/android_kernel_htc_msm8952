@@ -23,9 +23,14 @@ struct mmc_command {
 #define MMC_CMD23_ARG_PACKED	((0 << 31) | (1 << 30))
 #define MMC_CMD23_ARG_TAG_REQ	(1 << 29)
 	u32			resp[4];
-	unsigned int		flags;		
+	unsigned int		flags;		/* expected response type */
 #define mmc_resp_type(cmd)	((cmd)->flags & (MMC_RSP_PRESENT|MMC_RSP_136|MMC_RSP_CRC|MMC_RSP_BUSY|MMC_RSP_OPCODE))
 
+/*
+ * These are the SPI response types for MMC, SD, and SDIO cards.
+ * Commands return R1, with maybe more info.  Zero is an error type;
+ * callers must always provide the appropriate MMC_RSP_SPI_Rx flags.
+ */
 #define MMC_RSP_SPI_R1	(MMC_RSP_SPI_S1)
 #define MMC_RSP_SPI_R1B	(MMC_RSP_SPI_S1|MMC_RSP_SPI_BUSY)
 #define MMC_RSP_SPI_R2	(MMC_RSP_SPI_S1|MMC_RSP_SPI_S2)
@@ -37,28 +42,44 @@ struct mmc_command {
 #define mmc_spi_resp_type(cmd)	((cmd)->flags & \
 		(MMC_RSP_SPI_S1|MMC_RSP_SPI_BUSY|MMC_RSP_SPI_S2|MMC_RSP_SPI_B4))
 
+/*
+ * These are the command types.
+ */
 #define mmc_cmd_type(cmd)	((cmd)->flags & MMC_CMD_MASK)
 
-	unsigned int		retries;	
-	unsigned int		error;		
+	unsigned int		retries;	/* max number of retries */
+	unsigned int		error;		/* command error */
 
+/*
+ * Standard errno values are used for errors, but some have specific
+ * meaning in the MMC layer:
+ *
+ * ETIMEDOUT    Card took too long to respond
+ * EILSEQ       Basic format problem with the received or sent data
+ *              (e.g. CRC check failed, incorrect opcode in response
+ *              or bad end bit)
+ * EINVAL       Request cannot be performed because of restrictions
+ *              in hardware and/or the driver
+ * ENOMEDIUM    Host can determine that the slot is empty and is
+ *              actively failing requests
+ */
 
-	unsigned int		cmd_timeout_ms;	
-	
+	unsigned int		cmd_timeout_ms;	/* in milliseconds */
+	/* Set this flag only for sanitize request */
 	bool			sanitize_busy;
-	
+	/* Set this flag only for commands which can be HPIed */
 	bool			ignore_timeout;
 
-	struct mmc_data		*data;		
-	struct mmc_request	*mrq;		
+	struct mmc_data		*data;		/* data segment associated with cmd */
+	struct mmc_request	*mrq;		/* associated request */
 };
 
 struct mmc_data {
-	unsigned int		timeout_ns;	
-	unsigned int		timeout_clks;	
-	unsigned int		blksz;		
-	unsigned int		blocks;		
-	unsigned int		error;		
+	unsigned int		timeout_ns;	/* data timeout (in ns, max 80ms) */
+	unsigned int		timeout_clks;	/* data timeout (in clocks) */
+	unsigned int		blksz;		/* data block size */
+	unsigned int		blocks;		/* number of blocks */
+	unsigned int		error;		/* data error */
 	unsigned int		flags;
 
 #define MMC_DATA_WRITE	(1 << 8)
@@ -67,24 +88,24 @@ struct mmc_data {
 
 	unsigned int		bytes_xfered;
 
-	struct mmc_command	*stop;		
-	struct mmc_request	*mrq;		
+	struct mmc_command	*stop;		/* stop command */
+	struct mmc_request	*mrq;		/* associated request */
 
-	unsigned int		sg_len;		
-	struct scatterlist	*sg;		
-	s32			host_cookie;	
-	bool			fault_injected; 
+	unsigned int		sg_len;		/* size of scatter list */
+	struct scatterlist	*sg;		/* I/O scatter list */
+	s32			host_cookie;	/* host private data */
+	bool			fault_injected; /* fault injected */
 };
 
 struct mmc_host;
 struct mmc_request {
-	struct mmc_command	*sbc;		
+	struct mmc_command	*sbc;		/* SET_BLOCK_COUNT for multiblock */
 	struct mmc_command	*cmd;
 	struct mmc_data		*data;
 	struct mmc_command	*stop;
 
 	struct completion	completion;
-	void			(*done)(struct mmc_request *);
+	void			(*done)(struct mmc_request *);/* completion function */
 	struct mmc_host		*host;
 	struct mmc_cmdq_req	*cmdq_req;
 	struct request *req;
@@ -97,8 +118,7 @@ struct mmc_cmdq_req;
 extern int mmc_cmdq_discard_queue(struct mmc_host *host, u32 tasks);
 extern int mmc_cmdq_halt(struct mmc_host *host, bool enable);
 extern int mmc_cmdq_halt_on_empty_queue(struct mmc_host *host);
-extern void mmc_cmdq_post_req(struct mmc_host *host, struct mmc_request *mrq,
-			      int err);
+extern void mmc_cmdq_post_req(struct mmc_host *host, int tag, int err);
 extern int mmc_cmdq_start_req(struct mmc_host *host,
 			      struct mmc_cmdq_req *cmdq_req);
 extern int mmc_cmdq_prepare_flush(struct mmc_command *cmd);
@@ -131,16 +151,17 @@ extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
 extern int mmc_switch_ignore_timeout(struct mmc_card *, u8, u8, u8,
 				     unsigned int);
 extern int mmc_send_ext_csd(struct mmc_card *card, u8 *ext_csd);
+extern int mmc_set_auto_bkops(struct mmc_card *card, bool enable);
 extern void mmc_clk_scaling(struct mmc_host *host, bool from_wq);
 extern void mmc_update_clk_scaling(struct mmc_host *host, bool is_cmdq_dcmd);
 
 #define MMC_ERASE_ARG		0x00000000
-#if 0 
+#if 0 /* Replace secure-trim and secure-erase arges with trim and erase */
 #define MMC_SECURE_ERASE_ARG	0x80000000
 #endif
 #define MMC_TRIM_ARG		0x00000001
 #define MMC_DISCARD_ARG		0x00000003
-#if 0 
+#if 0 /* Replace secure-trim and secure-erase arges with trim and erase */
 #define MMC_SECURE_TRIM1_ARG	0x80000001
 #define MMC_SECURE_TRIM2_ARG	0x80008000
 #endif
@@ -162,6 +183,7 @@ extern int mmc_set_blocklen(struct mmc_card *card, unsigned int blocklen);
 extern int mmc_set_blockcount(struct mmc_card *card, unsigned int blockcount,
 			      bool is_rel_write);
 extern int mmc_hw_reset(struct mmc_host *host);
+extern int mmc_cmdq_hw_reset(struct mmc_host *host);
 extern int mmc_hw_reset_check(struct mmc_host *host);
 extern int mmc_can_reset(struct mmc_card *card);
 
@@ -170,6 +192,11 @@ extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
 
 extern int __mmc_claim_host(struct mmc_host *host, atomic_t *abort);
 extern void mmc_release_host(struct mmc_host *host);
+
+extern void mmc_get_card(struct mmc_card *card);
+extern void mmc_put_card(struct mmc_card *card);
+extern void __mmc_put_card(struct mmc_card *card);
+
 extern int mmc_try_claim_host(struct mmc_host *host);
 extern void mmc_set_ios(struct mmc_host *host);
 extern int mmc_flush_cache(struct mmc_card *);
@@ -180,6 +207,37 @@ extern void mmc_blk_init_bkops_statistics(struct mmc_card *card);
 extern void mmc_rpm_hold(struct mmc_host *host, struct device *dev);
 extern void mmc_rpm_release(struct mmc_host *host, struct device *dev);
 
+extern void mmc_prepare_mrq(struct mmc_card *card,
+	struct mmc_request *mrq, struct scatterlist *sg, unsigned sg_len,
+	unsigned dev_addr, unsigned blocks, unsigned blksz, int write);
+extern int mmc_wait_busy(struct mmc_card *card);
+extern int mmc_check_result(struct mmc_request *mrq);
+extern int mmc_simple_transfer(struct mmc_card *card,
+	struct scatterlist *sg, unsigned sg_len, unsigned dev_addr,
+	unsigned blocks, unsigned blksz, int write);
+
+/*
+ * eMMC5.0 Field Firmware Update (FFU) opcodes
+ */
+#define MMC_FFU_INVOKE_OP 302
+
+#define MMC_FFU_MODE_SET 0x1
+#define MMC_FFU_MODE_NORMAL 0x0
+#define MMC_FFU_INSTALL_SET 0x2
+
+
+#define MMC_FFU_FEATURES 0x1
+#define FFU_FEATURES(ffu_features) (ffu_features & MMC_FFU_FEATURES)
+
+int mmc_ffu_invoke(struct mmc_card *card, const char *name);
+
+
+/**
+ *	mmc_claim_host - exclusively claim a host
+ *	@host: mmc host to claim
+ *
+ *	Claim a host for a set of operations.
+ */
 static inline void mmc_claim_host(struct mmc_host *host)
 {
 	__mmc_claim_host(host, NULL);
@@ -187,4 +245,21 @@ static inline void mmc_claim_host(struct mmc_host *host)
 
 extern u32 mmc_vddrange_to_ocrmask(int vdd_min, int vdd_max);
 
-#endif 
+/*
+ * eMMC5.0 Field Firmware Update (FFU) opcodes
+ */
+#define MMC_FFU_INVOKE_OP 302
+
+#define MMC_FFU_MODE_SET 0x1
+#define MMC_FFU_MODE_NORMAL 0x0
+#define MMC_FFU_INSTALL_SET 0x2
+
+
+#define MMC_FFU_FEATURES 0x1
+#define FFU_FEATURES(ffu_features) (ffu_features & MMC_FFU_FEATURES)
+
+int mmc_ffu_invoke(struct mmc_card *card, const char *name);
+
+
+
+#endif /* LINUX_MMC_CORE_H */

@@ -18,31 +18,36 @@
 #include <linux/mmc/mmc.h>
 #include "sdhci-pltfm.h"
 
+/* This structure keeps information per regulator */
 struct sdhci_msm_reg_data {
-	
+	/* voltage regulator handle */
 	struct regulator *reg;
-	
+	/* regulator name */
 	const char *name;
-	
+	/* voltage level to be set */
 	u32 low_vol_level;
 	u32 high_vol_level;
-	
+	/* Load values for low power and high power mode */
 	u32 lpm_uA;
 	u32 hpm_uA;
 
-	
+	/* is this regulator enabled? */
 	bool is_enabled;
-	
+	/* is this regulator needs to be always on? */
 	bool is_always_on;
-	
+	/* is low power mode setting required for this regulator? */
 	bool lpm_sup;
 	bool set_voltage_sup;
 };
 
+/*
+ * This structure keeps information for all the
+ * regulators required for a SDCC slot.
+ */
 struct sdhci_msm_slot_reg_data {
-	
+	/* keeps VDD/VCC regulator info */
 	struct sdhci_msm_reg_data *vdd_data;
-	 
+	 /* keeps VDD IO regulator info */
 	struct sdhci_msm_reg_data *vdd_io_data;
 };
 
@@ -58,6 +63,10 @@ struct sdhci_msm_gpio_data {
 };
 
 struct sdhci_msm_pin_data {
+	/*
+	 * = 1 if controller pins are using gpios
+	 * = 0 if controller has dedicated MSM pads
+	 */
 	u8 is_gpio;
 	struct sdhci_msm_gpio_data *gpio_data;
 };
@@ -76,10 +85,10 @@ struct sdhci_msm_bus_voting_data {
 };
 
 struct sdhci_msm_pltfm_data {
-	
+	/* Supported UHS-I Modes */
 	u32 caps;
 
-	
+	/* More capabilities */
 	u32 caps2;
 
 	unsigned long mmc_bus_width;
@@ -87,13 +96,14 @@ struct sdhci_msm_pltfm_data {
 	bool nonremovable;
 	bool use_mod_dynamic_qos;
 	bool nonhotplug;
+	bool broken_pwr_cycle_host;
 	bool no_1p8v;
 	bool pin_cfg_sts;
 	struct sdhci_msm_pin_data *pin_data;
 	struct sdhci_pinctrl_data *pctrl_data;
 	u32 *cpu_dma_latency_us;
 	unsigned int cpu_dma_latency_tbl_sz;
-	int status_gpio; 
+	int status_gpio; /* card detection GPIO that is configured as IRQ */
 	struct sdhci_msm_bus_voting_data *voting_data;
 	u32 *sup_clk_table;
 	unsigned char sup_clk_cnt;
@@ -106,6 +116,7 @@ struct sdhci_msm_pltfm_data {
 	unsigned char sup_ice_clk_cnt;
 	u32 ice_clk_max;
 	u32 ice_clk_min;
+	bool core_3_0v_support;
 };
 
 struct sdhci_msm_bus_vote {
@@ -120,22 +131,21 @@ struct sdhci_msm_bus_vote {
 
 struct sdhci_msm_ice_data {
 	struct qcom_ice_variant_ops *vops;
-	struct completion async_done;
 	struct platform_device *pdev;
 	int state;
 };
 
 struct sdhci_msm_host {
 	struct platform_device	*pdev;
-	void __iomem *core_mem;    
-	int	pwr_irq;	
-	struct clk	 *clk;     
-	struct clk	 *pclk;    
-	struct clk	 *bus_clk; 
-	struct clk	 *ff_clk; 
-	struct clk	 *sleep_clk; 
-	struct clk	 *ice_clk; 
-	atomic_t clks_on; 
+	void __iomem *core_mem;    /* MSM SDCC mapped address */
+	int	pwr_irq;	/* power irq */
+	struct clk	 *clk;     /* main SD/MMC bus clock */
+	struct clk	 *pclk;    /* SDHC peripheral bus clock */
+	struct clk	 *bus_clk; /* SDHC bus voter clock */
+	struct clk	 *ff_clk; /* CDC calibration fixed feedback clock */
+	struct clk	 *sleep_clk; /* CDC calibration sleep clock */
+	struct clk	 *ice_clk; /* SDHC peripheral ICE clock */
+	atomic_t clks_on; /* Set if clocks are enabled */
 	struct sdhci_msm_pltfm_data *pdata;
 	struct mmc_host  *mmc;
 	struct sdhci_pltfm_data sdhci_msm_pdata;
@@ -144,7 +154,7 @@ struct sdhci_msm_host {
 	struct completion pwr_irq_completion;
 	struct sdhci_msm_bus_vote msm_bus_vote;
 	struct device_attribute	polling;
-	u32 clk_rate; 
+	u32 clk_rate; /* Keeps track of current clock rate that is set */
 	bool tuning_done;
 	bool calibration_done;
 	struct proc_dir_entry   *speed_class;
@@ -160,6 +170,7 @@ struct sdhci_msm_host {
 	enum dev_state mmc_dev_state;
 	struct sdhci_msm_ice_data ice;
 	u32 ice_clk_rate;
+	bool enhanced_strobe;
 	bool tuning_in_progress;
 };
-#endif 
+#endif /* __SDHCI_MSM_H__ */

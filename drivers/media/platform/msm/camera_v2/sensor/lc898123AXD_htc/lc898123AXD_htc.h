@@ -17,19 +17,23 @@ unsigned short MakeNVRSel( unsigned short UsAddress );
 unsigned int MakeNVRDat( unsigned short UsAddress, unsigned char UcData );
 unsigned char MakeDatNVR( unsigned short UsAddress, unsigned int UlData );
 void WPBCtrl( unsigned char UcCtrl );
-unsigned char htc_GyroReCalib(struct msm_sensor_ctrl_t *s_ctrl);
+unsigned char htc_GyroReCalib(struct msm_sensor_ctrl_t *s_ctrl, int cam_id);
 short htc_WrGyroOffsetData( void );
 int GYRO_Cali_release(void);
-unsigned short Calibration_VerifyUpdate_PreRead( void );
+signed short Calibration_VerifyUpdate_PreRead( void );
 void FlashResetRelease(void);
 void FlashAutoConfig( void );
-unsigned short Calibration_VerifyUpdate( void );
+signed short Calibration_VerifyUpdate( void );
 void IOWrite32A( unsigned int IOadrs, unsigned int IOdata );
 void IORead4times32A( unsigned int* Dat );
 unsigned char ReadWPB( void );
 void IORead32A( unsigned int IOadrs, unsigned int *IOdata );
 void CRC16_main( unsigned char *p, int Num );
 void IOWriteDouble32A( unsigned int IOadrs1, unsigned int IOdata1, unsigned int IOadrs2, unsigned int IOdata2 );
+int CntWrt( unsigned char * PcSetDat, unsigned short CntWrt);
+int CntRd( unsigned int addr, unsigned char *	PcSetDat, unsigned short	UsDatNum );
+int htc_checkFWUpdate(struct msm_sensor_ctrl_t *s_ctrl);
+signed short FlashWrite_CalibID( const unsigned int CalibId );
 
 
 struct GYRO_gpio_info{

@@ -2399,7 +2399,7 @@ static ssize_t cgroup_read_u64(struct cgroup *cgrp, struct cftype *cft,
 {
 	char tmp[CGROUP_LOCAL_BUFFER_SIZE];
 	u64 val = cft->read_u64(cgrp, cft);
-	int len = sprintf(tmp, "%llu\n", (unsigned long long) val);
+	int len = snprintf(tmp, sizeof(tmp), "%llu\n", (unsigned long long) val);
 
 	return simple_read_from_buffer(buf, nbytes, ppos, tmp, len);
 }
@@ -2411,7 +2411,7 @@ static ssize_t cgroup_read_s64(struct cgroup *cgrp, struct cftype *cft,
 {
 	char tmp[CGROUP_LOCAL_BUFFER_SIZE];
 	s64 val = cft->read_s64(cgrp, cft);
-	int len = sprintf(tmp, "%lld\n", (long long) val);
+	int len = snprintf(tmp, sizeof(tmp), "%lld\n", (long long) val);
 
 	return simple_read_from_buffer(buf, nbytes, ppos, tmp, len);
 }
@@ -2739,10 +2739,10 @@ static int cgroup_add_file(struct cgroup *cgrp, struct cgroup_subsys *subsys,
 	char name[MAX_CGROUP_TYPE_NAMELEN + MAX_CFTYPE_NAME + 2] = { 0 };
 
 	if (subsys && !(cgrp->root->flags & CGRP_ROOT_NOPREFIX)) {
-		strcpy(name, subsys->name);
-		strcat(name, ".");
+		strncpy(name, subsys->name, sizeof(name) - 1);
+		strncat(name, ".", sizeof(name) - 1 - strlen(name));
 	}
-	strcat(name, cft->name);
+	strncat(name, cft->name, sizeof(name) - 1 - strlen(name));
 
 	BUG_ON(!mutex_is_locked(&dir->d_inode->i_mutex));
 

@@ -1,3 +1,5 @@
+#ifdef FSC_DEBUG
+
 #include "Log.h"
 
 void InitializeStateLog(StateLog *log)
@@ -7,11 +9,11 @@ void InitializeStateLog(StateLog *log)
     log->Start = 0;
 }
 
-BOOL WriteStateLog(StateLog *log, UINT16 state, UINT16 time_ms, UINT16 time_s)
+FSC_BOOL WriteStateLog(StateLog *log, FSC_U16 state, FSC_U16 time_ms, FSC_U16 time_s)
 {
     if(!IsStateLogFull(log))
     {
-        UINT8 index = log->End;
+        FSC_U8 index = log->End;
         log->logQueue[index].state = state;
         log->logQueue[index].time_ms = time_ms;
         log->logQueue[index].time_s = time_s;
@@ -32,11 +34,11 @@ BOOL WriteStateLog(StateLog *log, UINT16 state, UINT16 time_ms, UINT16 time_s)
     }
 }
 
-BOOL ReadStateLog(StateLog *log, UINT16 * state, UINT16 * time_ms, UINT16 * time_s) 
+FSC_BOOL ReadStateLog(StateLog *log, FSC_U16 * state, FSC_U16 * time_ms, FSC_U16 * time_s) // Read first log and delete entry
 {
     if(!IsStateLogEmpty(log))
     {
-        UINT8 index = log->Start;
+        FSC_U8 index = log->Start;
         *state = log->logQueue[index].state;
         *time_ms = log->logQueue[index].time_ms;
         *time_s = log->logQueue[index].time_s;
@@ -56,16 +58,19 @@ BOOL ReadStateLog(StateLog *log, UINT16 * state, UINT16 * time_ms, UINT16 * time
     }
 }
 
-BOOL IsStateLogFull(StateLog *log)
+FSC_BOOL IsStateLogFull(StateLog *log)
 {
-    return(log->Count == LOG_SIZE);
+    return (log->Count == LOG_SIZE) ? TRUE : FALSE;
 }
 
-BOOL IsStateLogEmpty(StateLog *log)
+FSC_BOOL IsStateLogEmpty(StateLog *log)
 {
-    return(!log->Count);
+    return (!log->Count) ? TRUE : FALSE;
 }
 
 void DeleteStateLog(StateLog *log)
 {
 }
+
+#endif // FSC_DEBUG
+

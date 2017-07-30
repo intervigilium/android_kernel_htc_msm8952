@@ -98,7 +98,7 @@ int sha256_update(struct shash_desc *desc, const u8 *data, unsigned int len)
 	struct sha256_state *sctx = shash_desc_ctx(desc);
 	unsigned int partial = sctx->count % SHA256_BLOCK_SIZE;
 
-	
+	/* Handle the fast case right here */
 	if (partial + len < SHA256_BLOCK_SIZE) {
 		sctx->count += len;
 		memcpy(sctx->buf + partial, data, len);
@@ -109,6 +109,7 @@ int sha256_update(struct shash_desc *desc, const u8 *data, unsigned int len)
 	return __sha256_update(desc, data, len, partial);
 }
 
+/* Add padding and return the message digest. */
 static int sha256_final(struct shash_desc *desc, u8 *out)
 {
 	struct sha256_state *sctx = shash_desc_ctx(desc);
@@ -117,14 +118,14 @@ static int sha256_final(struct shash_desc *desc, u8 *out)
 	__be64 bits;
 	static const u8 padding[SHA256_BLOCK_SIZE] = { 0x80, };
 
-	
+	/* save number of bits */
 	bits = cpu_to_be64(sctx->count << 3);
 
-	
+	/* Pad out to 56 mod 64 and append length */
 	index = sctx->count % SHA256_BLOCK_SIZE;
 	padlen = (index < 56) ? (56 - index) : ((SHA256_BLOCK_SIZE+56)-index);
 
-	
+	/* We need to fill a whole block for __sha256_update */
 	if (padlen <= 56) {
 		sctx->count += padlen;
 		memcpy(sctx->buf + index, padding, padlen);
@@ -133,11 +134,11 @@ static int sha256_final(struct shash_desc *desc, u8 *out)
 	}
 	__sha256_update(desc, (const u8 *)&bits, sizeof(bits), 56);
 
-	
+	/* Store state in digest */
 	for (i = 0; i < 8; i++)
 		dst[i] = cpu_to_be32(sctx->state[i]);
 
-	
+	/* Wipe context */
 	memset(sctx, 0, sizeof(*sctx));
 
 	return 0;

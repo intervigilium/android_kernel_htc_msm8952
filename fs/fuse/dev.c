@@ -7,6 +7,7 @@
 */
 
 #include "fuse_i.h"
+#include "fuse_shortcircuit.h"
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -24,6 +25,8 @@
 
 MODULE_ALIAS_MISCDEV(FUSE_MINOR);
 MODULE_ALIAS("devname:fuse");
+
+#define wake_up_sync(x)   __wake_up_sync((x), TASK_NORMAL, 1)
 
 static struct kmem_cache *fuse_req_cachep;
 
@@ -320,7 +323,7 @@ static void queue_request(struct fuse_conn *fc, struct fuse_req *req)
 		req->waiting = 1;
 		atomic_inc(&fc->num_waiting);
 	}
-	wake_up(&fc->waitq);
+	wake_up_sync(&fc->waitq);
 	kill_fasync(&fc->fasync, SIGIO, POLL_IN);
 }
 
@@ -394,7 +397,7 @@ __releases(fc->lock)
 		flush_bg_queue(fc);
 	}
 	spin_unlock(&fc->lock);
-	wake_up(&req->waitq);
+	wake_up_sync(&req->waitq);
 	if (end)
 		end(fc, req);
 	fuse_put_request(fc, req);
@@ -1875,6 +1878,8 @@ static ssize_t fuse_dev_do_write(struct fuse_conn *fc,
 
 	err = copy_out_args(cs, &req->out, nbytes);
 	fuse_copy_finish(cs);
+
+	fuse_setup_shortcircuit(fc, req);
 
 	spin_lock(&fc->lock);
 	req->locked = 0;

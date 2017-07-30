@@ -363,9 +363,9 @@ int snd_usb_add_audio_stream(struct snd_usb_audio *chip,
 	pcm->private_free = snd_usb_audio_pcm_free;
 	pcm->info_flags = 0;
 	if (chip->pcm_devs > 0)
-		sprintf(pcm->name, "USB Audio #%d", chip->pcm_devs);
+		snprintf(pcm->name, sizeof(pcm->name)-1, "USB Audio #%d", chip->pcm_devs); //HTC_AUD klocwork
 	else
-		strcpy(pcm->name, "USB Audio");
+		strlcpy(pcm->name, "USB Audio", sizeof(pcm->name)-1); //HTC_AUD klocwork
 
 	snd_usb_init_substream(as, stream, fp);
 
