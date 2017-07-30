@@ -24,7 +24,9 @@ int htc_net_debug_enable = 1;
 int htc_net_debug_dump = 1;
 int htc_net_debug_print = 0;
 
+/* Maximum debug message length */
 #define DBG_MSG_LEN   128UL
+/* Maximum number of messages */
 #define DBG_MAX_MSG   256UL
 #define TIME_BUF_LEN  20
 
@@ -46,7 +48,7 @@ void *net_ipc_log_txt = 0;
 #define NET_IPC_LOG_PAGES 5
 
 static struct {
-	char (buf[DBG_MAX_MSG])[DBG_MSG_LEN]; 
+	char (buf[DBG_MAX_MSG])[DBG_MSG_LEN]; /* buffer */
 	unsigned idx;
 	rwlock_t lock;
 } net_debug = {
@@ -124,7 +126,7 @@ void net_dumplog(void)
 	}
 #endif
 
-	
+	//pr_info("### Show NET Log Start ###\n");
 
 	net_events_print();
 #if 0
@@ -137,7 +139,7 @@ void net_dumplog(void)
 
 	}while ( ret > 0 );
 #endif
-	
+	//pr_info("### Show NET Log End ###\n");
 
 }
 EXPORT_SYMBOL(net_dumplog);

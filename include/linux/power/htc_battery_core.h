@@ -12,7 +12,7 @@
  */
 #ifndef HTC_BATTERY_CORE_H
 #define HTC_BATTERY_CORE_H
-#if 0
+#if 0//FIXME
 #include <mach/board.h>
 #endif
 #include <linux/notifier.h>
@@ -105,7 +105,7 @@ struct battery_info_reply {
 	int chg_stop_reason;
 	int consistent;
 	int aicl_ma;
-	unsigned int htc_extension;	
+	unsigned int htc_extension;	/* for htc in-house sw */
 	unsigned int level_accu;
 };
 

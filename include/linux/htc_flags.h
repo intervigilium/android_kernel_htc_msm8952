@@ -18,7 +18,7 @@ enum {
 	KERNEL_FLAG_PVS_FAST_CPU = BIT(10),
 #else
 	KERNEL_FLAG_RTB_HOOK = BIT(8),
-	KERNEL_FLAG_ENABLE_DIAG_LOG = BIT(9),
+	KERNEL_FLAG_ENABLE_DIAG_LOG = BIT(9),/*++ 2015/07/06, USB Team, PCN00053 ++*/
 	KERNEL_FLAG_RESERVED_10 = BIT(10),
 #endif
 	KERNEL_FLAG_ENABLE_SSR_MODEM = BIT(11),
@@ -55,4 +55,4 @@ unsigned int get_cpumask_flag(void);
 unsigned int get_bootloader_flag(void);
 char *htc_get_bootmode(void);
 
-#endif 
+#endif /* _LINUX_HTC_FLAGS_H */

@@ -105,7 +105,7 @@ enum {
 
 #define DEV_V2_RECORD 2
 #define DEV_V3_RECORD 4
-#define HTC_WARN_AWAKE_SEC 60*60  
+#define HTC_WARN_AWAKE_SEC 60*60  /* If exceed, Show Power_SS_On warning message */
 
 char *__htc_ss__[] = {
         "APPS",
@@ -658,7 +658,7 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 	offset = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 							"offset_addr");
 	if (offset) {
-		
+		/* Remap the rpm-stats pointer */
 		phys_ptr = ioremap_nocache(offset->start, SZ_4);
 		if (!phys_ptr) {
 			pr_err("%s: Failed to ioremap address: %x\n",

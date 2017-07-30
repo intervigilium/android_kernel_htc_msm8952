@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -96,6 +96,12 @@ static DECLARE_RWSEM(control_ports_lock_lha5);
 static struct list_head local_ports[LP_HASH_SIZE];
 static DECLARE_RWSEM(local_ports_lock_lhc2);
 
+/* Server info is organized as a hash table. The server's service ID is
+ * used to index into the hash table. The instance ID of most of the servers
+ * are 1 or 2. The service IDs are well distributed compared to the instance
+ * IDs and hence choosing service ID to index into this hash table optimizes
+ * the hash table operations like add, lookup, destroy.
+ */
 #define SRV_HASH_SIZE 32
 static struct list_head server_list[SRV_HASH_SIZE];
 static DECLARE_RWSEM(server_list_lock_lha2);
@@ -229,6 +235,16 @@ static void init_routing_table(void)
 		INIT_LIST_HEAD(&routing_table[i]);
 }
 
+/**
+ * skb_copy_to_log_buf() - copies the required number bytes from the skb_queue
+ * @skb_head:	skb_queue head that contains the data.
+ * @pl_len:	length of payload need to be copied.
+ * @hdr_offset:	length of the header present in first skb
+ * @log_buf:	The output buffer which will contain the formatted log string
+ *
+ * This function copies the first specified number of bytes from the skb_queue
+ * to a new buffer and formats them to a string for logging.
+ */
 static void skb_copy_to_log_buf(struct sk_buff_head *skb_head,
 				unsigned int pl_len, unsigned int hdr_offset,
 				uint64_t *log_buf)
@@ -261,6 +277,19 @@ static void skb_copy_to_log_buf(struct sk_buff_head *skb_head,
 	return;
 }
 
+/**
+ * ipc_router_log_msg() - log all data messages exchanged
+ * @log_ctx:	IPC Logging context specfic to each transport
+ * @xchng_type:	Identifies the data to be a receive or send.
+ * @data:	IPC Router data packet or control msg recieved or to be send.
+ * @hdr:	Reference to the router header
+ * @port_ptr:	Local IPC Router port.
+ * @rport_ptr:	Remote IPC Router port
+ *
+ * This function builds the log message that would be passed on to the IPC
+ * logging framework. The data messages that would be passed corresponds to
+ * the information that is exchanged between the IPC Router and it's clients.
+ */
 static void ipc_router_log_msg(void *log_ctx, uint32_t xchng_type,
 			void *data, struct rr_header_v1 *hdr,
 			struct msm_ipc_port *port_ptr,
@@ -359,6 +388,7 @@ static void ipc_router_log_msg(void *log_ctx, uint32_t xchng_type,
 	}
 }
 
+/* Must be called with routing_table_lock_lha3 locked. */
 static struct msm_ipc_routing_table_entry *lookup_routing_table(
 	uint32_t node_id)
 {
@@ -372,6 +402,13 @@ static struct msm_ipc_routing_table_entry *lookup_routing_table(
 	return NULL;
 }
 
+/**
+ * create_routing_table_entry() - Lookup and create a routing table entry
+ * @node_id: Node ID of the routing table entry to be created.
+ * @xprt_info: XPRT through which the node ID is reachable.
+ *
+ * @return: a reference to the routing table entry on success, NULL on failure.
+ */
 static struct msm_ipc_routing_table_entry *create_routing_table_entry(
 	uint32_t node_id, struct msm_ipc_router_xprt_info *xprt_info)
 {
@@ -410,6 +447,15 @@ out_create_rtentry2:
 	return rt_entry;
 }
 
+/**
+ * ipc_router_get_rtentry_ref() - Get a reference to the routing table entry
+ * @node_id: Node ID of the routing table entry.
+ *
+ * @return: a reference to the routing table entry on success, NULL on failure.
+ *
+ * This function is used to obtain a reference to the rounting table entry
+ * corresponding to a node id.
+ */
 static struct msm_ipc_routing_table_entry *ipc_router_get_rtentry_ref(
 	uint32_t node_id)
 {
@@ -423,11 +469,23 @@ static struct msm_ipc_routing_table_entry *ipc_router_get_rtentry_ref(
 	return rt_entry;
 }
 
+/**
+ * ipc_router_release_rtentry() - Cleanup and release the routing table entry
+ * @ref: Reference to the entry.
+ *
+ * This function is called when all references to the routing table entry are
+ * released.
+ */
 void ipc_router_release_rtentry(struct kref *ref)
 {
 	struct msm_ipc_routing_table_entry *rt_entry =
 		container_of(ref, struct msm_ipc_routing_table_entry, ref);
 
+	/*
+	 * All references to a routing entry will be put only under SSR.
+	 * As part of SSR, all the internals of the routing table entry
+	 * are cleaned. So just free the routing table entry.
+	 */
 	kfree(rt_entry);
 }
 
@@ -514,6 +572,12 @@ fail_clone:
 	return NULL;
 }
 
+/**
+ * create_pkt() - Create a Router packet
+ * @data: SKB queue to be contained inside the packet.
+ *
+ * @return: pointer to packet on success, NULL on failure.
+ */
 struct rr_packet *create_pkt(struct sk_buff_head *data)
 {
 	struct rr_packet *pkt;
@@ -670,6 +734,13 @@ void msm_ipc_router_free_skb(struct sk_buff_head *skb_head)
 	kfree(skb_head);
 }
 
+/**
+ * extract_optional_header() - Extract the optional header from skb
+ * @pkt:	Packet structure into which the header has to be extracted.
+ * @opt_len:	The optional header length in word size.
+ *
+ * @return:	Length of optional header in bytes if success, zero otherwise.
+ */
 static int extract_optional_header(struct rr_packet *pkt, uint8_t opt_len)
 {
 	size_t offset = 0, buf_len = 0, copy_len, opt_hdr_len;
@@ -699,6 +770,13 @@ static int extract_optional_header(struct rr_packet *pkt, uint8_t opt_len)
 	return opt_hdr_len;
 }
 
+/**
+ * extract_header_v1() - Extract IPC Router header of version 1
+ * @pkt: Packet structure into which the header has to be extraced.
+ * @skb: SKB from which the header has to be extracted.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ */
 static int extract_header_v1(struct rr_packet *pkt, struct sk_buff *skb)
 {
 	if (!pkt || !skb) {
@@ -712,6 +790,13 @@ static int extract_header_v1(struct rr_packet *pkt, struct sk_buff *skb)
 	return 0;
 }
 
+/**
+ * extract_header_v2() - Extract IPC Router header of version 2
+ * @pkt: Packet structure into which the header has to be extraced.
+ * @skb: SKB from which the header has to be extracted.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ */
 static int extract_header_v2(struct rr_packet *pkt, struct sk_buff *skb)
 {
 	struct rr_header_v2 *hdr;
@@ -743,6 +828,15 @@ static int extract_header_v2(struct rr_packet *pkt, struct sk_buff *skb)
 	return 0;
 }
 
+/**
+ * extract_header() - Extract IPC Router header
+ * @pkt: Packet from which the header has to be extraced.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ *
+ * This function will check if the header version is v1 or v2 and invoke
+ * the corresponding helper function to extract the IPC Router header.
+ */
 static int extract_header(struct rr_packet *pkt)
 {
 	struct sk_buff *temp_skb;
@@ -773,6 +867,18 @@ static int extract_header(struct rr_packet *pkt)
 	return ret;
 }
 
+/**
+ * calc_tx_header_size() - Calculate header size to be reserved in SKB
+ * @pkt: Packet in which the space for header has to be reserved.
+ * @dst_xprt_info: XPRT through which the destination is reachable.
+ *
+ * @return: required header size on success,
+ *          starndard Linux error codes on failure.
+ *
+ * This function is used to calculate the header size that has to be reserved
+ * in a transmit SKB. The header size is calculated based on the XPRT through
+ * which the destination node is reachable.
+ */
 static int calc_tx_header_size(struct rr_packet *pkt,
 			       struct msm_ipc_router_xprt_info *dst_xprt_info)
 {
@@ -803,6 +909,12 @@ static int calc_tx_header_size(struct rr_packet *pkt,
 	return hdr_size;
 }
 
+/**
+ * calc_rx_header_size() - Calculate the RX header size
+ * @xprt_info: XPRT info of the received message.
+ *
+ * @return: valid header size on success, INT_MAX on failure.
+ */
 static int calc_rx_header_size(struct msm_ipc_router_xprt_info *xprt_info)
 {
 	int xprt_version = 0;
@@ -818,6 +930,13 @@ static int calc_rx_header_size(struct msm_ipc_router_xprt_info *xprt_info)
 	return hdr_size;
 }
 
+/**
+ * prepend_header_v1() - Prepend IPC Router header of version 1
+ * @pkt: Packet structure which contains the header info to be prepended.
+ * @hdr_size: Size of the header
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ */
 static int prepend_header_v1(struct rr_packet *pkt, int hdr_size)
 {
 	struct sk_buff *temp_skb;
@@ -852,6 +971,13 @@ static int prepend_header_v1(struct rr_packet *pkt, int hdr_size)
 	return 0;
 }
 
+/**
+ * prepend_header_v2() - Prepend IPC Router header of version 2
+ * @pkt: Packet structure which contains the header info to be prepended.
+ * @hdr_size: Size of the header
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ */
 static int prepend_header_v2(struct rr_packet *pkt, int hdr_size)
 {
 	struct sk_buff *temp_skb;
@@ -899,6 +1025,17 @@ static int prepend_header_v2(struct rr_packet *pkt, int hdr_size)
 	return 0;
 }
 
+/**
+ * prepend_header() - Prepend IPC Router header
+ * @pkt: Packet structure which contains the header info to be prepended.
+ * @xprt_info: XPRT through which the packet is transmitted.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ *
+ * This function prepends the header to the packet to be transmitted. The
+ * IPC Router header version to be prepended depends on the XPRT through
+ * which the destination is reachable.
+ */
 static int prepend_header(struct rr_packet *pkt,
 			  struct msm_ipc_router_xprt_info *xprt_info)
 {
@@ -928,6 +1065,16 @@ static int prepend_header(struct rr_packet *pkt,
 		return -EINVAL;
 }
 
+/**
+ * defragment_pkt() - Defragment and linearize the packet
+ * @pkt: Packet to be linearized.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ *
+ * Some packets contain fragments of data over multiple SKBs. If an XPRT
+ * does not supported fragmented writes, linearize multiple SKBs into one
+ * single SKB.
+ */
 static int defragment_pkt(struct rr_packet *pkt)
 {
 	struct sk_buff *dst_skb, *src_skb, *temp_skb;
@@ -995,7 +1142,7 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 	__pm_stay_awake(port_ptr->port_rx_ws);
 #ifdef CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
 	if ( port_ptr->port_rx_ws->event_count % 1000 == 0 ) {
-		
+		//dump log message every 1000 times
 		pr_info("post_pkt_to_port: ws name=[%s], event_count=[%lu], pid=[%d], tgid=[%d]\n", port_ptr->port_rx_ws->name, port_ptr->port_rx_ws->event_count, current->pid, current->tgid);
 		if ( port_ptr->type == SERVER_PORT ) {
 			struct msm_ipc_server *server = NULL;
@@ -1004,7 +1151,7 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 				pr_info("post_pkt_to_port: ws name=[%s], server name=[%s]\n", port_ptr->port_rx_ws->name, server->pdev_name);
 			}
 		}
-		
+		//dump log if debug enable
 		if (msm_ipc_router_debug_mask & RTR_DBG) {
 			print_ipc_router_modem_log();
 		}
@@ -1035,11 +1182,21 @@ static int post_pkt_to_port(struct msm_ipc_port *port_ptr,
 #else
 	else if (sk && data_ready)
 		data_ready(sk, pkt->hdr.size);
-#endif
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
 
 	return 0;
 }
 
+/**
+ * ipc_router_peek_pkt_size() - Peek into the packet header to get potential packet size
+ * @data: Starting address of the packet which points to router header.
+ *
+ * @returns: potential packet size on success, < 0 on error.
+ *
+ * This function is used by the underlying transport abstraction layer to
+ * peek into the potential packet size of an incoming packet. This information
+ * is used to perform link layer fragmentation and re-assembly
+ */
 int ipc_router_peek_pkt_size(char *data)
 {
 	int size;
@@ -1138,7 +1295,7 @@ int msm_ipc_router_get_current_cmd_line(char * buffer, int buff_len)
 
 	get_proc_pid_cmdline(current, cmdline, sizeof(cmdline));
 
-	
+	//Analysis full_task_name
 	if ( strlen( cmdline ) > 0 ) {
 		cstr1 = strrchr( cmdline, '/' );
 
@@ -1149,24 +1306,24 @@ int msm_ipc_router_get_current_cmd_line(char * buffer, int buff_len)
 			snprintf(full_task_name, sizeof(full_task_name), "%s", cstr1);
 		}
 		if ( strcmp (full_task_name, "system_server") == 0 ) {
-			
+			//If task name is system_server, use current->comm
 			snprintf(buffer, buff_len, "%s", current->comm);
 		} else if ( strlen (full_task_name) <= 0 ) {
-			
+			//If task name is zero, use current->comm
 			snprintf(buffer, buff_len, "%s", current->comm);
 		} else if ( strcmp (full_task_name, current->comm) == 0 ) {
-			
+			//If task name == current->comm, use current->comm
 			snprintf(buffer, buff_len, "%s", current->comm);
 		} else {
-			
+			//use current->comm + full_task_name
 			snprintf(buffer, buff_len, "%s_%s", current->comm, full_task_name);
 		}
 	}else {
-		
+		//use current->comm
 		snprintf(buffer, buff_len, "%s", current->comm);
 	}
 
-	
+	//add pid and tgid
 	snprintf(buffer, buff_len, "%s_%d_%d", buffer, current->pid, current->tgid);
 
 	return r;
@@ -1224,7 +1381,7 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 
 {
 		struct rr_packet *pkt, *temp_pkt;
-		
+		//try clear list
 		list_for_each_entry_safe(pkt, temp_pkt, &port_ptr->port_rx_q, list) {
 			struct rr_header_v1 *hdr = &pkt->hdr;
 			uint32_t svcId = 0;
@@ -1285,7 +1442,7 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 		}
 }
 
-		
+		//check ws state and relax ws
 		if ( port_ptr->port_rx_ws->active ) {
 			if ( msm_ipc_router_delete_unread_data ) {
 				IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: relax wake source %s\n", __func__, port_ptr->port_rx_ws->name);
@@ -1293,7 +1450,7 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 			} else {
 				port_ptr->rx_data_check_wq_delay_time = port_ptr->rx_data_check_wq_delay_time * 2;
 				if ( port_ptr->rx_data_check_wq_delay_time > IPC_RX_DATA_CHECK_WQ_DELAY_TIME_MAX )
-					port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME_MAX;
+					port_ptr->rx_data_check_wq_delay_time = IPC_RX_DATA_CHECK_WQ_DELAY_TIME_MAX;//set to 5 mins if delay over 5 mins
 
 				IPC_RTR_INFO_DUMP(NULL, "[RX DATA CHECK]%s: schedule_delayed_work, delay=[%d]\n", __func__, port_ptr->rx_data_check_wq_delay_time);
 				schedule_delayed_work(&port_ptr->rx_data_check_wq, msecs_to_jiffies(port_ptr->rx_data_check_wq_delay_time));
@@ -1306,8 +1463,23 @@ static void msm_ipc_router_rx_data_check_func(struct work_struct *work)
 	} while (0);
 
 }
-#endif
+#endif//#ifdef CONFIG_HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
 
+/**
+ * msm_ipc_router_create_raw_port() - Create an IPC Router port
+ * @endpoint: User-space space socket information to be cached.
+ * @notify: Function to notify incoming events on the port.
+ *   @event: Event ID to be handled.
+ *   @oob_data: Any out-of-band data associated with the event.
+ *   @oob_data_len: Size of the out-of-band data, if valid.
+ *   @priv: Private data registered during the port creation.
+ * @priv: Private Data to be passed during the event notification.
+ *
+ * @return: Valid pointer to port on success, NULL on failure.
+ *
+ * This function is used to create an IPC Router port. The port is used for
+ * communication locally or outside the subsystem.
+ */
 struct msm_ipc_port *msm_ipc_router_create_raw_port(void *endpoint,
 	void (*notify)(unsigned event, void *oob_data,
 		       size_t oob_data_len, void *priv),
@@ -1380,6 +1552,13 @@ struct msm_ipc_port *msm_ipc_router_create_raw_port(void *endpoint,
 	return port_ptr;
 }
 
+/**
+ * ipc_router_get_port_ref() - Get a reference to the local port
+ * @port_id: Port ID of the local port for which reference is get.
+ *
+ * @return: If port is found, a reference to the port is returned.
+ *          Else NULL is returned.
+ */
 static struct msm_ipc_port *ipc_router_get_port_ref(uint32_t port_id)
 {
 	int key = (port_id & (LP_HASH_SIZE - 1));
@@ -1397,6 +1576,12 @@ static struct msm_ipc_port *ipc_router_get_port_ref(uint32_t port_id)
 	return NULL;
 }
 
+/**
+ * ipc_router_release_port() - Cleanup and release the port
+ * @ref: Reference to the port.
+ *
+ * This function is called when all references to the port are released.
+ */
 void ipc_router_release_port(struct kref *ref)
 {
 	struct rr_packet *pkt, *temp_pkt;
@@ -1415,6 +1600,13 @@ void ipc_router_release_port(struct kref *ref)
 	kfree(port_ptr);
 }
 
+/**
+ * ipc_router_get_rport_ref()- Get reference to the remote port
+ * @node_id: Node ID corresponding to the remote port.
+ * @port_id: Port ID corresponding to the remote port.
+ *
+ * @return: a reference to the remote port on success, NULL on failure.
+ */
 static struct msm_ipc_router_remote_port *ipc_router_get_rport_ref(
 		uint32_t node_id, uint32_t port_id)
 {
@@ -1443,6 +1635,14 @@ out_lookup_rmt_port1:
 	return rport_ptr;
 }
 
+/**
+ * ipc_router_create_rport() - Create a remote port
+ * @node_id: Node ID corresponding to the remote port.
+ * @port_id: Port ID corresponding to the remote port.
+ * @xprt_info: XPRT through which the concerned node is reachable.
+ *
+ * @return: a reference to the remote port on success, NULL on failure.
+ */
 static struct msm_ipc_router_remote_port *ipc_router_create_rport(
 				uint32_t node_id, uint32_t port_id,
 				struct msm_ipc_router_xprt_info *xprt_info)
@@ -1490,6 +1690,15 @@ out_create_rmt_port2:
 	return rport_ptr;
 }
 
+/**
+ * msm_ipc_router_free_resume_tx_port() - Free the resume_tx ports
+ * @rport_ptr: Pointer to the remote port.
+ *
+ * This function deletes all the resume_tx ports associated with a remote port
+ * and frees the memory allocated to each resume_tx port.
+ *
+ * Must be called with rport_ptr->rport_lock_lhb2 locked.
+ */
 static void msm_ipc_router_free_resume_tx_port(
 	struct msm_ipc_router_remote_port *rport_ptr)
 {
@@ -1502,6 +1711,19 @@ static void msm_ipc_router_free_resume_tx_port(
 	}
 }
 
+/**
+ * msm_ipc_router_lookup_resume_tx_port() - Lookup resume_tx port list
+ * @rport_ptr: Remote port whose resume_tx port list needs to be looked.
+ * @port_id: Port ID which needs to be looked from the list.
+ *
+ * return 1 if the port_id is found in the list, else 0.
+ *
+ * This function is used to lookup the existence of a local port in
+ * remote port's resume_tx list. This function is used to ensure that
+ * the same port is not added to the remote_port's resume_tx list repeatedly.
+ *
+ * Must be called with rport_ptr->rport_lock_lhb2 locked.
+ */
 static int msm_ipc_router_lookup_resume_tx_port(
 	struct msm_ipc_router_remote_port *rport_ptr, uint32_t port_id)
 {
@@ -1514,6 +1736,20 @@ static int msm_ipc_router_lookup_resume_tx_port(
 	return 0;
 }
 
+/**
+ * post_resume_tx() - Post the resume_tx event
+ * @rport_ptr: Pointer to the remote port
+ * @pkt : The data packet that is received on a resume_tx event
+ * @msg: Out of band data to be passed to kernel drivers
+ *
+ * This function informs about the reception of the resume_tx message from a
+ * remote port pointed by rport_ptr to all the local ports that are in the
+ * resume_tx_ports_list of this remote port. On posting the information, this
+ * function sequentially deletes each entry in the resume_tx_port_list of the
+ * remote port.
+ *
+ * Must be called with rport_ptr->rport_lock_lhb2 locked.
+ */
 static void post_resume_tx(struct msm_ipc_router_remote_port *rport_ptr,
 			   struct rr_packet *pkt, union rr_control_msg *msg)
 {
@@ -1552,6 +1788,13 @@ static void post_resume_tx(struct msm_ipc_router_remote_port *rport_ptr,
 	}
 }
 
+/**
+ * signal_rport_exit() - Signal the local ports of remote port exit
+ * @rport_ptr: Remote port that is exiting.
+ *
+ * This function is used to signal the local ports that are waiting
+ * to resume transmission to a remote port that is exiting.
+ */
 static void signal_rport_exit(struct msm_ipc_router_remote_port *rport_ptr)
 {
 	struct msm_ipc_resume_tx_port *rtx_port, *tmp_rtx_port;
@@ -1572,6 +1815,12 @@ static void signal_rport_exit(struct msm_ipc_router_remote_port *rport_ptr)
 	mutex_unlock(&rport_ptr->rport_lock_lhb2);
 }
 
+/**
+ * ipc_router_release_rport() - Cleanup and release the remote port
+ * @ref: Reference to the remote port.
+ *
+ * This function is called when all references to the remote port are released.
+ */
 static void ipc_router_release_rport(struct kref *ref)
 {
 	struct msm_ipc_router_remote_port *rport_ptr =
@@ -1583,6 +1832,10 @@ static void ipc_router_release_rport(struct kref *ref)
 	kfree(rport_ptr);
 }
 
+/**
+ * ipc_router_destroy_rport() - Destroy the remote port
+ * @rport_ptr: Pointer to the remote port to be destroyed.
+ */
 static void ipc_router_destroy_rport(
 	struct msm_ipc_router_remote_port *rport_ptr)
 {
@@ -1607,6 +1860,20 @@ static void ipc_router_destroy_rport(
 	return;
 }
 
+/**
+ * msm_ipc_router_lookup_server() - Lookup server information
+ * @service: Service ID of the server info to be looked up.
+ * @instance: Instance ID of the server info to be looked up.
+ * @node_id: Node/Processor ID in which the server is hosted.
+ * @port_id: Port ID within the node in which the server is hosted.
+ *
+ * @return: If found Pointer to server structure, else NULL.
+ *
+ * Note1: Lock the server_list_lock_lha2 before accessing this function.
+ * Note2: If the <node_id:port_id> are <0:0>, then the lookup is restricted
+ *        to <service:instance>. Used only when a client wants to send a
+ *        message to any QMI server.
+ */
 static struct msm_ipc_server *msm_ipc_router_lookup_server(
 				uint32_t service,
 				uint32_t instance,
@@ -1633,6 +1900,15 @@ static struct msm_ipc_server *msm_ipc_router_lookup_server(
 	return NULL;
 }
 
+/**
+ * ipc_router_get_server_ref() - Get reference to the server
+ * @svc: Service ID for which the reference is required.
+ * @ins: Instance ID for which the reference is required.
+ * @node_id: Node/Processor ID in which the server is hosted.
+ * @port_id: Port ID within the node in which the server is hosted.
+ *
+ * @return: If found return reference to server, else NULL.
+ */
 static struct msm_ipc_server *ipc_router_get_server_ref(
 	uint32_t svc, uint32_t ins, uint32_t node_id, uint32_t port_id)
 {
@@ -1646,6 +1922,12 @@ static struct msm_ipc_server *ipc_router_get_server_ref(
 	return server;
 }
 
+/**
+ * ipc_router_release_server() - Cleanup and release the server
+ * @ref: Reference to the server.
+ *
+ * This function is called when all references to the server are released.
+ */
 static void ipc_router_release_server(struct kref *ref)
 {
 	struct msm_ipc_server *server =
@@ -1654,6 +1936,20 @@ static void ipc_router_release_server(struct kref *ref)
 	kfree(server);
 }
 
+/**
+ * msm_ipc_router_create_server() - Add server info to hash table
+ * @service: Service ID of the server info to be created.
+ * @instance: Instance ID of the server info to be created.
+ * @node_id: Node/Processor ID in which the server is hosted.
+ * @port_id: Port ID within the node in which the server is hosted.
+ * @xprt_info: XPRT through which the node hosting the server is reached.
+ *
+ * @return: Pointer to server structure on success, else NULL.
+ *
+ * This function adds the server info to the hash table. If the same
+ * server(i.e. <service_id:instance_id>) is hosted in different nodes,
+ * they are maintained as list of "server_port" under "server" structure.
+ */
 static struct msm_ipc_server *msm_ipc_router_create_server(
 					uint32_t service,
 					uint32_t instance,
@@ -1718,12 +2014,23 @@ create_srv_port:
 	platform_device_add(server_port->pdev);
 
 return_server:
-	
+	/* Add a reference so that the caller can put it back */
 	kref_get(&server->ref);
 	up_write(&server_list_lock_lha2);
 	return server;
 }
 
+/**
+ * ipc_router_destroy_server_nolock() - Remove server info from hash table
+ * @server: Server info to be removed.
+ * @node_id: Node/Processor ID in which the server is hosted.
+ * @port_id: Port ID within the node in which the server is hosted.
+ *
+ * This function removes the server_port identified using <node_id:port_id>
+ * from the server structure. If the server_port list under server structure
+ * is empty after removal, then remove the server structure from the server
+ * hash table. This function must be called with server_list_lock_lha2 locked.
+ */
 static void ipc_router_destroy_server_nolock(struct msm_ipc_server *server,
 					  uint32_t node_id, uint32_t port_id)
 {
@@ -1752,6 +2059,17 @@ static void ipc_router_destroy_server_nolock(struct msm_ipc_server *server,
 	return;
 }
 
+/**
+ * ipc_router_destroy_server() - Remove server info from hash table
+ * @server: Server info to be removed.
+ * @node_id: Node/Processor ID in which the server is hosted.
+ * @port_id: Port ID within the node in which the server is hosted.
+ *
+ * This function removes the server_port identified using <node_id:port_id>
+ * from the server structure. If the server_port list under server structure
+ * is empty after removal, then remove the server structure from the server
+ * hash table.
+ */
 static void ipc_router_destroy_server(struct msm_ipc_server *server,
 				      uint32_t node_id, uint32_t port_id)
 {
@@ -2042,6 +2360,12 @@ static void update_comm_mode_info(struct comm_mode_info *mode_info,
 	return;
 }
 
+/**
+ * cleanup_rmt_server() - Cleanup server hosted in the remote port
+ * @xprt_info: XPRT through which this cleanup event is handled.
+ * @rport_ptr: Remote port that is being cleaned up.
+ * @server: Server that is hosted in the remote port.
+ */
 static void cleanup_rmt_server(struct msm_ipc_router_xprt_info *xprt_info,
 			       struct msm_ipc_router_remote_port *rport_ptr,
 			       struct msm_ipc_server *server)
@@ -2128,6 +2452,14 @@ static void msm_ipc_cleanup_routing_table(
 	up_write(&server_list_lock_lha2);
 }
 
+/**
+ * sync_sec_rule() - Synchrnoize the security rule into the server structure
+ * @server: Server structure where the rule has to be synchronized.
+ * @rule: Security tule to be synchronized.
+ *
+ * This function is used to update the server structure with the security
+ * rule configured for the <service:instance> corresponding to that server.
+ */
 static void sync_sec_rule(struct msm_ipc_server *server, void *rule)
 {
 	struct msm_ipc_server_port *server_port;
@@ -2145,6 +2477,17 @@ static void sync_sec_rule(struct msm_ipc_server *server, void *rule)
 	server->synced_sec_rule = 1;
 }
 
+/**
+ * msm_ipc_sync_sec_rule() - Sync the security rule to the service
+ * @service: Service for which the rule has to be synchronized.
+ * @instance: Instance for which the rule has to be synchronized.
+ * @rule: Security rule to be synchronized.
+ *
+ * This function is used to syncrhonize the security rule with the server
+ * hash table, if the user-space script configures the rule after the service
+ * has come up. This function is used to synchronize the security rule to a
+ * specific service and optionally a specific instance.
+ */
 void msm_ipc_sync_sec_rule(uint32_t service, uint32_t instance, void *rule)
 {
 	int key = (service & (SRV_HASH_SIZE - 1));
@@ -2159,6 +2502,10 @@ void msm_ipc_sync_sec_rule(uint32_t service, uint32_t instance, void *rule)
 		    instance != ALL_INSTANCE)
 			continue;
 
+		/* If the rule applies to all instances and if the specific
+		 * instance of a service has a rule synchronized already,
+		 * do not apply the rule for that specific instance.
+		 */
 		if (instance == ALL_INSTANCE && server->synced_sec_rule)
 			continue;
 
@@ -2167,6 +2514,16 @@ void msm_ipc_sync_sec_rule(uint32_t service, uint32_t instance, void *rule)
 	up_write(&server_list_lock_lha2);
 }
 
+/**
+ * msm_ipc_sync_default_sec_rule() - Default security rule to all services
+ * @rule: Security rule to be synchronized.
+ *
+ * This function is used to syncrhonize the security rule with the server
+ * hash table, if the user-space script configures the rule after the service
+ * has come up. This function is used to synchronize the security rule that
+ * applies to all services, if the concerned service do not have any rule
+ * defined.
+ */
 void msm_ipc_sync_default_sec_rule(void *rule)
 {
 	int key;
@@ -2184,6 +2541,13 @@ void msm_ipc_sync_default_sec_rule(void *rule)
 	up_write(&server_list_lock_lha2);
 }
 
+/**
+ * ipc_router_reset_conn() - Reset the connection to remote port
+ * @rport_ptr: Pointer to the remote port to be disconnected.
+ *
+ * This function is used to reset all the local ports that are connected to
+ * the remote port being passed.
+ */
 static void ipc_router_reset_conn(struct msm_ipc_router_remote_port *rport_ptr)
 {
 	struct msm_ipc_port *port_ptr;
@@ -2207,6 +2571,13 @@ static void ipc_router_reset_conn(struct msm_ipc_router_remote_port *rport_ptr)
 	mutex_unlock(&rport_ptr->rport_lock_lhb2);
 }
 
+/**
+ * ipc_router_set_conn() - Set the connection by initializing dest address
+ * @port_ptr: Local port in which the connection has to be set.
+ * @addr: Destination address of the connection.
+ *
+ * @return: 0 on success, standard Linux error codes on failure.
+ */
 int ipc_router_set_conn(struct msm_ipc_port *port_ptr,
 			struct msm_ipc_addr *addr)
 {
@@ -2279,7 +2650,7 @@ static int process_hello_msg(struct msm_ipc_router_xprt_info *xprt_info,
 	}
 	kref_put(&rt_entry->ref, ipc_router_release_rtentry);
 
-	
+	/* Send a reply HELLO message */
 	memset(&ctl, 0, sizeof(ctl));
 	ctl.hello.cmd = IPC_ROUTER_CTRL_CMD_HELLO;
 	rc = ipc_router_send_ctl_msg(xprt_info, &ctl,
@@ -2291,6 +2662,9 @@ static int process_hello_msg(struct msm_ipc_router_xprt_info *xprt_info,
 	}
 	xprt_info->initialized = 1;
 
+	/* Send list of servers from the local node and from nodes
+	 * outside the mesh network in which this XPRT is part of.
+	 */
 	down_read(&server_list_lock_lha2);
 	down_read(&routing_table_lock_lha3);
 	for (i = 0; i < RT_HASH_SIZE; i++) {
@@ -2359,6 +2733,9 @@ static int process_new_server_msg(struct msm_ipc_router_xprt_info *xprt_info,
 	}
 	kref_put(&rt_entry->ref, ipc_router_release_rtentry);
 
+	/* If the service already exists in the table, create_server returns
+	 * a reference to it.
+	 */
 	rport_ptr = ipc_router_create_rport(msg->srv.node_id,
 				msg->srv.port_id, xprt_info);
 	if (!rport_ptr)
@@ -2382,6 +2759,10 @@ static int process_new_server_msg(struct msm_ipc_router_xprt_info *xprt_info,
 	kref_put(&rport_ptr->ref, ipc_router_release_rport);
 	kref_put(&server->ref, ipc_router_release_server);
 
+	/* Relay the new server message to other subsystems that do not belong
+	 * to the cluster from which this message is received. Notify the
+	 * local clients waiting for this service.
+	 */
 	relay_ctl_msg(xprt_info, msg);
 	post_control_ports(pkt);
 	return 0;
@@ -2409,6 +2790,11 @@ static int process_rmv_server_msg(struct msm_ipc_router_xprt_info *xprt_info,
 		kref_put(&server->ref, ipc_router_release_server);
 		ipc_router_destroy_server(server, msg->srv.node_id,
 					  msg->srv.port_id);
+		/*
+		 * Relay the new server message to other subsystems that do not
+		 * belong to the cluster from which this message is received.
+		 * Notify the local clients communicating with the service.
+		 */
 		relay_ctl_msg(xprt_info, msg);
 		post_control_ports(pkt);
 	}
@@ -2903,7 +3289,7 @@ int msm_ipc_router_send_to(struct msm_ipc_port *src,
 		return -EINVAL;
 	}
 
-	
+	/* Resolve Address*/
 	if (dest->addrtype == MSM_IPC_ADDR_ID) {
 		dst_node_id = dest->addr.port_addr.node_id;
 		dst_port_id = dest->addr.port_addr.port_id;
@@ -2996,6 +3382,18 @@ int msm_ipc_router_send_msg(struct msm_ipc_port *src,
 	return 0;
 }
 
+/**
+ * msm_ipc_router_send_resume_tx() - Send Resume_Tx message
+ * @data: Pointer to received data packet that has confirm_rx bit set
+ *
+ * @return: On success, number of bytes transferred is returned, else
+ *	    standard linux error code is returned.
+ *
+ * This function sends the Resume_Tx event to the remote node that
+ * sent the data with confirm_rx field set. In case of a multi-hop
+ * scenario also, this function makes sure that the destination node_id
+ * to which the resume_tx event should reach is right.
+ */
 static int msm_ipc_router_send_resume_tx(void *data)
 {
 	union rr_control_msg msg;
@@ -3061,6 +3459,18 @@ int msm_ipc_router_read(struct msm_ipc_port *port_ptr,
 	return pkt->length;
 }
 
+/**
+ * msm_ipc_router_rx_data_wait() - Wait for new message destined to a local port.
+ * @port_ptr: Pointer to the local port
+ * @timeout: < 0 timeout indicates infinite wait till a message arrives.
+ *	     > 0 timeout indicates the wait time.
+ *	     0 indicates that we do not wait.
+ * @return: 0 if there are pending messages to read,
+ *	    standard Linux error code otherwise.
+ *
+ * Checks for the availability of messages that are destined to a local port.
+ * If no messages are present then waits as per @timeout.
+ */
 int msm_ipc_router_rx_data_wait(struct msm_ipc_port *port_ptr, long timeout)
 {
 	int ret = 0;
@@ -3091,6 +3501,29 @@ int msm_ipc_router_rx_data_wait(struct msm_ipc_port *port_ptr, long timeout)
 	return ret;
 }
 
+/**
+ * msm_ipc_router_recv_from() - Recieve messages destined to a local port.
+ * @port_ptr: Pointer to the local port
+ * @pkt : Pointer to the router-to-router packet
+ * @src: Pointer to local port address
+ * @timeout: < 0 timeout indicates infinite wait till a message arrives.
+ *	     > 0 timeout indicates the wait time.
+ *	     0 indicates that we do not wait.
+ * @return: = Number of bytes read(On successful read operation).
+ *	    = -ENOMSG (If there are no pending messages and timeout is 0).
+ *	    = -EINVAL (If either of the arguments, port_ptr or data is invalid)
+ *	    = -EFAULT (If there are no pending messages when timeout is > 0
+ *	      and the wait_event_interruptible_timeout has returned value > 0)
+ *	    = -ERESTARTSYS (If there are no pending messages when timeout
+ *	      is < 0 and wait_event_interruptible was interrupted by a signal)
+ *
+ * This function reads the messages that are destined for a local port. It
+ * is used by modules that exist with-in the kernel and use IPC Router for
+ * transport. The function checks if there are any messages that are already
+ * received. If yes, it reads them, else it waits as per the timeout value.
+ * On a successful read, the return value of the function indicates the number
+ * of bytes that are read.
+ */
 int msm_ipc_router_recv_from(struct msm_ipc_port *port_ptr,
 			     struct rr_packet **pkt,
 			     struct msm_ipc_addr *src,
@@ -3160,6 +3593,17 @@ int msm_ipc_router_read_msg(struct msm_ipc_port *port_ptr,
 	return 0;
 }
 
+/**
+ * msm_ipc_router_create_port() - Create a IPC Router port/endpoint
+ * @notify: Callback function to notify any event on the port.
+ *   @event: Event ID to be handled.
+ *   @oob_data: Any out-of-band data associated with the event.
+ *   @oob_data_len: Size of the out-of-band data, if valid.
+ *   @priv: Private data registered during the port creation.
+ * @priv: Private info to be passed while the notification is generated.
+ *
+ * @return: Pointer to the port on success, NULL on error.
+ */
 struct msm_ipc_port *msm_ipc_router_create_port(
 	void (*notify)(unsigned event, void *oob_data,
 		       size_t oob_data_len, void *priv),
@@ -3216,6 +3660,9 @@ int msm_ipc_router_close_port(struct msm_ipc_port *port_ptr)
 			broadcast_ctl_msg(&msg);
 		}
 
+		/* Server port could have been a client port earlier.
+		 * Send REMOVE_CLIENT message in either case.
+		 */
 		msm_ipc_router_send_remove_client(&port_ptr->mode_info,
 			port_ptr->this_port.node_id,
 			port_ptr->this_port.port_id);
@@ -3276,7 +3723,7 @@ int msm_ipc_router_get_curr_pkt_size(struct msm_ipc_port *port_ptr)
 
 int msm_ipc_router_bind_control_port(struct msm_ipc_port *port_ptr)
 {
-	if (!port_ptr)
+	if (unlikely(!port_ptr || port_ptr->type != CLIENT_PORT))
 		return -EINVAL;
 
 	down_write(&local_ports_lock_lhc2);
@@ -3297,7 +3744,7 @@ int msm_ipc_router_lookup_server_name(struct msm_ipc_port_name *srv_name,
 {
 	struct msm_ipc_server *server;
 	struct msm_ipc_server_port *server_port;
-	int key, i = 0; 
+	int key, i = 0; /*num_entries_found*/
 
 	if (!srv_name) {
 		IPC_RTR_ERR("%s: Invalid srv_name\n", __func__);
@@ -3500,7 +3947,7 @@ static int get_proc_pid_cmdline(struct task_struct *task, char * buffer, int buf
 	if (!mm)
 		goto out;
 	if (!mm->arg_end)
-		goto out_mm;	
+		goto out_mm;	/* Shh! No looking before we're done */
 
 	len = mm->arg_end - mm->arg_start;
 
@@ -3510,7 +3957,7 @@ static int get_proc_pid_cmdline(struct task_struct *task, char * buffer, int buf
 	res = access_process_vm(task, mm->arg_start, buffer, len, 0);
 
 	// If the nul at the end of args has been overwritten, then
-	
+	// assume application is using setproctitle(3).
 	if (res > 0 && buffer[res-1] != '\0' && len < buff_len) {
 		len = strnlen(buffer, res);
 		if (len < res) {
@@ -3572,7 +4019,7 @@ void print_ipc_router_local_ports(void)
 			if ( xprt_info )
 				xprt = xprt_info->xprt;
 
-			
+			//get task
 			task = get_task_by_pid(port_ptr->pid, port_ptr->tgid);
 			if ( task != NULL ) {
 				get_task_wchan(task, symname);
@@ -3659,7 +4106,7 @@ static void dump_local_ports_extend(struct seq_file *s)
 			if ( xprt_info )
 				xprt = xprt_info->xprt;
 
-			
+			//get task
 			task = get_task_by_pid(port_ptr->pid, port_ptr->tgid);
 			if ( task != NULL ) {
 				get_task_wchan(task, symname);
@@ -3688,7 +4135,7 @@ static void dump_local_ports_extend(struct seq_file *s)
 	up_read(&local_ports_lock_lhc2);
 print_ipc_router_modem_log();
 }
-#endif
+#endif//CONFIG_HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
 
 static void dump_local_ports(struct seq_file *s)
 {
@@ -3759,6 +4206,16 @@ static void debugfs_init(void)
 static void debugfs_init(void) {}
 #endif
 
+/**
+ * ipc_router_create_log_ctx() - Create and add the log context based on transport
+ * @name:	subsystem name
+ *
+ * Return:	a reference to the log context created
+ *
+ * This function creates ipc log context based on transport and adds it to a
+ * global list. This log context can be reused from the list in case of a
+ * subsystem restart.
+ */
 static void *ipc_router_create_log_ctx(char *name)
 {
 	struct ipc_rtr_log_ctx *sub_log_ctx;
@@ -3789,6 +4246,12 @@ static void ipc_router_log_ctx_init(void)
 	mutex_unlock(&log_ctx_list_lock_lha0);
 }
 
+/**
+ * ipc_router_get_log_ctx() - Retrieves the ipc log context based on subsystem name.
+ * @sub_name:	subsystem name
+ *
+ * Return:	a reference to the log context
+ */
 static void *ipc_router_get_log_ctx(char *sub_name)
 {
 	void *log_ctx = NULL;

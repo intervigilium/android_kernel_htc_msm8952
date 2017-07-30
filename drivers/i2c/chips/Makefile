@@ -14,9 +14,9 @@
 obj-$(CONFIG_SENSORS_NFC_PN548) += pn548.o
 obj-$(CONFIG_SENSORS_NFC_PN548) += pn548_htc.o
 
-ifeq ($(findstring HIA_AERO,$(PRIVATE_RCMS_NAME)),HIA_AERO)
+#ifeq ($(findstring HIA_AERO,$(PRIVATE_RCMS_NAME)),HIA_AERO)
 EXTRA_CFLAGS += -DHIAE_NFC_POWER_CONTROL
-endif
+#endif
 #NFC --
 
 # htc audio ++

@@ -40,6 +40,7 @@
 #include <trace/events/trace_rpm_smd.h>
 
 #include "smd_private.h"
+/* Debug Definitions */
 enum {
 	MSM_RPM_LOG_REQUEST_PRETTY	= BIT(0),
 	MSM_RPM_LOG_REQUEST_RAW		= BIT(1),
@@ -95,9 +96,10 @@ enum {
 };
 
 static const uint32_t msm_rpm_request_service[MSM_RPM_MSG_TYPE_NR] = {
-	0x716572, 
+	0x716572, /* 'req\0' */
 };
 
+/*the order of fields matter and reflect the order expected by the RPM*/
 struct rpm_request_header {
 	uint32_t service_type;
 	uint32_t request_len;
@@ -118,7 +120,7 @@ struct kvp {
 
 struct msm_rpm_kvp_data {
 	uint32_t key;
-	uint32_t nbytes; 
+	uint32_t nbytes; /* number of bytes */
 	uint8_t *value;
 	bool valid;
 };
@@ -322,6 +324,9 @@ struct msm_rpm_request {
 	uint32_t numbytes;
 };
 
+/*
+ * Data related to message acknowledgement
+ */
 
 LIST_HEAD(msm_rpm_wait_list);
 
@@ -414,7 +419,7 @@ int msm_rpm_smd_buffer_request(struct msm_rpm_request *cdata,
 			pr_err("%s(): Error updating sleep request\n",
 					__func__);
 	} else {
-		
+		/* handle unsent requests */
 		tr_update(slp, buf);
 	}
 	trace_rpm_smd_sleep_set(cdata->msg_hdr.msg_id,
@@ -502,6 +507,13 @@ static int msm_rpm_flush_requests(bool print)
 		s->valid = false;
 		count++;
 
+		/*
+		 * RPM acks need to be handled here if we have sent 24
+		 * messages such that we do not overrun SMD buffer. Since
+		 * we expect only sleep sets at this point (RPM PC would be
+		 * disallowed if we had pending active requests), we need not
+		 * process these sleep set acks.
+		 */
 		if (count >= MAX_WAIT_ON_ACK) {
 			int len;
 			int timeout = 10;
@@ -509,9 +521,21 @@ static int msm_rpm_flush_requests(bool print)
 			while (timeout) {
 				if (smd_is_pkt_avail(msm_rpm_data.ch_info))
 					break;
+				/*
+				 * Sleep for 50us at a time before checking
+				 * for packet availability. The 50us is based
+				 * on the the time rpm could take to process
+				 * and send an ack for the sleep set request.
+				 */
 				udelay(50);
 				timeout--;
 			}
+			/*
+			 * On timeout return an error and exit the spinlock
+			 * control on this cpu. This will allow any other
+			 * core that has wokenup and trying to acquire the
+			 * spinlock from being locked out.
+			 */
 			if (!timeout) {
 				pr_err("%s: Timed out waiting for RPM ACK\n",
 					__func__);
@@ -590,6 +614,10 @@ static int msm_rpm_add_kvp_data_common(struct msm_rpm_request *handle,
 			return -ENOMEM;
 		}
 	} else {
+		/* We enter the else case, if a key already exists but the
+		 * data doesn't match. In which case, we should zero the data
+		 * out.
+		 */
 		memset(handle->kvp[i].value, 0, data_size);
 	}
 
@@ -706,6 +734,7 @@ int msm_rpm_add_kvp_data_noirq(struct msm_rpm_request *handle,
 }
 EXPORT_SYMBOL(msm_rpm_add_kvp_data_noirq);
 
+/* Runs in interrupt context */
 static void msm_rpm_notify(void *data, unsigned event)
 {
 	struct msm_rpm_driver_data *pdata = (struct msm_rpm_driver_data *)data;
@@ -766,6 +795,12 @@ static uint32_t msm_rpm_get_next_msg_id(void)
 {
 	uint32_t id;
 
+	/*
+	 * A message id of 0 is used by the driver to indicate a error
+	 * condition. The RPM driver uses a id of 1 to indicate unsent data
+	 * when the data sent over hasn't been modified. This isn't a error
+	 * scenario and wait for ack returns a success when the message id is 1.
+	 */
 
 	do {
 		id = atomic_inc_return(&msm_rpm_msg_id);
@@ -822,6 +857,10 @@ static void msm_rpm_process_ack(uint32_t msg_id, int errno)
 		}
 		elem = NULL;
 	}
+	/* Special case where the sleep driver doesn't
+	 * wait for ACKs. This would decrease the latency involved with
+	 * entering RPM assisted power collapse.
+	 */
 	if (!elem)
 		trace_rpm_smd_ack_recvd(0, msg_id, 0xDEADBEEF);
 
@@ -921,7 +960,7 @@ static void msm_rpm_log_request(struct msm_rpm_request *cdata)
 
 	if ((msm_rpm_debug_mask & MSM_RPM_LOG_REQUEST_PRETTY)
 	    && (msm_rpm_debug_mask & MSM_RPM_LOG_REQUEST_RAW)) {
-		
+		/* Both pretty and raw formatting */
 		memcpy(name, &cdata->msg_hdr.resource_type, sizeof(uint32_t));
 		pos += scnprintf(buf + pos, buflen - pos,
 			", rsc_type=0x%08X (%s), rsc_id=%u; ",
@@ -965,7 +1004,7 @@ static void msm_rpm_log_request(struct msm_rpm_request *cdata)
 			prev_valid++;
 		}
 	} else if (msm_rpm_debug_mask & MSM_RPM_LOG_REQUEST_PRETTY) {
-		
+		/* Pretty formatting only */
 		memcpy(name, &cdata->msg_hdr.resource_type, sizeof(uint32_t));
 		pos += scnprintf(buf + pos, buflen - pos, " %s %u; ", name,
 				cdata->msg_hdr.resource_id);
@@ -995,7 +1034,7 @@ static void msm_rpm_log_request(struct msm_rpm_request *cdata)
 			prev_valid++;
 		}
 	} else {
-		
+		/* Raw formatting only */
 		pos += scnprintf(buf + pos, buflen - pos,
 			", rsc_type=0x%08X, rsc_id=%u; ",
 			cdata->msg_hdr.resource_type,
@@ -1081,7 +1120,7 @@ static int msm_rpm_send_data(struct msm_rpm_request *cdata,
 	cdata->req_hdr.request_len = cdata->msg_hdr.data_len + msg_hdr_sz;
 	msg_size = cdata->req_hdr.request_len + req_hdr_sz;
 
-	
+	/* populate data_len */
 	if (msg_size > cdata->numbytes) {
 		kfree(cdata->buf);
 		cdata->numbytes = msg_size;
@@ -1098,7 +1137,7 @@ static int msm_rpm_send_data(struct msm_rpm_request *cdata,
 	tmpbuff += req_hdr_sz + msg_hdr_sz;
 
 	for (i = 0; (i < cdata->write_idx); i++) {
-		
+		/* Sanity check */
 		BUG_ON((tmpbuff - cdata->buf) > cdata->numbytes);
 
 		if (!cdata->kvp[i].valid)
@@ -1240,16 +1279,16 @@ int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
     do {
         remain = wait_for_completion_timeout(&elem->ack, msecs_to_jiffies(SMD_CHANNEL_NOTIF_TIMEOUT));
 
-        
+        /* For timeout case, try to recover it or print warning and dump channel data, then let it go with TIMEOUT error. */
         if (0 == remain) {
 
-            
+            /* Even polling does not work, leave debug messages. */
             if (retry == 0) {
                 unsigned long flags;
 
                 WARN(1, "max %u msecs timeout for waiting msg rpm ack of msg %u.\n",
                         SMD_CHANNEL_NOTIF_TIMEOUT * MAX_MSM_RPM_WAIT_RETRY, elem->msg_id);
-                
+                /* Dump SMD channel data to check details */
                 msm_rpm_dump_channel_data(msm_rpm_data.ch_info);
 
                 local_irq_save(flags);
@@ -1257,10 +1296,10 @@ int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
                 local_irq_restore(flags);
 
                 elem->errno = -ETIMEDOUT;
-				
-                
+				/* For HTC Debug purpose */
+                // panic("Cannot process RPM acknowledge message normally.\n");
             }
-            
+            /* Poll smd channel actively. */
             else {
                 int smd_irq;
                 struct irq_chip *smd_irq_chip;
@@ -1293,7 +1332,7 @@ int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
                     }
                 }
 
-                
+                /* Dump SMD channel data to check details */
                 msm_rpm_dump_channel_data(msm_rpm_data.ch_info);
 
                 if (smd_is_pkt_avail(msm_rpm_data.ch_info))
@@ -1362,6 +1401,9 @@ int msm_rpm_wait_for_ack_noirq(uint32_t msg_id)
 	elem = msm_rpm_get_entry_from_msg_id(msg_id);
 
 	if (!elem)
+		/* Should this be a bug
+		 * Is it ok for another thread to read the msg?
+		 */
 		goto wait_ack_cleanup;
 
 	if (elem->errno != INIT_ERROR) {
@@ -1449,6 +1491,10 @@ bail:
 }
 EXPORT_SYMBOL(msm_rpm_send_message_noirq);
 
+/**
+ * During power collapse, the rpm driver disables the SMD interrupts to make
+ * sure that the interrupt doesn't wakes us from sleep.
+ */
 int msm_rpm_enter_sleep(bool print, const struct cpumask *cpumask)
 {
 	int ret = 0;
@@ -1467,6 +1513,10 @@ int msm_rpm_enter_sleep(bool print, const struct cpumask *cpumask)
 }
 EXPORT_SYMBOL(msm_rpm_enter_sleep);
 
+/**
+ * When the system resumes from power collapse, the SMD interrupt disabled by
+ * enter function has to reenabled to continue processing SMD message.
+ */
 void msm_rpm_exit_sleep(void)
 {
 	if (standalone)

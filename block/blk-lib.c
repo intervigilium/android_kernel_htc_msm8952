@@ -1,3 +1,6 @@
+/*
+ * Functions related to generic helpers functions
+ */
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/bio.h>
@@ -24,6 +27,17 @@ static void bio_batch_end_io(struct bio *bio, int err)
 	bio_put(bio);
 }
 
+/**
+ * blkdev_issue_discard - queue a discard
+ * @bdev:	blockdev to issue discard for
+ * @sector:	start sector
+ * @nr_sects:	number of sectors to discard
+ * @gfp_mask:	memory allocation flags (for bio_alloc)
+ * @flags:	BLKDEV_IFL_* flags to control behaviour
+ *
+ * Description:
+ *    Issue a discard request for the sectors in question.
+ */
 int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 		sector_t nr_sects, gfp_t gfp_mask, unsigned long flags)
 {
@@ -43,16 +57,20 @@ int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 	if (!blk_queue_discard(q))
 		return -EOPNOTSUPP;
 
-	
+	/* Zero-sector (unknown) and one-sector granularities are the same.  */
 	granularity = max(q->limits.discard_granularity >> 9, 1U);
 	alignment = bdev_discard_alignment(bdev) >> 9;
 	alignment = sector_div(alignment, granularity);
 
+	/*
+	 * Ensure that max_discard_sectors is of the proper
+	 * granularity, so that requests stay aligned after a split.
+	 */
 	max_discard_sectors = min(q->limits.max_discard_sectors, UINT_MAX >> 9);
 	sector_div(max_discard_sectors, granularity);
 	max_discard_sectors *= granularity;
 	if (unlikely(!max_discard_sectors)) {
-		
+		/* Avoid infinite loop below. Being cautious never hurts. */
 		return -EOPNOTSUPP;
 	}
 
@@ -79,6 +97,10 @@ int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 
 		req_sects = min_t(sector_t, nr_sects, max_discard_sectors);
 
+		/*
+		 * If splitting a request, and the next starting sector would be
+		 * misaligned, stop the discard at the previous aligned sector.
+		 */
 		end_sect = sector + req_sects;
 		tmp = end_sect;
 		if (req_sects < nr_sects &&
@@ -101,11 +123,17 @@ int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 		atomic_inc(&bb.done);
 		submit_bio(type, bio);
 
+		/*
+		 * We can loop for a long time in here, if someone does
+		 * full device discards (like mkfs). Be nice and allow
+		 * us to schedule out to avoid softlocking if preempt
+		 * is disabled.
+		 */
 		cond_resched();
 	}
 	blk_finish_plug(&plug);
 
-	
+	/* Wait for bios in-flight */
 	if (!atomic_dec_and_test(&bb.done)) {
 		if (atomic_read(&vfs_emergency_remount))
 			wait_for_completion_io_timeout(&wait, msecs_to_jiffies(5000));
@@ -120,6 +148,17 @@ int blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 }
 EXPORT_SYMBOL(blkdev_issue_discard);
 
+/**
+ * blkdev_issue_write_same - queue a write same operation
+ * @bdev:	target blockdev
+ * @sector:	start sector
+ * @nr_sects:	number of sectors to write
+ * @gfp_mask:	memory allocation flags (for bio_alloc)
+ * @page:	page containing data to write
+ *
+ * Description:
+ *    Issue a write same request for the sectors in question.
+ */
 int blkdev_issue_write_same(struct block_device *bdev, sector_t sector,
 			    sector_t nr_sects, gfp_t gfp_mask,
 			    struct page *page)
@@ -172,7 +211,7 @@ int blkdev_issue_write_same(struct block_device *bdev, sector_t sector,
 		submit_bio(REQ_WRITE | REQ_WRITE_SAME, bio);
 	}
 
-	
+	/* Wait for bios in-flight */
 	if (!atomic_dec_and_test(&bb.done))
 		wait_for_completion_io(&wait);
 
@@ -183,6 +222,16 @@ int blkdev_issue_write_same(struct block_device *bdev, sector_t sector,
 }
 EXPORT_SYMBOL(blkdev_issue_write_same);
 
+/**
+ * blkdev_issue_zeroout - generate number of zero filed write bios
+ * @bdev:	blockdev to issue
+ * @sector:	start sector
+ * @nr_sects:	number of sectors to write
+ * @gfp_mask:	memory allocation flags (for bio_alloc)
+ *
+ * Description:
+ *  Generate and issue number of bios with zerofiled pages.
+ */
 
 int __blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 			sector_t nr_sects, gfp_t gfp_mask)
@@ -224,17 +273,27 @@ int __blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 		submit_bio(WRITE, bio);
 	}
 
-	
+	/* Wait for bios in-flight */
 	if (!atomic_dec_and_test(&bb.done))
 		wait_for_completion_io(&wait);
 
 	if (!test_bit(BIO_UPTODATE, &bb.flags))
-		
+		/* One of bios in the batch was completed with error.*/
 		ret = -EIO;
 
 	return ret;
 }
 
+/**
+ * blkdev_issue_zeroout - zero-fill a block range
+ * @bdev:	blockdev to write
+ * @sector:	start sector
+ * @nr_sects:	number of sectors to write
+ * @gfp_mask:	memory allocation flags (for bio_alloc)
+ *
+ * Description:
+ *  Generate and issue number of bios with zerofiled pages.
+ */
 
 int blkdev_issue_zeroout(struct block_device *bdev, sector_t sector,
 			 sector_t nr_sects, gfp_t gfp_mask)
