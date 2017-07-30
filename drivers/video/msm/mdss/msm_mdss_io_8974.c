@@ -803,25 +803,23 @@ int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 	h_period = mdss_panel_get_htotal(panel_info, true);
 	v_period = mdss_panel_get_vtotal(panel_info);
 
+	if (lanes == 0) {
+		pr_warn("%s: forcing mdss_dsi lanes to 1\n", __func__);
+		lanes = 1;
+	}
+
 	if (ctrl_pdata->refresh_clk_rate || (frame_rate !=
 	     panel_info->mipi.frame_rate) ||
 	    (!panel_info->clk_rate)) {
-		if (lanes > 0) {
-			panel_info->clk_rate =
-			((h_period * v_period *
-			  frame_rate * bpp * 8)
-			   / lanes);
-		} else {
-			pr_err("%s: forcing mdss_dsi lanes to 1\n", __func__);
-			panel_info->clk_rate =
-				(h_period * v_period * frame_rate * bpp * 8);
-		}
+		panel_info->clk_rate = (u32)div_u64(((u64)(h_period * v_period)
+				* frame_rate * bpp * 8), lanes);
 	}
 
 	if (panel_info->clk_rate == 0)
 		panel_info->clk_rate = 454000000;
 
-	dsi_pclk_rate = (((panel_info->clk_rate) * lanes) / (8 * bpp));
+	dsi_pclk_rate = (u32)div_u64(((u64)(panel_info->clk_rate) * lanes),
+			(8 * bpp));
 
 	if ((dsi_pclk_rate < 3300000) || (dsi_pclk_rate > 250000000))
 		dsi_pclk_rate = 35000000;
@@ -1374,10 +1372,10 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 			 */
 			pr_debug("%s: Enable DSI core power\n", __func__);
 			for (i = DSI_CORE_PM; i < DSI_MAX_PM; i++) {
-				if (((DSI_CORE_PM != i) &&
-					(pdata->panel_info.blank_state !=
-					MDSS_PANEL_BLANK_BLANK) &&
-					!pdata->panel_info.cont_splash_enabled))
+				if ((DSI_CORE_PM != i) &&
+					(ctrl->ctrl_state &
+					CTRL_STATE_DSI_ACTIVE) &&
+					!pdata->panel_info.cont_splash_enabled)
 					continue;
 				rc = msm_dss_enable_vreg(
 					sdata->power_data[i].vreg_config,
@@ -1443,7 +1441,7 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 		 * Enable DSI clamps only if entering idle power collapse or
 		 * when ULPS during suspend is enabled.
 		 */
-		if ((pdata->panel_info.blank_state != MDSS_PANEL_BLANK_BLANK) ||
+		if ((ctrl->ctrl_state & CTRL_STATE_DSI_ACTIVE) ||
 			pdata->panel_info.ulps_suspend_enabled) {
 			rc = mdss_dsi_clamp_ctrl(ctrl, 1);
 			if (rc)
@@ -1463,9 +1461,9 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 		} else {
 			pr_debug("%s: Disable DSI core power\n", __func__);
 			for (i = DSI_MAX_PM - 1; i >= DSI_CORE_PM; i--) {
-				if (((DSI_CORE_PM != i) &&
-					(pdata->panel_info.blank_state !=
-						MDSS_PANEL_BLANK_BLANK)))
+				if ((DSI_CORE_PM != i) &&
+					(ctrl->ctrl_state &
+					CTRL_STATE_DSI_ACTIVE))
 					continue;
 				rc = msm_dss_enable_vreg(
 					sdata->power_data[i].vreg_config,
@@ -1487,8 +1485,8 @@ error_ulps:
 	mdss_dsi_core_clk_stop(ctrl);
 error_core_clk_start:
 	for (i = DSI_MAX_PM - 1; i >= DSI_CORE_PM; i--) {
-		if (((DSI_CORE_PM != i) && (pdata->panel_info.blank_state !=
-			MDSS_PANEL_BLANK_BLANK)))
+		if ((DSI_CORE_PM != i) && (ctrl->ctrl_state &
+			CTRL_STATE_DSI_ACTIVE))
 			continue;
 		rc = msm_dss_enable_vreg(sdata->power_data[i].vreg_config,
 			sdata->power_data[i].num_vreg, 0);
@@ -1574,8 +1572,7 @@ static int mdss_dsi_clk_ctrl_sub(struct mdss_dsi_ctrl_pdata *ctrl,
 			 * to enable ULPS when turning off the clocks
 			 * while blanking the panel.
 			 */
-			if (pdata->panel_info.blank_state ==
-				MDSS_PANEL_BLANK_BLANK) {
+			if (!(ctrl->ctrl_state & CTRL_STATE_DSI_ACTIVE)) {
 				if (pdata->panel_info.ulps_suspend_enabled)
 					mdss_dsi_ulps_config(ctrl, 1);
 			} else if (mdss_dsi_ulps_feature_enabled(pdata)) {

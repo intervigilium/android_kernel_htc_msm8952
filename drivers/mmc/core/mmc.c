@@ -561,11 +561,17 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 			else if (card->ext_csd.rev > 6)
 				card->cid.fwrev =
 				ext_csd[EXT_CSD_VENDOR_SPECIFIC_FIELDS_258] - 0x30 ;
+		} else if (card->cid.manfid == CID_MANFID_MICRON) {
+			card->cid.fwrev = ext_csd[EXT_CSD_VENDOR_SPECIFIC_FIELDS_258];
 		}
 	}
 
 	if (card->ext_csd.rev >= 7) {
 		card->ext_csd.cmdq_support = ext_csd[EXT_CSD_CMDQ_SUPPORT];
+		card->ext_csd.fw_version = ext_csd[EXT_CSD_FW_VERSION];
+		pr_info("%s: eMMC FW version: 0x%02x\n",
+			mmc_hostname(card->host),
+			card->ext_csd.fw_version);
 		if (card->ext_csd.cmdq_support) {
 			card->ext_csd.cmdq_depth =
 				ext_csd[EXT_CSD_CMDQ_DEPTH] + 1;
@@ -1447,8 +1453,7 @@ reinit:
 				  EXT_CSD_PART_CONFIG_ACC_MASK;
 	}
 
-	if ((host->caps2 & MMC_CAP2_POWEROFF_NOTIFY) &&
-	    (card->ext_csd.rev >= 6)) {
+	if (card->ext_csd.rev >= 6) {
 		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				 EXT_CSD_POWER_OFF_NOTIFICATION,
 				 EXT_CSD_POWER_ON,
@@ -1677,9 +1682,11 @@ static void mmc_detect(struct mmc_host *host)
 	}
 }
 
-static int mmc_suspend(struct mmc_host *host)
+static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 {
 	int err = 0;
+	unsigned int notify_type = is_suspend ? EXT_CSD_POWER_OFF_SHORT :
+					EXT_CSD_POWER_OFF_LONG;
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
@@ -1689,11 +1696,14 @@ static int mmc_suspend(struct mmc_host *host)
 
 	mmc_disable_clk_scaling(host);
 
-	err = mmc_cache_ctrl(host, 0);
+	err = mmc_flush_cache(host->card);
 	if (err)
 		goto out;
 
-	if (mmc_card_can_sleep(host))
+	if (mmc_can_poweroff_notify(host->card) &&
+		((host->caps2 & MMC_CAP2_FULL_PWR_CYCLE) || !is_suspend))
+		err = mmc_poweroff_notify(host->card, notify_type);
+	else if (mmc_card_can_sleep(host))
 		err = mmc_card_sleep(host);
 	else if (!mmc_host_is_spi(host))
 		err = mmc_deselect_cards(host);
@@ -1702,6 +1712,11 @@ static int mmc_suspend(struct mmc_host *host)
 out:
 	mmc_release_host(host);
 	return err;
+}
+
+static int mmc_suspend(struct mmc_host *host)
+{
+	return _mmc_suspend(host, true);
 }
 
 static int mmc_resume(struct mmc_host *host)
@@ -1796,21 +1811,11 @@ static int mmc_awake(struct mmc_host *host)
 
 	if (card && card->ext_csd.rev >= 3) {
 		err = mmc_card_sleepawake(host, 0);
-		if (err < 0) {
+		if (err < 0)
 			pr_debug("%s: Error %d while awaking sleeping card",
 				 mmc_hostname(host), err);
-			goto out;
-		}
-	} else
-		goto out;
-        
-        if (!mmc_select_hs(card, (u8 *)&card->ext_csd))
-                goto out;
+	}
 
-        mmc_set_clock(card->host, card->csd.max_dtr);
-        err = mmc_select_bus_width(card, 0, (u8 *)&card->ext_csd);
-
-out:
 	return err;
 }
 
@@ -1847,13 +1852,6 @@ static void mmc_attach_bus_ops(struct mmc_host *host)
 	else
 		bus_ops = &mmc_ops;
 	mmc_attach_bus(host, bus_ops);
-}
-
-int mmc_reset_bus_speed(struct mmc_host *host)
-{
-       struct mmc_card *card = host->card;
-
-       return mmc_select_bus_speed(card, (u8 *)&card->ext_csd);
 }
 
 int mmc_attach_mmc(struct mmc_host *host)
@@ -1905,8 +1903,6 @@ int mmc_attach_mmc(struct mmc_host *host)
 	mmc_claim_host(host);
 	if (err)
 		goto remove_card;
-
-	mmc_init_clk_delay(host);
 
 	mmc_init_clk_scaling(host);
 

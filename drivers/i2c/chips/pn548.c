@@ -31,8 +31,6 @@ static   unsigned int watchdogEn;
 static   unsigned int watchdog_timeout;
 #define WATCHDOG_FTM_TIMEOUT_SEC 20
 
-#define HIAE_NFC_POWER_CONTROL
-
 #ifdef HIAE_NFC_POWER_CONTROL
 struct regulator *nfc_twl80125_ldo5;
 static   unsigned int NFC_I2C_SCL;
@@ -123,6 +121,14 @@ static int pn544_RxData(uint8_t *rxData, int length)
 		D("%s: retry %d ........\n", __func__, loop_i);
 		if (i2c_transfer(pni->client->adapter, msg, 1) > 0)
 			break;
+#ifdef HIAE_NFC_POWER_CONTROL
+	if (loop_i >= 3) {
+		E("%s : twl80125_ldo5 regulator_is_enabled = %d\n", __func__, regulator_is_enabled(nfc_twl80125_ldo5));
+		E("%s : twl80125_ldo5 regulator_get_voltage = %d\n", __func__, regulator_get_voltage(nfc_twl80125_ldo5));
+		E("%s : irq_gpio = %d, ven_gpio = %d, firm_gpio = %d\n", __func__, \
+                gpio_get_value(pni->irq_gpio), gpio_get_value(pni->ven_gpio), gpio_get_value(pni->firm_gpio));
+	}
+#endif
 
 		mdelay(10);
 	}
@@ -130,12 +136,6 @@ static int pn544_RxData(uint8_t *rxData, int length)
 	if (loop_i >= I2C_RETRY_COUNT) {
 		E("%s Error: retry over %d\n", __func__,
 			I2C_RETRY_COUNT);
-#ifdef HIAE_NFC_POWER_CONTROL
-		E("%s : twl80125_ldo5 regulator_is_enabled = %d\n", __func__, regulator_is_enabled(nfc_twl80125_ldo5));
-		E("%s : twl80125_ldo5 regulator_get_voltage = %d\n", __func__, regulator_get_voltage(nfc_twl80125_ldo5));
-                E("%s : irq_gpio = %d, ven_gpio = %d, firm_gpio = %d\n", __func__, \
-                gpio_get_value(pni->irq_gpio), gpio_get_value(pni->ven_gpio), gpio_get_value(pni->firm_gpio));
-#endif
 		return -EIO;
 	}
 
@@ -163,6 +163,14 @@ static int pn544_TxData(uint8_t *txData, int length)
 		D("%s: retry %d ........\n", __func__, loop_i);
 		if (i2c_transfer(pni->client->adapter, msg, 1) > 0)
 			break;
+#ifdef HIAE_NFC_POWER_CONTROL
+	if (loop_i >= 3) {
+		E("%s : twl80125_ldo5 regulator_is_enabled = %d\n", __func__, regulator_is_enabled(nfc_twl80125_ldo5));
+		E("%s : twl80125_ldo5 regulator_get_voltage = %d\n", __func__, regulator_get_voltage(nfc_twl80125_ldo5));
+		E("%s : irq_gpio = %d, ven_gpio = %d, firm_gpio = %d\n", __func__, \
+                gpio_get_value(pni->irq_gpio), gpio_get_value(pni->ven_gpio), gpio_get_value(pni->firm_gpio));
+	}
+#endif
 
 		msleep(10);
 	}
@@ -170,12 +178,6 @@ static int pn544_TxData(uint8_t *txData, int length)
 	if (loop_i >= I2C_RETRY_COUNT) {
 		E("%s:  Error: retry over %d\n",
 			__func__, I2C_RETRY_COUNT);
-#ifdef HIAE_NFC_POWER_CONTROL
-                E("%s : twl80125_ldo5 regulator_is_enabled = %d\n", __func__, regulator_is_enabled(nfc_twl80125_ldo5));
-                E("%s : twl80125_ldo5 regulator_get_voltage = %d\n", __func__, regulator_get_voltage(nfc_twl80125_ldo5));
-                E("%s : irq_gpio = %d, ven_gpio = %d, firm_gpio = %d\n", __func__, \
-                gpio_get_value(pni->irq_gpio), gpio_get_value(pni->ven_gpio), gpio_get_value(pni->firm_gpio));
-#endif
 		return -EIO;
 	}
 
@@ -1274,6 +1276,7 @@ static int pn544_parse_dt(struct device *dev, struct pn544_i2c_platform_data *pd
 	prop = of_find_property(dt, "nxp,isalive", NULL);
 	if (prop) {
 		of_property_read_u32(dt, "nxp,isalive", &is_alive);
+		is_alive = pn548_htc_check_rfskuid(is_alive);
 		printk(KERN_INFO "[NFC] %s:is_alive = %d", __func__, is_alive);
 	} else {
 		goto parse_error;
@@ -1295,7 +1298,7 @@ static int pn544_parse_dt(struct device *dev, struct pn544_i2c_platform_data *pd
 	if(pdata->firm_gpio < 0) {
 		goto parse_error;
 	}
-#ifdef HIAE_NFC_POWER_CONTROL
+#if defined(HIAE_NFC_POWER_CONTROL)
         NFC_I2C_SCL = of_get_named_gpio_flags(dt, "nfc_i2c_scl", 0, NULL);
         if(NFC_I2C_SCL < 0) {
                 goto parse_error;
@@ -1315,7 +1318,7 @@ parse_error:
 
 void pn548_power_off_sequence(void)
 {
-#ifdef HIAE_NFC_POWER_CONTROL
+#if defined(HIAE_NFC_POWER_CONTROL)
 	int ret;
 	if(is_alive) {
 	printk(KERN_INFO "[NFC] %s ++\n", __func__);
@@ -1401,6 +1404,7 @@ static int pn544_probe(struct i2c_client *client,
                 return -ENODEV;
         }
 #endif
+
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		E("%s : need I2C_FUNC_I2C\n", __func__);
 		return  -ENODEV;
@@ -1628,6 +1632,9 @@ err_exit:
 	return ret;
 }
 
+static void pn544_shutdown(struct i2c_client *client) {
+	pn548_power_off_sequence();
+}
 static int pn544_remove(struct i2c_client *client)
 {
 	struct pn544_dev *pn544_dev;
@@ -1694,6 +1701,7 @@ static struct i2c_driver pn544_driver = {
 	.id_table	= pn544_id,
 	.probe		= pn544_probe,
 	.remove		= pn544_remove,
+	.shutdown = pn544_shutdown,
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "pn544",

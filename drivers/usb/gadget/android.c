@@ -61,7 +61,9 @@ static int first_string_w_length = 0;
 #ifdef CONFIG_SND_PCM
 #include "f_audio_source.c"
 #endif
+#ifdef CONFIG_SND_RAWMIDI
 #include "f_midi.c"
+#endif
 #include "f_mass_storage.c"
 #define USB_ETH_RNDIS y
 #include "f_diag.c"
@@ -116,7 +118,7 @@ static const char longname[] = "Gadget Android";
 #define ANDROID_DEVICE_NODE_NAME_LENGTH 11
 #define MIDI_INPUT_PORTS    1
 #define MIDI_OUTPUT_PORTS   1
-#define MIDI_BUFFER_SIZE    256
+#define MIDI_BUFFER_SIZE    1024
 #define MIDI_QUEUE_LENGTH   32
 
 struct android_usb_function {
@@ -282,7 +284,7 @@ static const char *pm_qos_to_string(enum android_pm_qos_state state)
 	}
 }
 
-static void android_pm_qos_update_latency(struct android_dev *dev, u32 latency)
+static void android_pm_qos_update_latency(struct android_dev *dev, s32 latency)
 {
 	static int last_vote = -1;
 
@@ -3063,7 +3065,8 @@ static ssize_t audio_source_pcm_show(struct device *dev,
 	struct audio_source_config *config = f->config;
 
 	
-	return sprintf(buf, "%d %d\n", config->card, config->device);
+	return snprintf(buf, PAGE_SIZE,
+			"%d %d\n", config->card, config->device);
 }
 
 static DEVICE_ATTR(pcm, S_IRUGO, audio_source_pcm_show, NULL);
@@ -3461,6 +3464,7 @@ struct android_usb_function projector2_function = {
 };
 
 
+#ifdef CONFIG_SND_RAWMIDI
 static int midi_function_init(struct android_usb_function *f,
 					struct usb_composite_dev *cdev)
 {
@@ -3514,6 +3518,7 @@ static struct android_usb_function midi_function = {
 	.bind_config	= midi_function_bind_config,
 	.attributes	= midi_function_attributes,
 };
+#endif
 
 static struct android_usb_function *supported_functions[] = {
 	&ffs_function,
@@ -3547,7 +3552,9 @@ static struct android_usb_function *supported_functions[] = {
 #endif
 	&uasp_function,
 	&charger_function,
+#ifdef CONFIG_SND_RAWMIDI
 	&midi_function,
+#endif
 	NULL
 };
 
@@ -3850,7 +3857,6 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 		}
 		INIT_LIST_HEAD(&conf->enabled_functions);
 	}
-	USB_INFO("switch function to : %s\n", buff);
 
 	if (get_radio_flag() & 0x20000 || (get_debug_flag() & 0x100)) {
 		buff = change_charging_to_ums(buff);
@@ -3861,6 +3867,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 		buff = add_usb_radio_debug_function(buff);
 		size = strlen(buff);
 	}
+	USB_INFO("switch function to : %s\n", buff);
 
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
@@ -3965,7 +3972,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		return -EPERM;
 	}
 
-	USB_INFO("soft disconnect : %d\n", enabled);
+	USB_INFO("%s : %d\n",__func__ ,enabled);
 	if (enabled && !dev->enabled) {
 		cdev->desc.idVendor = device_desc.idVendor;
 		cdev->desc.idProduct = device_desc.idProduct;
@@ -3975,8 +3982,9 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		cdev->desc.bDeviceSubClass = device_desc.bDeviceSubClass;
 		cdev->desc.bDeviceProtocol = device_desc.bDeviceProtocol;
 
-		if (get_radio_flag() & 0x20000 || get_debug_flag() & 0x100)
+		if (get_radio_flag() & 0x20000 || get_debug_flag() & 0x100){
 			change_charging_pid_to_ums(cdev);
+		}
 
 		if (get_radio_flag() & 0x20000)
 			check_usb_vid_pid(cdev);
@@ -4716,6 +4724,11 @@ static int android_probe(struct platform_device *pdev)
 	
 	android_dev->curr_pm_qos_state = NO_USB_VOTE;
 	if (pdata && pdata->pm_qos_latency[0]) {
+#ifdef CONFIG_SMP
+		android_dev->pm_qos_req_dma.type = PM_QOS_REQ_AFFINE_IRQ;
+		android_dev->pm_qos_req_dma.irq =
+				android_dev->cdev->gadget->interrupt_num;
+#endif
 		pm_qos_add_request(&android_dev->pm_qos_req_dma,
 			PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
 		android_dev->down_pm_qos_sample_sec = DOWN_PM_QOS_SAMPLE_SEC;

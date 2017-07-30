@@ -71,5 +71,6 @@ obj-$(CONFIG_FPR_FPC)  += fpr_FingerprintCard/
 obj-$(CONFIG_FPR_FPC_MFG)  += fpr_FingerprintCard_MFG/
 obj-y				+= qcom/
 obj-y				+= headset/
-obj-$(CONFIG_USB_EXT_TYPE_C)	+= type-c-pericom.o
+obj-$(CONFIG_USB_EXT_TYPE_C_PERICOM)	+= type-c-pericom.o
+obj-$(CONFIG_USB_EXT_TYPE_C_TI)		+= type-c-ti.o
 obj-$(CONFIG_UID_CPUTIME) 	+= uid_cputime.o

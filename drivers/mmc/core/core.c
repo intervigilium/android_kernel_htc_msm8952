@@ -32,15 +32,20 @@
 #include <linux/jiffies.h>
 #include <linux/statfs.h>
 #include <linux/debugfs.h>
+#ifndef CONFIG_F2FS_FS
 #include <linux/f2fs_fs.h>
 
 #include "../../../fs/f2fs/f2fs.h"
 #include "../../../fs/f2fs/segment.h"
+#endif
+
 
 #include <trace/events/mmc.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmcio.h>
+#ifndef CONFIG_F2FS_FS
 #include <trace/events/f2fs.h>
+#endif
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
@@ -70,7 +75,6 @@ extern unsigned int get_tamper_sf(void);
 
 static struct workqueue_struct *workqueue;
 struct workqueue_struct *stats_workqueue = NULL;
-static struct workqueue_struct *delay_scaling_workqueue = NULL;
 static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 
 bool use_spi_crc = 1;
@@ -307,6 +311,26 @@ void mmc_stats(struct work_struct *work)
 		host->perf.wtime_drv_rand = ktime_set(0, 0);
 	}
 	
+
+	if (host->circbuf_enable) {
+		struct circ_buf *circ = &host->mmc_circbuf;
+
+		if ((circ->head + sizeof(rbytes) + sizeof(wbytes)
+					+ sizeof(rtime) + sizeof(wtime)) <= CIRC_BUFFER_SIZE) {
+			memcpy(circ->buf + circ->head, &rbytes, sizeof(rbytes));
+			circ->head = circ->head + sizeof(rbytes);
+			memcpy(circ->buf + circ->head, &rtime, sizeof(rtime));
+			circ->head = circ->head + sizeof(rtime);
+			memcpy(circ->buf + circ->head, &wbytes, sizeof(wbytes));
+			circ->head = circ->head + sizeof(wbytes);
+			memcpy(circ->buf + circ->head, &wtime, sizeof(wtime));
+			circ->head = (circ->head + sizeof(wtime)) & (CIRC_BUFFER_SIZE - 1);
+
+			if (circ->head == circ->tail)
+				circ->tail = (circ->tail + sizeof(rbytes) + sizeof(wbytes)
+						+ sizeof(rtime) + sizeof(wtime)) & (CIRC_BUFFER_SIZE - 1);
+		}
+	}
 
 	spin_unlock_irqrestore(&host->lock, flags);
 
@@ -2227,64 +2251,6 @@ static inline void mmc_bus_get(struct mmc_host *host)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
-static void mmc_clk_delay_work(struct work_struct *work)
-{
-	struct mmc_host *host = container_of(work, struct mmc_host,
-			clk_delay_scaling.work.work);
-	int err = 0;
-
-	if (!host->card || !host->bus_ops || !host->clk_delay_scaling.enable)
-		return;
-
-	mmc_rpm_hold(host, &host->card->dev);
-	if (!mmc_try_claim_host(host)) {
-		queue_delayed_work(delay_scaling_workqueue,
-				&host->clk_delay_scaling.work,
-				msecs_to_jiffies(200));
-		goto out;
-	}
-
-	mmc_host_clk_hold(host);
-	if (host->card && mmc_card_get_bkops_en_manual(host->card))
-		mmc_stop_bkops(host->card);
-	err = mmc_reset_bus_speed(host);
-	if (err) {
-		pr_err("%s: %s: mmc_reset_bus_speed() fails %d\n",
-				mmc_hostname(host), __func__, err);
-		queue_delayed_work(delay_scaling_workqueue,
-				&host->clk_delay_scaling.work,
-				msecs_to_jiffies(50));
-	}
-	mmc_host_clk_release(host);
-	mmc_release_host(host);
-out:
-	mmc_rpm_release(host, &host->card->dev);
-	return;
-}
-
-void mmc_init_clk_delay(struct mmc_host *host)
-{
-	if (!host->card || !mmc_is_mmc_host(host) || !delay_scaling_workqueue)
-		return;
-
-	INIT_DELAYED_WORK(&host->clk_delay_scaling.work, mmc_clk_delay_work);
-	host->clk_delay_scaling.initialized = true;
-	host->clk_delay_scaling.enable = true;
-
-	return;
-}
-
-void mmc_disable_clk_delay_scaling(struct mmc_host *host)
-{
-	if (!host->card || !host->clk_delay_scaling.initialized)
-		return;
-
-	cancel_delayed_work_sync(&host->clk_delay_scaling.work);
-	host->clk_delay_scaling.enable = false;
-}
-
-EXPORT_SYMBOL(mmc_disable_clk_delay_scaling);
-
 static inline void mmc_bus_put(struct mmc_host *host)
 {
 	unsigned long flags;
@@ -2299,7 +2265,6 @@ static inline void mmc_bus_put(struct mmc_host *host)
 int mmc_resume_bus(struct mmc_host *host)
 {
 	unsigned long flags;
-	int ret = 0;
 
 	if (!mmc_bus_needs_resume(host))
 		return -EINVAL;
@@ -2314,35 +2279,7 @@ int mmc_resume_bus(struct mmc_host *host)
 	if (host->bus_ops && !host->bus_dead) {
 		mmc_power_up(host);
 		BUG_ON(!host->bus_ops->resume);
-		if (mmc_card_can_sleep(host) && host->bus_ops->awake &&
-				mmc_is_mmc_host(host) &&
-				host->clk_delay_scaling.initialized) {
-			mmc_power_up(host);
-			mmc_select_voltage(host, host->ocr);
-			host->clk_delay_scaling.enable = true;
-			ret = host->bus_ops->awake(host);
-			if (ret) {
-				mmc_power_off(host);
-				msleep(100);
-				ret = mmc_resume_host(host);
-				if (ret < 0)
-					pr_err("%s: %s: awake failed and try "
-						"to resume host: failed: ret:"
-						" %d\n",
-						mmc_hostname(host), __func__,
-						ret);
-			} else {
-				queue_delayed_work(delay_scaling_workqueue,
-						&host->clk_delay_scaling.work,
-						msecs_to_jiffies(200));
-			}
-		} else {
-			host->bus_ops->resume(host);
-			if (ret < 0) {
-				pr_err("%s: %s: resume host: failed: ret: %d\n",
-					mmc_hostname(host), __func__, ret);
-			}
-		}
+		host->bus_ops->resume(host);
 	}
 
 	mmc_bus_put(host);
@@ -3627,10 +3564,14 @@ void mmc_rescan(struct work_struct *work)
 
 	mmc_bus_put(host);
 
-	if (host->ops->get_cd && host->ops->get_cd(host) == 0) {
+	if (host->ops->get_cd &&
+		(host->ops->get_cd(host) == 0 || host->removed_cnt > MMC_DETECT_RETRIES)) {
 		mmc_claim_host(host);
 		mmc_power_off(host);
 		mmc_release_host(host);
+		pr_info("%s : SD status was (%d), or rescan up to limit (%d)\n",
+			mmc_hostname(host), host->ops->get_cd(host),
+			host->removed_cnt);
 		goto out;
 	}
 
@@ -3828,54 +3769,6 @@ int mmc_flush_cache(struct mmc_card *card)
 	return err;
 }
 EXPORT_SYMBOL(mmc_flush_cache);
-
-int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
-{
-	struct mmc_card *card = host->card;
-	unsigned int timeout;
-	int err = 0, rc;
-
-	BUG_ON(!card);
-	timeout = card->ext_csd.generic_cmd6_time;
-
-	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL) ||
-			mmc_card_is_removable(host) ||
-			(card->quirks & MMC_QUIRK_CACHE_DISABLE))
-		return err;
-
-	if (card && mmc_card_mmc(card) &&
-			(card->ext_csd.cache_size > 0)) {
-		enable = !!enable;
-
-		if (card->ext_csd.cache_ctrl ^ enable) {
-			if (!enable)
-				timeout = MMC_FLUSH_REQ_TIMEOUT_MS;
-
-			err = mmc_switch_ignore_timeout(card,
-					EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_CACHE_CTRL, enable, timeout);
-
-			if (err == -ETIMEDOUT && !enable) {
-				pr_err("%s:cache disable operation timeout\n",
-						mmc_hostname(card->host));
-				rc = mmc_interrupt_hpi(card);
-				if (rc)
-					pr_err("%s: mmc_interrupt_hpi() failed (%d)\n",
-							mmc_hostname(host), rc);
-			} else if (err) {
-				pr_err("%s: cache %s error %d\n",
-						mmc_hostname(card->host),
-						enable ? "on" : "off",
-						err);
-			} else {
-				card->ext_csd.cache_ctrl = enable;
-			}
-		}
-	}
-
-	return err;
-}
-EXPORT_SYMBOL(mmc_cache_ctrl);
 
 #ifdef CONFIG_PM
 
@@ -4160,10 +4053,6 @@ static int __init mmc_init(void)
 	if (!stats_workqueue)
 		return -ENOMEM;
 
-	delay_scaling_workqueue = create_singlethread_workqueue("delay_scaling");
-	if (!delay_scaling_workqueue)
-		   return -ENOMEM;
-
 	if (get_tamper_sf() == 1)
 		stats_interval = MMC_STATS_LOG_INTERVAL;
 
@@ -4190,8 +4079,6 @@ destroy_workqueue:
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
-	if (delay_scaling_workqueue)
-		   destroy_workqueue(delay_scaling_workqueue);
 	return ret;
 }
 
@@ -4203,8 +4090,6 @@ static void __exit mmc_exit(void)
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
-	if (delay_scaling_workqueue)
-		   destroy_workqueue(delay_scaling_workqueue);
 }
 
 subsys_initcall(mmc_init);

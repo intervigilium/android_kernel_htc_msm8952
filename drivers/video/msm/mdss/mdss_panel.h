@@ -442,7 +442,6 @@ struct mdss_panel_info {
 	u32 partial_update_roi_merge;
 	struct ion_handle *splash_ihdl;
 	int panel_power_state;
-	int blank_state;
 	int compression_mode;
 
 	uint32_t panel_dead;
@@ -475,7 +474,6 @@ struct mdss_panel_info {
 	struct mdss_panel_debugfs_info *debugfs_info;
 
 	int first_power_on;
-	int panel_id;
 	int camera_blk;
 	u32 mdss_pp_hue;
 	
@@ -601,6 +599,29 @@ static inline bool mdss_panel_is_power_on_lp(int panel_power_state)
 static inline bool mdss_panel_is_power_on_ulp(int panel_power_state)
 {
 	return panel_power_state == MDSS_PANEL_POWER_LP2;
+}
+
+static inline u8 mdss_panel_calc_frame_rate(struct mdss_panel_info *pinfo)
+{
+		u32 pixel_total = 0;
+		u8 frame_rate = 0;
+
+		pixel_total = (pinfo->lcdc.h_back_porch +
+			  pinfo->lcdc.h_front_porch +
+			  pinfo->lcdc.h_pulse_width +
+			  pinfo->xres) *
+			 (pinfo->lcdc.v_back_porch +
+			  pinfo->lcdc.v_front_porch +
+			  pinfo->lcdc.v_pulse_width +
+			  pinfo->yres);
+
+		if (pinfo->clk_rate && pixel_total)
+			frame_rate = DIV_ROUND_CLOSEST(pinfo->clk_rate,
+								pixel_total);
+		else
+			frame_rate = DEFAULT_FRAME_RATE;
+
+		return frame_rate;
 }
 
 struct mdss_panel_cfg *mdss_panel_intf_type(int intf_val);

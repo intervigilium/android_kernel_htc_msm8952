@@ -66,6 +66,16 @@ static inline bool is_turbo_session(struct msm_vidc_inst *inst)
 	return !!(inst->flags & VIDC_TURBO);
 }
 
+static inline bool is_low_power_session(struct msm_vidc_inst *inst)
+{
+	return !!(inst->flags & VIDC_POWER_SAVE);
+}
+
+static inline bool is_low_latency_session(struct msm_vidc_inst *inst)
+{
+	return !!(inst->flags & VIDC_LOW_LATENCY);
+}
+
 static inline bool is_thumbnail_session(struct msm_vidc_inst *inst)
 {
 	return !!(inst->flags & VIDC_THUMBNAIL);
@@ -147,7 +157,7 @@ int msm_comm_get_inst_load(struct msm_vidc_inst *inst,
 			load = inst->core->resources.max_load;
 	}
 
-	if (is_non_realtime_session(inst) &&
+	if (!is_thumbnail_session(inst) && is_non_realtime_session(inst) &&
 		(quirks & LOAD_CALC_IGNORE_NON_REALTIME_LOAD))
 		load = msm_comm_get_mbs_per_sec(inst) / inst->prop.fps;
 	return load;
@@ -292,7 +302,19 @@ static int msm_comm_vote_bus(struct msm_vidc_core *core)
 				get_hal_domain(inst->session_type));
 		vote_data[i].load = msm_comm_get_inst_load(inst,
 				LOAD_CALC_NO_QUIRKS);
-		vote_data[i].low_power = !!(inst->flags & VIDC_POWER_SAVE);
+
+		vote_data[i].power_mode = 0;
+		if (is_low_power_session(inst))
+			vote_data[i].power_mode |= VIDC_POWER_LOW;
+		if (is_turbo_session(inst))
+			vote_data[i].power_mode |= VIDC_POWER_TURBO;
+		if (is_low_latency_session(inst))
+			vote_data[i].power_mode |= VIDC_POWER_LOW_LATENCY;
+
+		
+		if (!vote_data[i].power_mode)
+			vote_data[i].power_mode |= VIDC_POWER_NORMAL;
+
 		i++;
 	}
 	mutex_unlock(&core->lock);
@@ -445,8 +467,12 @@ static void handle_sys_init_done(enum command_response cmd, void *data)
 				HAL_VIDEO_CODEC_MVC;
 
 	core->codec_count = sys_init_msg->codec_count;
-	memcpy(core->capabilities, sys_init_msg->capabilities,
-		sys_init_msg->codec_count * sizeof(struct msm_vidc_capability));
+	if (core->capabilities)
+		memcpy(core->capabilities, sys_init_msg->capabilities,
+			sys_init_msg->codec_count *
+			sizeof(struct msm_vidc_capability));
+	else
+		dprintk(VIDC_ERR, "%s: core capabilities is NULL\n", __func__);
 
 	dprintk(VIDC_DBG,
 		"%s: supported_codecs[%d]: enc = %#x, dec = %#x\n",
@@ -1120,6 +1146,7 @@ static void handle_session_error(enum command_response cmd, void *data)
 	struct msm_vidc_cb_cmd_done *response = data;
 	struct hfi_device *hdev = NULL;
 	struct msm_vidc_inst *inst = NULL;
+	int event = V4L2_EVENT_MSM_VIDC_SYS_ERROR;
 
 	if (!response) {
 		dprintk(VIDC_ERR,
@@ -1141,18 +1168,17 @@ static void handle_session_error(enum command_response cmd, void *data)
 	change_inst_state(inst, MSM_VIDC_CORE_INVALID);
 
 	if (response->status == VIDC_ERR_MAX_CLIENTS) {
-		dprintk(VIDC_WARN,
-			"send max clients reached error to client: %p\n",
-			inst);
-		msm_vidc_queue_v4l2_event(inst,
-			V4L2_EVENT_MSM_VIDC_MAX_CLIENTS);
+		dprintk(VIDC_WARN, "Too many clients, rejecting %p", inst);
+		event = V4L2_EVENT_MSM_VIDC_MAX_CLIENTS;
+	} else if (response->status == VIDC_ERR_NOT_SUPPORTED) {
+		dprintk(VIDC_WARN, "Unsupported error for %p", inst);
+		event = V4L2_EVENT_MSM_VIDC_HW_UNSUPPORTED;
 	} else {
-		dprintk(VIDC_ERR,
-			"send session error to client: %p\n",
-			inst);
-		msm_vidc_queue_v4l2_event(inst,
-			V4L2_EVENT_MSM_VIDC_SYS_ERROR);
+		dprintk(VIDC_WARN, "Unknown session error (%d) for %p\n",
+				response->status, inst);
+		event = V4L2_EVENT_MSM_VIDC_SYS_ERROR;
 	}
+	msm_vidc_queue_v4l2_event(inst, event);
 }
 
 static void msm_comm_clean_notify_client(struct msm_vidc_core *core)
@@ -1239,7 +1265,6 @@ void msm_comm_session_clean(struct msm_vidc_inst *inst)
 	}
 
 	hdev = inst->core->device;
-	mutex_lock(&inst->lock);
 	if (hdev && inst->session) {
 		dprintk(VIDC_DBG, "cleaning up instance: 0x%p\n", inst);
 		rc = call_hfi_op(hdev, session_clean,
@@ -1250,7 +1275,6 @@ void msm_comm_session_clean(struct msm_vidc_inst *inst)
 		}
 		inst->session = NULL;
 	}
-	mutex_unlock(&inst->lock);
 }
 
 static void handle_session_close(enum command_response cmd, void *data)
@@ -2480,6 +2504,26 @@ exit:
 	return rc;
 }
 
+static int msm_comm_session_close_done(int flipped_state,
+		struct msm_vidc_inst *inst)
+{
+	int rc = 0;
+
+	if (!inst || !inst->core || !inst->core->device) {
+		dprintk(VIDC_ERR, "%s invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	rc = wait_for_state(inst, flipped_state, MSM_VIDC_CLOSE_DONE,
+			SESSION_END_DONE);
+	if (rc)
+		dprintk(VIDC_ERR, "%s: session_end_done failed\n", __func__);
+	else
+		msm_comm_session_clean(inst);
+
+	return rc;
+}
+
 int msm_comm_suspend(int core_id)
 {
 	struct hfi_device *hdev;
@@ -2919,8 +2963,7 @@ int msm_comm_try_state(struct msm_vidc_inst *inst, int state)
 		if (rc || state <= get_flipped_state(inst->state, state))
 			break;
 	case MSM_VIDC_CLOSE_DONE:
-		rc = wait_for_state(inst, flipped_state, MSM_VIDC_CLOSE_DONE,
-				SESSION_END_DONE);
+		rc = msm_comm_session_close_done(flipped_state, inst);
 		if (rc || state <= get_flipped_state(inst->state, state))
 			break;
 	case MSM_VIDC_CORE_UNINIT:
@@ -4086,14 +4129,14 @@ int msm_vidc_check_scaling_supported(struct msm_vidc_inst *inst)
 	y_max = inst->capability.scale_y.max >> 16;
 
 	if (input_height > output_height) {
-		if (input_height/output_height > x_min) {
+		if (input_height > x_min * output_height) {
 			dprintk(VIDC_ERR,
 				"Unsupported height downscale ratio %d vs %d\n",
 				input_height/output_height, x_min);
 			return -ENOTSUPP;
 		}
 	} else {
-		if (input_height/output_height > x_max) {
+		if (output_height > x_max * input_height) {
 			dprintk(VIDC_ERR,
 				"Unsupported height upscale ratio %d vs %d\n",
 				input_height/output_height, x_max);
@@ -4101,14 +4144,14 @@ int msm_vidc_check_scaling_supported(struct msm_vidc_inst *inst)
 		}
 	}
 	if (input_width > output_width) {
-		if (input_width/output_width > y_min) {
+		if (input_width > y_min * output_width) {
 			dprintk(VIDC_ERR,
 				"Unsupported width downscale ratio %d vs %d\n",
 				input_width/output_width, y_min);
 			return -ENOTSUPP;
 		}
 	} else {
-		if (input_width/output_width > y_max) {
+		if (output_width > y_max * input_width) {
 			dprintk(VIDC_ERR,
 				"Unsupported width upscale ratio %d vs %d\n",
 				input_width/output_width, y_max);
@@ -4394,4 +4437,47 @@ void msm_vidc_fw_unload_handler(struct work_struct *work)
 		core->capabilities = NULL;
 	}
 	mutex_unlock(&core->lock);
+}
+
+int msm_comm_set_color_format(struct msm_vidc_inst *inst,
+		enum hal_buffer buffer_type, int fourcc)
+{
+	struct hal_uncompressed_format_select hal_fmt = {0};
+	int rc = 0;
+	struct hfi_device *hdev;
+
+	if (!inst || !inst->core || !inst->core->device) {
+		dprintk(VIDC_ERR, "%s - invalid param\n", __func__);
+		return -EINVAL;
+	}
+
+	hdev = inst->core->device;
+	hal_fmt.buffer_type = buffer_type;
+
+	switch (fourcc) {
+	case V4L2_PIX_FMT_NV12:
+		dprintk(VIDC_DBG, "set color format: nv12\n");
+		hal_fmt.format = HAL_COLOR_FORMAT_NV12;
+		break;
+	case V4L2_PIX_FMT_NV21:
+		dprintk(VIDC_DBG, "set color format: nv21\n");
+		hal_fmt.format = HAL_COLOR_FORMAT_NV21;
+		break;
+	default:
+		dprintk(VIDC_ERR, "%s: unknown color formar: %#x\n",
+			__func__, fourcc);
+		rc = -ENOTSUPP;
+		goto exit;
+	}
+
+	rc = call_hfi_op(hdev, session_set_property, inst->session,
+		HAL_PARAM_UNCOMPRESSED_FORMAT_SELECT, &hal_fmt);
+	if (rc) {
+		dprintk(VIDC_ERR,
+			"%s: Failed to set color format[%#x]\n",
+			__func__, hal_fmt.format);
+	}
+
+exit:
+	return rc;
 }

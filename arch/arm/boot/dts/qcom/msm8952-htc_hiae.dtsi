@@ -50,7 +50,11 @@
 	qcom,usbin-vadc = <&pmi8950_vadc>;
 
 	qcom,qc20-iusb-max-ma = <1200>;
+	qcom,qc30-iusb-max-ma = <1200>;
 	qcom,battery-data = <&hiae_batterydata>;
+
+	htc,htc-thermal-temp-thr-qc20 = <420>;
+	htc,htc-thermal-limit-iusb-cur-qc20 = <900>;
 
 	htc,eoc-ibat-thre-ma = <215>;
 	htc,adjust-fastchg-cur-thr-mv = <4340>;

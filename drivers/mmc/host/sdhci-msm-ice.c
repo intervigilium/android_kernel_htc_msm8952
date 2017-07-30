@@ -135,6 +135,7 @@ int sdhci_msm_ice_init(struct sdhci_host *host)
 		pr_err("%s: ice init timedout after %d ms\n",
 				mmc_hostname(host->mmc),
 				SDHCI_MSM_ICE_COMPLETION_TIMEOUT_MS);
+		sdhci_msm_ice_print_regs(host);
 		return -ETIMEDOUT;
 	}
 
@@ -144,6 +145,12 @@ int sdhci_msm_ice_init(struct sdhci_host *host)
 		return -EINVAL;
 	}
 	return 0;
+}
+
+void sdhci_msm_ice_cfg_reset(struct sdhci_host *host, u32 slot)
+{
+	writel_relaxed(SDHCI_MSM_ICE_ENABLE_BYPASS,
+		host->ioaddr + CORE_VENDOR_SPEC_ICE_CTRL_INFO_3_n + 16 * slot);
 }
 
 int sdhci_msm_ice_cfg(struct sdhci_host *host, struct mmc_request *mrq,
@@ -178,12 +185,12 @@ int sdhci_msm_ice_cfg(struct sdhci_host *host, struct mmc_request *mrq,
 				return err;
 			}
 		}
-		/* if writing data command */
+		
 		if (rq_data_dir(req) == WRITE)
 			bypass = ice_set.encr_bypass ?
 					SDHCI_MSM_ICE_ENABLE_BYPASS :
 					SDHCI_MSM_ICE_DISABLE_BYPASS;
-		/* if reading data command */
+		
 		else if (rq_data_dir(req) == READ)
 			bypass = ice_set.decr_bypass ?
 					SDHCI_MSM_ICE_ENABLE_BYPASS :
@@ -196,19 +203,19 @@ int sdhci_msm_ice_cfg(struct sdhci_host *host, struct mmc_request *mrq,
 				ice_set.crypto_data.key_index);
 	}
 
-	/* Configure ICE index */
+	
 	ctrl_info_val =
 		(ice_set.crypto_data.key_index &
 		 MASK_SDHCI_MSM_ICE_CTRL_INFO_KEY_INDEX)
 		 << OFFSET_SDHCI_MSM_ICE_CTRL_INFO_KEY_INDEX;
 
-	/* Configure data unit size of transfer request */
+	
 	ctrl_info_val |=
 		(SDHCI_MSM_ICE_TR_DATA_UNIT_512_B &
 		 MASK_SDHCI_MSM_ICE_CTRL_INFO_CDU)
 		 << OFFSET_SDHCI_MSM_ICE_CTRL_INFO_CDU;
 
-	/* Configure ICE bypass mode */
+	
 	ctrl_info_val |=
 		(bypass & MASK_SDHCI_MSM_ICE_CTRL_INFO_BYPASS)
 		 << OFFSET_SDHCI_MSM_ICE_CTRL_INFO_BYPASS;
@@ -220,7 +227,7 @@ int sdhci_msm_ice_cfg(struct sdhci_host *host, struct mmc_request *mrq,
 	writel_relaxed(ctrl_info_val,
 		host->ioaddr + CORE_VENDOR_SPEC_ICE_CTRL_INFO_3_n + 16 * slot);
 
-	/* Ensure ICE registers are configured before issuing SDHCI request */
+	
 	mb();
 	return 0;
 }
@@ -253,6 +260,7 @@ int sdhci_msm_ice_reset(struct sdhci_host *host)
 		pr_err("%s: ice reset timedout after %d ms\n",
 			mmc_hostname(host->mmc),
 			SDHCI_MSM_ICE_COMPLETION_TIMEOUT_MS);
+		sdhci_msm_ice_print_regs(host);
 		return -ETIMEDOUT;
 	}
 
@@ -293,6 +301,7 @@ int sdhci_msm_ice_resume(struct sdhci_host *host)
 		pr_err("%s: ice resume timedout after %d ms\n",
 			mmc_hostname(host->mmc),
 			SDHCI_MSM_ICE_COMPLETION_TIMEOUT_MS);
+		sdhci_msm_ice_print_regs(host);
 		return -ETIMEDOUT;
 	}
 
@@ -352,4 +361,13 @@ int sdhci_msm_ice_get_status(struct sdhci_host *host, int *ice_status)
 		*ice_status = stat;
 	}
 	return 0;
+}
+
+void sdhci_msm_ice_print_regs(struct sdhci_host *host)
+{
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+
+	if (msm_host->ice.vops->debug)
+		msm_host->ice.vops->debug(msm_host->ice.pdev);
 }

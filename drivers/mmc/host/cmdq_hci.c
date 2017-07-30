@@ -401,11 +401,17 @@ static void cmdq_prep_task_desc(struct mmc_request *mrq,
 {
 	struct mmc_cmdq_req *cmdq_req = mrq->cmdq_req;
 	u32 req_flags = cmdq_req->cmdq_req_flags;
+	struct mmc_host *mmc = mrq->host;
+	struct cmdq_host *cq_host = mmc_cmdq_private(mmc);
+	u32 prio = !!(req_flags & PRIO);
+
+	if (cq_host->quirks & CMDQ_QUIRK_PRIO_READ)
+		prio |= (!!(req_flags & DIR) ? 1 : 0);
 
 	pr_debug("%s: %s: data-tag: 0x%08x - dir: %d - prio: %d - cnt: 0x%08x -	addr: 0x%llx\n",
 		 mmc_hostname(mrq->host), __func__,
 		 !!(req_flags & DAT_TAG), !!(req_flags & DIR),
-		 !!(req_flags & PRIO), cmdq_req->data.blocks,
+		 prio, cmdq_req->data.blocks,
 		 (u64)mrq->cmdq_req->blk_addr);
 
 	*data = VALID(1) |
@@ -416,7 +422,7 @@ static void cmdq_prep_task_desc(struct mmc_request *mrq,
 		CONTEXT(mrq->cmdq_req->ctx_id) |
 		DATA_TAG(!!(req_flags & DAT_TAG)) |
 		DATA_DIR(!!(req_flags & DIR)) |
-		PRIORITY(!!(req_flags & PRIO)) |
+		PRIORITY(prio) |
 		QBAR(qbr) |
 		REL_WRITE(!!(req_flags & REL_WR)) |
 		BLK_COUNT(mrq->cmdq_req->data.blocks) |
@@ -443,10 +449,9 @@ static int cmdq_dma_map(struct mmc_host *host, struct mmc_request *mrq)
 	return sg_count;
 }
 
-static void cmdq_set_tran_desc(u8 *desc,
-				 dma_addr_t addr, int len, bool end)
+static void cmdq_set_tran_desc(u8 *desc, dma_addr_t addr, int len,
+				bool end, bool is_dma64)
 {
-	__le64 *dataddr = (__le64 __force *)(desc + 4);
 	__le32 *attr = (__le32 __force *)desc;
 
 	*attr = (VALID(1) |
@@ -455,7 +460,15 @@ static void cmdq_set_tran_desc(u8 *desc,
 		 ACT(0x4) |
 		 DAT_LENGTH(len));
 
-	dataddr[0] = cpu_to_le64(addr);
+	if (is_dma64) {
+		__le64 *dataddr = (__le64 __force *)(desc + 4);
+
+		dataddr[0] = cpu_to_le64(addr);
+	} else {
+		__le32 *dataddr = (__le32 __force *)(desc + 4);
+
+		dataddr[0] = cpu_to_le32(addr);
+	}
 }
 
 static int cmdq_prep_tran_desc(struct mmc_request *mrq,
@@ -484,7 +497,7 @@ static int cmdq_prep_tran_desc(struct mmc_request *mrq,
 
 		if ((i+1) == sg_count)
 			end = true;
-		cmdq_set_tran_desc(desc, addr, len, end);
+		cmdq_set_tran_desc(desc, addr, len, end, cq_host->dma64);
 		desc += cq_host->trans_desc_len;
 	}
 
@@ -608,7 +621,10 @@ static void cmdq_finish_data(struct mmc_host *mmc, unsigned int tag)
 
 	if (mrq->cmdq_req->cmdq_req_flags & DCMD)
 		cmdq_writel(cq_host, cmdq_readl(cq_host, CQ_VENDOR_CFG) |
-			    CMDQ_SEND_STATUS_TRIGGER, CQCTL);
+			    CMDQ_SEND_STATUS_TRIGGER, CQ_VENDOR_CFG);
+
+	if (cq_host->ops->crypto_cfg_reset)
+		cq_host->ops->crypto_cfg_reset(mmc, tag);
 	mrq->done(mrq);
 }
 
@@ -650,7 +666,6 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, int err)
 			mrq->data->error = err;
 		}
 
-		tag = 0;
 		/*
 		 * CQE detected a reponse error from device
 		 * In most cases, this would require a reset.
@@ -673,7 +688,7 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, int err)
 	}
 
 	if (status & CQIS_TCC) {
-		/* read QCTCN and complete the request */
+		/* read CQTCN and complete the request */
 		comp_status = cmdq_readl(cq_host, CQTCN);
 		if (!comp_status)
 			goto out;
@@ -696,13 +711,24 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, int err)
 				cq_host->ops->pm_qos_update(mmc, NULL, false);
 		}
 
+		/*
+		 * The CQTCN must be cleared before notifying req completion
+		 * to upper layers to avoid missing completion notification
+		 * of new requests with the same tag.
+		 */
+		cmdq_writel(cq_host, comp_status, CQTCN);
+		/*
+		 * A write memory barrier is necessary to guarantee that CQTCN
+		 * gets cleared first before next doorbell for the same tag is
+		 * set but that is already achieved by the barrier present
+		 * before setting doorbell, hence one is not needed here.
+		 */
 		for_each_set_bit(tag, &comp_status, cq_host->num_slots) {
 			/* complete the corresponding mrq */
 			pr_debug("%s: completing tag -> %lu\n",
 				 mmc_hostname(mmc), tag);
 			cmdq_finish_data(mmc, tag);
 		}
-		cmdq_writel(cq_host, comp_status, CQTCN);
 	}
 
 	if (status & CQIS_HAC) {
@@ -722,17 +748,26 @@ static int cmdq_halt(struct mmc_host *mmc, bool halt)
 {
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
 	u32 val;
+	int retries = 3;
 
 	if (halt) {
-		cmdq_writel(cq_host, cmdq_readl(cq_host, CQCTL) | HALT,
-			    CQCTL);
-		val = wait_for_completion_timeout(&cq_host->halt_comp,
+		while (retries) {
+			cmdq_writel(cq_host, cmdq_readl(cq_host, CQCTL) | HALT,
+				    CQCTL);
+			val = wait_for_completion_timeout(&cq_host->halt_comp,
 					  msecs_to_jiffies(HALT_TIMEOUT_MS));
-		/* halt done: re-enable legacy interrupts */
-		if (cq_host->ops->clear_set_irqs)
-			cq_host->ops->clear_set_irqs(mmc, false);
-
-		return val ? 0 : -ETIMEDOUT;
+			if (!val && !(cmdq_readl(cq_host, CQCTL) & HALT)) {
+				retries--;
+				continue;
+			} else {
+				/* halt done: re-enable legacy interrupts */
+				if (cq_host->ops->clear_set_irqs)
+					cq_host->ops->clear_set_irqs(mmc,
+								false);
+				break;
+			}
+		}
+		return retries ? 0 : -ETIMEDOUT;
 	} else {
 		if (cq_host->ops->set_data_timeout)
 			cq_host->ops->set_data_timeout(mmc, 0xf);
@@ -822,6 +857,8 @@ int cmdq_init(struct cmdq_host *cq_host, struct mmc_host *mmc,
 
 	cq_host->num_slots = NUM_SLOTS;
 	cq_host->dcmd_slot = DCMD_SLOT;
+
+	cq_host->quirks |= CMDQ_QUIRK_PRIO_READ;
 
 	mmc->cmdq_ops = &cmdq_host_ops;
 

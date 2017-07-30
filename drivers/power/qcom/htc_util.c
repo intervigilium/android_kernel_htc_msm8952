@@ -696,7 +696,7 @@ static void htc_kernel_top_cal(struct _htc_kernel_top *ktop, int type)
 	  return;
 
 	spin_lock_irqsave(&ktop->lock, flags);
-
+	rcu_read_lock();
 	
 	for_each_process(process) {
 		thread_group_cputime(process, &cputime);
@@ -711,6 +711,7 @@ static void htc_kernel_top_cal(struct _htc_kernel_top *ktop, int type)
 			}
 		}
 	}
+	rcu_read_unlock();
 	sort_cputime_by_pid(ktop->curr_proc_delta, ktop->curr_proc_pid, pid_cnt, ktop->top_loading_pid);
 
 	
@@ -724,7 +725,7 @@ static void htc_kernel_top_cal(struct _htc_kernel_top *ktop, int type)
 		htc_kernel_top_statistics_5_in_10(ktop);
 #endif
 	}
-
+	rcu_read_lock();
 	
 	for_each_process(process) {
 		if (process->pid < MAX_PID) {
@@ -732,6 +733,7 @@ static void htc_kernel_top_cal(struct _htc_kernel_top *ktop, int type)
 			ktop->prev_proc_stat[process->pid] = cputime.stime + cputime.utime;
 		}
 	}
+	rcu_read_unlock();
 	memcpy(&ktop->prev_cpustat, &ktop->curr_cpustat, sizeof(struct kernel_cpustat));
 	spin_unlock_irqrestore(&ktop->lock, flags);
 }

@@ -43,7 +43,6 @@
 #include <asm/cacheflush.h>
 #include "audit.h"	
 #include <htc_debug/stability/htc_process_debug.h>
-#include <linux/htc_flags.h>
 
 
 static struct kmem_cache *sigqueue_cachep;
@@ -1620,30 +1619,6 @@ static int ptrace_signal(int signr, siginfo_t *info)
 	return signr;
 }
 
-#if defined(CONFIG_ARM64)
-static int on_sig_top_guardpage(unsigned long addr)
-{
-	
-	return addr < current->sas_ss_sp &&
-		addr >= (current->sas_ss_sp - PAGE_SIZE);
-}
-
-static int check_sigstack_overflow(int signr, struct pt_regs *regs)
-{
-	if (get_tamper_sf() != 0 ||
-			signr != SIGSEGV ||
-			strcmp(current->group_leader->comm, "system_server"))
-		return 0;
-
-	return on_sig_top_guardpage(current->thread.fault_address);
-}
-#else
-static int check_sigstack_overflow(int signr, struct pt_regs *regs)
-{
-	return 0;
-}
-#endif
-
 int get_signal_to_deliver(siginfo_t *info, struct k_sigaction *return_ka,
 			  struct pt_regs *regs, void *cookie)
 {
@@ -1715,10 +1690,6 @@ relock:
 
 		if (ka->sa.sa_handler == SIG_IGN) 
 			continue;
-		if (check_sigstack_overflow(signr, regs)) {
-			pr_err("Signal stack overflow: fallback to SIG_DFL\n");
-			ka->sa.sa_handler = SIG_DFL;
-		} else
 		if (ka->sa.sa_handler != SIG_DFL) {
 			
 			*return_ka = *ka;

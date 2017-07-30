@@ -1743,6 +1743,30 @@ static int get_monotonic_soc_raw(struct fg_chip *chip)
 	return cap[0];
 }
 
+#ifdef CONFIG_HTC_BATT_8960
+#define SYSTEM_SOC_ADDR        0x574
+#define SYSTEM_SOC_OFFSET      0
+#define SYSTEM_SOC_SIZE        2
+static int get_system_soc(struct fg_chip *chip)
+{
+	u8 cap[2];
+	int soc;
+	int rc;
+
+	rc = fg_mem_read(chip, cap, SYSTEM_SOC_ADDR, SYSTEM_SOC_SIZE, SYSTEM_SOC_OFFSET, 0);
+	if (rc) {
+		pr_err("fg_mem read failed: addr=%03x, rc=%d\n",
+			SYSTEM_SOC_ADDR, rc);
+		return rc;
+	}
+	soc = ((cap[1] << 8) + cap[0]) * 10000 / 0xffff;
+
+	if (fg_debug_mask & FG_POWER_SUPPLY)
+		pr_info_ratelimited("raw: 0x%02x\n", soc);
+	return soc;
+}
+#endif
+
 #define EMPTY_CAPACITY		0
 #define DEFAULT_CAPACITY	50
 #define MISSING_CAPACITY	100
@@ -2851,10 +2875,17 @@ static void fg_cap_learning_work(struct work_struct *work)
 		goto fail;
 	if (!fg_is_temperature_ok_for_learning(chip)) {
 		fg_cap_learning_stop(chip);
+#ifdef CONFIG_HTC_BATT_8960
+		if (chip->wa_flag & USE_CC_SOC_REG)
+			goto wa_use_cc_soc_reg;
+#endif
 		goto fail;
 	}
 
 	if (chip->wa_flag & USE_CC_SOC_REG) {
+#ifdef CONFIG_HTC_BATT_8960
+wa_use_cc_soc_reg:
+#endif
 		mutex_unlock(&chip->learning_data.learning_lock);
 		fg_relax(&chip->capacity_learning_wakeup_source);
 		return;
@@ -3648,8 +3679,14 @@ int pmi8994_gauge_get_attr_text(char *buf, int size)
 	len += scnprintf(buf + len, size - len,"consistent_flag: %d;\n",
 		consistent_flag);
 
-	val = get_prop_capacity(the_chip);
-	len += scnprintf(buf + len, size -len, "BAT_CAPACITY: %d\n", val);
+	val =  get_prop_capacity(the_chip);
+	len += scnprintf(buf + len, size -len, "BATT_CAPACITY: %d\n", val);
+
+	val =  get_system_soc(the_chip);
+	len += scnprintf(buf + len, size -len, "SYSTEM_SOC: %d\n", val);
+
+	val =  get_sram_prop_now(the_chip, FG_DATA_BATT_SOC);
+	len += scnprintf(buf + len, size -len, "BATT_SOC: %d\n", val);
 
 	val =  get_sram_prop_now(the_chip, FG_DATA_CURRENT);
 	len += scnprintf(buf + len, size -len, "FG_DATA_CURRENT: %d\n", val);
@@ -3754,6 +3791,18 @@ int pmi8994_fg_store_battery_ui_soc(int soc_ui)
 	}
 
 	return 0;
+}
+
+int pmi8952_fg_get_batt_cc(int *result)
+{
+	if (!the_chip) {
+		pr_err("called before init\n");
+		return -EINVAL;
+	}
+
+	*result = get_sram_prop_now(the_chip, FG_DATA_CC_CHARGE);
+
+        return 0;
 }
 #endif 
 

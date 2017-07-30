@@ -13,10 +13,14 @@
 #NFC ++
 obj-$(CONFIG_SENSORS_NFC_PN548) += pn548.o
 obj-$(CONFIG_SENSORS_NFC_PN548) += pn548_htc.o
-#endif
+
+ifeq ($(findstring HIA_AERO,$(PRIVATE_RCMS_NAME)),HIA_AERO)
+EXTRA_CFLAGS += -DHIAE_NFC_POWER_CONTROL
+endif
 #NFC --
 
 # htc audio ++
+obj-$(CONFIG_AMP_TFA9888)	+= tfa9888.o
 obj-$(CONFIG_AMP_TFA9895)	+= tfa9895.o
 #obj-$(CONFIG_AMP_TFA9895L)	+= tfa9895l.o
 #obj-$(CONFIG_AMP_RT5501)	+= rt5501.o
@@ -57,4 +61,6 @@ EXTRA_CFLAGS += -DDEBUG
 endif
 # INTERACTION DESIGN_SENSORS--
 
+#Laser Sensor
+obj-$(CONFIG_LASER_STMVL53L0_SUPPORT)   += stmvl53l0/
 

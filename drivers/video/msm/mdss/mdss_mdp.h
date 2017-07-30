@@ -474,7 +474,7 @@ struct mdss_mdp_pipe {
 	struct mdss_mdp_format_params *src_fmt;
 	struct mdss_mdp_plane_sizes src_planes;
 
-	u8 mixer_stage;
+	enum mdss_mdp_stage_index mixer_stage;
 	u8 is_fg;
 	u8 alpha;
 	u8 blend_op;
@@ -770,6 +770,12 @@ static inline int mdss_mdp_panic_signal_support_mode(
 	return signal_mode;
 }
 
+static inline bool is_hw_cursor_on_mixer_supported(u32 mdp_rev)
+{
+	return (mdp_rev == MDSS_MDP_HW_REV_111) ||
+		 (mdp_rev == MDSS_MDP_HW_REV_112);
+}
+
 static inline struct clk *mdss_mdp_get_clk(u32 clk_idx)
 {
 	if (clk_idx < MDSS_MAX_CLK)
@@ -953,7 +959,7 @@ int mdss_mdp_perf_bw_check_pipe(struct mdss_mdp_perf_params *perf,
 int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 	struct mdss_mdp_perf_params *perf, struct mdss_rect *roi,
 	u32 flags);
-u32 mdss_mdp_calc_latency_buf_bytes(bool is_yuv, bool is_bwc,
+u32 mdss_mdp_calc_latency_buf_bytes(bool is_bwc,
 	bool is_tile, u32 src_w, u32 bpp, bool use_latency_buf_percentage,
 	u32 smp_bytes);
 u32 mdss_mdp_get_mdp_clk_rate(struct mdss_data_type *mdata);
@@ -1051,7 +1057,7 @@ int mdss_mdp_get_pipe_info(struct mdss_data_type *mdata, u32 type,
 	struct mdss_mdp_pipe **pipe_pool);
 
 u32 mdss_mdp_smp_calc_num_blocks(struct mdss_mdp_pipe *pipe);
-u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe);
+u32 mdss_mdp_smp_get_size(struct mdss_mdp_pipe *pipe, u32 num_planes);
 int mdss_mdp_smp_reserve(struct mdss_mdp_pipe *pipe);
 void mdss_mdp_smp_unreserve(struct mdss_mdp_pipe *pipe);
 void mdss_mdp_smp_release(struct mdss_mdp_pipe *pipe);

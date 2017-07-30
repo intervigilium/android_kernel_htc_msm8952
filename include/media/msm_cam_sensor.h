@@ -50,6 +50,10 @@
 #define MSM_V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4')
 	
 
+#define LC898214_HEX_MAX 0x7FFF 
+#define LC898214_HEX_MIN 0x8001 
+#define LC898214_DEC_MAX 1023
+
 enum flash_type {
 	LED_FLASH = 1,
 	STROBE_FLASH,
@@ -300,6 +304,7 @@ enum eeprom_cfg_type_t {
 	CFG_EEPROM_READ_CAL_DATA,
 	CFG_EEPROM_WRITE_DATA,
 	CFG_EEPROM_GET_MM_INFO,
+	CFG_EEPROM_INIT,
 };
 
 struct eeprom_get_t {
@@ -322,6 +327,12 @@ struct eeprom_get_cmm_t {
 	uint32_t cmm_size;
 };
 
+struct msm_eeprom_info_t {
+	struct msm_sensor_power_setting_array *power_setting_array;
+	enum i2c_freq_mode_t i2c_freq_mode;
+	struct msm_eeprom_memory_map_array *mem_map_array;
+};
+
 struct msm_eeprom_cfg_data {
 	enum eeprom_cfg_type_t cfgtype;
 	uint8_t is_supported;
@@ -331,6 +342,7 @@ struct msm_eeprom_cfg_data {
 		struct eeprom_read_t read_data;
 		struct eeprom_write_t write_data;
 		struct eeprom_get_cmm_t get_cmm_data;
+		struct msm_eeprom_info_t eeprom_info;
 	} cfg;
 };
 
@@ -409,6 +421,12 @@ struct eeprom_write_t32 {
 	uint32_t num_bytes;
 };
 
+struct msm_eeprom_info_t32 {
+	compat_uptr_t power_setting_array;
+	enum i2c_freq_mode_t i2c_freq_mode;
+	compat_uptr_t mem_map_array;
+};
+
 struct msm_eeprom_cfg_data32 {
 	enum eeprom_cfg_type_t cfgtype;
 	uint8_t is_supported;
@@ -417,6 +435,7 @@ struct msm_eeprom_cfg_data32 {
 		struct eeprom_get_t get_data;
 		struct eeprom_read_t32 read_data;
 		struct eeprom_write_t32 write_data;
+		struct msm_eeprom_info_t32 eeprom_info;
 	} cfg;
 };
 
@@ -461,6 +480,7 @@ enum msm_sensor_cfg_type_t {
 	CFG_WRITE_I2C_ARRAY_SYNC_BLOCK,
 	
 	CFG_I2C_IOCTL_R_OTP,
+	CFG_SET_GYRO_CALIBRATION,
 	
 };
 
@@ -549,6 +569,9 @@ struct msm_actuator_params_t {
 	struct reg_settings_t *init_settings;
 	struct reg_settings_t *deinit_settings;
 	struct park_lens_data_t park_lens;
+	
+	char ACT_NAME[MAX_ACT_NAME_SIZE];
+	
 };
 
 struct msm_actuator_set_info_t {
@@ -729,6 +752,9 @@ struct msm_actuator_params_t32 {
 	compat_uptr_t init_settings;
 	compat_uptr_t deinit_settings;
 	struct park_lens_data_t park_lens;
+	
+	char ACT_NAME[MAX_ACT_NAME_SIZE];
+	
 };
 
 struct msm_actuator_set_info_t32 {

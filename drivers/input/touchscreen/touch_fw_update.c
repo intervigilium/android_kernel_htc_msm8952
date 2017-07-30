@@ -92,7 +92,7 @@ static ssize_t debug_show(struct device *dev, struct device_attribute *attr,
 static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
-	if (sscanf(buf, "%ix", &debug_mask) != 1) {
+	if (sscanf(buf, "%ux", &debug_mask) != 1) {
 		pr_err("bad parameter");
 		return -EINVAL;
 	}
@@ -201,6 +201,11 @@ static ssize_t touch_fwu_write(struct file *file, const char __user *buf, size_t
 
 	pr_info("%s: %zu", __func__, count);
 	tmp = kzalloc(count, GFP_KERNEL);
+	if (!tmp) {
+		pr_err("%s: Failed to allocate memory\n", __func__);
+		return -ENOMEM;
+	}
+
 	if(copy_from_user(tmp, buf, count)) {
 		pr_err("%s: copy_from_user failed", __func__);
 		kfree(tmp);

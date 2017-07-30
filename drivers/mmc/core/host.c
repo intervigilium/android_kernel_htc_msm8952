@@ -30,6 +30,9 @@
 #include <linux/mmc/slot-gpio.h>
 #include <trace/events/mmc.h>
 
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
 #include "core.h"
 #include "host.h"
 
@@ -40,6 +43,8 @@ static void mmc_host_classdev_release(struct device *dev)
 {
 	struct mmc_host *host = cls_dev_to_mmc_host(dev);
 	mutex_destroy(&host->slot.lock);
+	if (host->mmc_circbuf.buf)
+		kfree(host->mmc_circbuf.buf);
 	kfree(host->wlock_name);
 	kfree(host);
 }
@@ -58,7 +63,7 @@ static int mmc_host_runtime_suspend(struct device *dev)
 	if (host->ops->notify_pm_status)
 		host->ops->notify_pm_status(host, DEV_SUSPENDING);
 
-	if (host->card && mmc_card_cmdq(host->card)) {
+	if (host->card && host->card->cmdq_init) {
 		BUG_ON(host->cmdq_ctx.active_reqs);
 
 		mmc_card_set_suspended(host->card);
@@ -77,6 +82,18 @@ static int mmc_host_runtime_suspend(struct device *dev)
 	if (ret < 0 && ret != -ENOMEDIUM)
 		pr_err("%s: %s: suspend host failed: %d\n", mmc_hostname(host),
 		       __func__, ret);
+	
+	if (ret < 0 && host->card && host->card->cmdq_init) {
+		mmc_card_clr_suspended(host->card);
+		mmc_host_clk_hold(host);
+		host->cmdq_ops->enable(host);
+		mmc_host_clk_release(host);
+		ret = mmc_cmdq_halt(host, false);
+		if (ret) {
+			pr_err("%s: halt: failed: %d\n", __func__, ret);
+			goto out;
+		}
+	}
 
 	if (ret == -ENOMEDIUM)
 		ret = 0;
@@ -149,14 +166,20 @@ static int mmc_host_suspend(struct device *dev)
 	spin_lock_irqsave(&host->clk_lock, flags);
 	host->dev_status = DEV_SUSPENDING;
 	spin_unlock_irqrestore(&host->clk_lock, flags);
-	if (!pm_runtime_suspended(dev) || mmc_is_sd_host(host)) {
-		if (host->card && mmc_card_cmdq(host->card)) {
+	if (!pm_runtime_suspended(dev)) {
+		if (host->card && host->card->cmdq_init) {
+			if (!mmc_try_claim_host(host)) {
+				ret = -EBUSY;
+				goto out;
+			}
+
 			BUG_ON(host->cmdq_ctx.active_reqs);
 
 			mmc_card_set_suspended(host->card);
 			ret = mmc_cmdq_halt(host, true);
 			if (ret) {
 				mmc_card_clr_suspended(host->card);
+				mmc_release_host(host);
 				pr_err("%s: halt: failed: %d\n", __func__, ret);
 				goto out;
 			}
@@ -165,11 +188,25 @@ static int mmc_host_suspend(struct device *dev)
 			mmc_host_clk_release(host);
 		}
 
-		mmc_disable_clk_delay_scaling(host);
 		ret = mmc_suspend_host(host);
 		if (ret < 0)
 			pr_err("%s: %s: failed: ret: %d\n", mmc_hostname(host),
 			       __func__, ret);
+		
+		if (ret < 0 && host->card && host->card->cmdq_init) {
+			mmc_card_clr_suspended(host->card);
+			mmc_host_clk_hold(host);
+			host->cmdq_ops->enable(host);
+			mmc_host_clk_release(host);
+			ret = mmc_cmdq_halt(host, false);
+			if (ret) {
+				mmc_release_host(host);
+				pr_err("%s: halt: failed: %d\n", __func__, ret);
+				goto out;
+			}
+		}
+		if (host->card && host->card->cmdq_init)
+			mmc_release_host(host);
 	}
 	if (!ret && host->card && mmc_card_sdio(host->card) &&
 	    host->ios.clock) {
@@ -519,6 +556,8 @@ void mmc_of_parse(struct mmc_host *host)
 		host->caps |= MMC_CAP_POWER_OFF_CARD;
 	if (of_find_property(np, "cap-sdio-irq", &len))
 		host->caps |= MMC_CAP_SDIO_IRQ;
+	if (of_find_property(np, "full-pwr-cycle", &len))
+		host->caps2 |= MMC_CAP2_FULL_PWR_CYCLE;
 	if (of_find_property(np, "keep-power-in-suspend", &len))
 		host->pm_caps |= MMC_PM_KEEP_POWER;
 	if (of_find_property(np, "enable-sdio-wakeup", &len))
@@ -846,6 +885,101 @@ static struct attribute_group dev_attr_grp = {
 	.attrs = dev_attrs,
 };
 
+static int mmc_proc_acc_perf_read(struct seq_file *m, void *v)
+{
+	struct mmc_host *host = (struct mmc_host*) m->private;
+
+	int head;
+	u64 val;
+	unsigned long rbytes, rtime, wbytes, wtime;
+	unsigned long total_wbytes, total_rbytes, total_wtime, total_rtime;
+	unsigned int rperf = 0, wperf = 0, acc_time;
+	unsigned long flags;
+	char user_buf[128];
+	ssize_t count = 0;
+	int cnt;
+
+	if (!host || (host && !host->circbuf_enable))
+		return 0;
+
+	head = host->mmc_circbuf.head;
+	seq_printf(m, "time interval (min):   ~1  ");
+	for (cnt = 2; cnt < 10; cnt ++)
+		seq_printf(m, "   %d~%d  ", cnt - 1, cnt);
+	seq_printf(m, "   9~10  \n");
+	seq_printf(m, "%s read (KB/s)   :", mmc_hostname(host));
+
+	memset(user_buf, 128, 0);
+	cnt = snprintf(user_buf, sizeof(user_buf), "%s write (KB/s)  :", mmc_hostname(host));
+
+	total_rbytes = total_wbytes = total_wtime = total_rtime = 0;
+	acc_time = 0;
+
+	spin_lock_irqsave(&host->lock, flags);
+	while (head != host->mmc_circbuf.tail) {
+		if (head == 0)
+			head = CIRC_BUFFER_SIZE;
+
+		if (head < sizeof(rbytes) + sizeof(wbytes) + sizeof(rtime) + sizeof(wtime))
+			break;
+
+		head = head - sizeof(wtime);
+		memcpy(&wtime, host->mmc_circbuf.buf + head, sizeof(wtime));
+		head = head - sizeof(wbytes);
+		memcpy(&wbytes, host->mmc_circbuf.buf + head, sizeof(wbytes));
+		head = head - sizeof(rtime);
+		memcpy(&rtime, host->mmc_circbuf.buf + head, sizeof(rtime));
+		head = head - sizeof(rbytes);
+		memcpy(&rbytes, host->mmc_circbuf.buf + head, sizeof(rbytes));
+
+		total_wbytes += wbytes;
+		total_rbytes += rbytes;
+		total_wtime += wtime;
+		total_rtime += rtime;
+		acc_time += MMC_STATS_INTERVAL;
+		
+		if (!(acc_time % (60 * 1000)) || (head == host->mmc_circbuf.tail)) {
+			if (total_wtime) {
+				val = ((u64)total_wbytes / 1024) * 1000000;
+				do_div(val, total_wtime);
+				wperf = (unsigned int)val;
+			}
+
+			if (total_rtime) {
+				val = ((u64)total_rbytes / 1024) * 1000000;
+				do_div(val, total_rtime);
+				rperf = (unsigned int)val;
+			}
+			seq_printf(m, "%6u, ", rperf);
+			cnt += snprintf(&user_buf[cnt], sizeof(user_buf) - cnt, "%6u, ",
+					wperf);
+			total_rbytes = total_wbytes = total_wtime = total_rtime = 0;
+			wperf = rperf = 0;
+		}
+
+		if (acc_time >= 10 * 60 * 1000)
+			break;
+		if ((count + cnt) >= PAGE_SIZE || cnt >= sizeof(user_buf))
+			break;
+	}
+	spin_unlock_irqrestore(&host->lock, flags);
+
+	seq_printf(m, "\n%s\n", user_buf);
+	return 0;
+}
+
+static int mmc_proc_acc_perf_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mmc_proc_acc_perf_read, PDE_DATA(inode));
+}
+
+static const struct file_operations mmc_proc_acc_perf_fops = {
+	.open           = mmc_proc_acc_perf_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
 int mmc_add_host(struct mmc_host *host)
 {
 	int err;
@@ -876,6 +1010,22 @@ int mmc_add_host(struct mmc_host *host)
 	host->clk_scaling.down_threshold = 5;
 	host->clk_scaling.polling_delay_ms = 100;
 
+	host->circbuf_enable = false;
+	host->mmc_circbuf.buf = kzalloc(CIRC_BUFFER_SIZE, GFP_KERNEL);
+	if (!host->mmc_circbuf.buf) {
+		pr_err("%s: failed to allocate memory for circular buffer.\n",
+				mmc_hostname(host));
+	} else {
+		host->mmc_circbuf.head = host->mmc_circbuf.tail = 0;
+		if (mmc_is_mmc_host(host)) {
+			host->mmc_circ_proc = proc_create_data("emmc_acc_perf", 0444, NULL,
+					&mmc_proc_acc_perf_fops, host);
+		} else if (mmc_is_sd_host(host)) {
+			host->mmc_circ_proc = proc_create_data("sd_acc_perf", 0444, NULL,
+					&mmc_proc_acc_perf_fops, host);
+		}
+	}
+
 	err = sysfs_create_group(&host->class_dev.kobj, &clk_scaling_attr_grp);
 	if (err)
 		pr_err("%s: failed to create clk scale sysfs group with err %d\n",
@@ -905,6 +1055,10 @@ void mmc_remove_host(struct mmc_host *host)
 #ifdef CONFIG_DEBUG_FS
 	mmc_remove_host_debugfs(host);
 #endif
+	if (mmc_is_sd_host(host))
+		remove_proc_entry("sd_acc_perf", NULL);
+	else if (mmc_is_mmc_host(host))
+		remove_proc_entry("emmc_acc_perf", NULL);
 	sysfs_remove_group(&host->parent->kobj, &dev_attr_grp);
 	sysfs_remove_group(&host->class_dev.kobj, &clk_scaling_attr_grp);
 

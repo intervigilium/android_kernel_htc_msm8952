@@ -2307,7 +2307,7 @@ static int __q6asm_open_write(struct audio_client *ac, uint32_t format,
 		open.dec_fmt_id = ASM_MEDIA_FMT_AAC_V2;
 		break;
 	case FORMAT_MPEG4_MULTI_AAC:
-		open.dec_fmt_id = ASM_MEDIA_FMT_DOLBY_AAC;
+		open.dec_fmt_id = ASM_MEDIA_FMT_AAC_V2;
 		break;
 	case FORMAT_WMA_V9:
 		open.dec_fmt_id = ASM_MEDIA_FMT_WMA_V9_V2;
@@ -2435,7 +2435,7 @@ static int __q6asm_open_read_write(struct audio_client *ac, uint32_t rd_format,
 		open.dec_fmt_id = ASM_MEDIA_FMT_AAC_V2;
 		break;
 	case FORMAT_MPEG4_MULTI_AAC:
-		open.dec_fmt_id = ASM_MEDIA_FMT_DOLBY_AAC;
+		open.dec_fmt_id = ASM_MEDIA_FMT_AAC_V2;
 		break;
 	case FORMAT_WMA_V9:
 		open.dec_fmt_id = ASM_MEDIA_FMT_WMA_V9_V2;
@@ -2675,7 +2675,7 @@ static int __q6asm_run_nowait(struct audio_client *ac, uint32_t flags,
 	}
 	pr_debug("%s: session[%d]\n", __func__, ac->session);
 	q6asm_stream_add_hdr_async(ac, &run.hdr, sizeof(run), TRUE, stream_id);
-	atomic_set(&ac->cmd_state, 1);
+	
 	run.hdr.opcode = ASM_SESSION_CMD_RUN_V2;
 	run.flags    = flags;
 	run.time_lsw = lsw_ts;
@@ -5793,7 +5793,7 @@ static int __q6asm_cmd_nowait(struct audio_client *ac, int cmd,
 		return -EINVAL;
 	}
 	q6asm_stream_add_hdr_async(ac, &hdr, sizeof(hdr), TRUE, stream_id);
-	atomic_set(&ac->cmd_state, 1);
+	
 	if (ac->io_mode & COMPRESSED_STREAM_IO)
 		hdr.token = ((ac->session << 8) & 0xFFFF00) |
 			(stream_id & 0xFF);

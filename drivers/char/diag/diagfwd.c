@@ -51,6 +51,7 @@
 #define SMD_DRAIN_BUF_SIZE 4096
 extern unsigned diag7k_debug_mask;
 extern unsigned diag9k_debug_mask;
+bool DM_enable = false;
 int diag_debug_buf_idx;
 unsigned char diag_debug_buf[1024];
 static int timestamp_switch;
@@ -1098,8 +1099,10 @@ static int diagfwd_mux_close(int id, int mode)
 	     driver->logging_mode == USB_MODE)) {
 	} else {
 		for (i = 0; i < NUM_PERIPHERALS; i++) {
-			diagfwd_close(i, TYPE_DATA);
-			diagfwd_close(i, TYPE_CMD);
+			if (!DM_enable) { 
+				diagfwd_close(i, TYPE_DATA);
+				diagfwd_close(i, TYPE_CMD);
+			}
 		}
 		
 		DIAGFWD_DBUG("diag: In %s, re-enabling HDLC encoding\n",

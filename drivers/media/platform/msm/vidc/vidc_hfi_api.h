@@ -219,6 +219,7 @@ enum hal_property {
 	HAL_PARAM_VDEC_NON_SECURE_OUTPUT2,
 	HAL_PARAM_VENC_HIER_P_HYBRID_MODE,
 	HAL_PARAM_VENC_MBI_STATISTICS_MODE,
+	HAL_PARAM_VENC_BITRATE_TYPE,
 };
 
 enum hal_domain {
@@ -1347,7 +1348,7 @@ static inline enum vidc_vote_data_session VIDC_VOTE_DATA_SESSION_VAL(
 struct vidc_bus_vote_data {
 	enum vidc_vote_data_session session;
 	int load;
-	bool low_power;
+	enum msm_vidc_power_mode power_mode;
 };
 
 struct vidc_clk_scale_data {

@@ -1208,6 +1208,19 @@ int usb_get_connect_type(void)
 	struct cable_detect_info*pInfo = &the_cable_info;
 	return pInfo->connect_type;
 }
+
+extern int usb_type_event_notify(int result);
+void usb_set_connect_type(int _connect_type)
+{
+	struct cable_detect_info*pInfo = &the_cable_info;
+
+	
+	usb_type_event_notify(_connect_type);
+	pInfo->connect_type = _connect_type;
+
+	return;
+}
+
 void cable_status_notifier_func(int cable_type)
 {
 	struct cable_detect_info*pInfo = &the_cable_info;

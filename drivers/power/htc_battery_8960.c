@@ -172,6 +172,12 @@ struct delayed_work check_consistent_work;
 
 #define BATT_CRITICAL_LOW_VOLTAGE		(3000)
 static int critical_shutdown = 0;
+#if defined(CONFIG_MACH_DUMMY) && CONFIG_MACH_DUMMY
+static int ui_zero_voltage = 3400;
+#else
+static int ui_zero_voltage = 3250;
+#endif
+
 static int critical_alarm_level;
 static int critical_alarm_level_set;
 struct wake_lock voltage_alarm_wake_lock;
@@ -428,6 +434,16 @@ static void unknown_usb_detect_worker(struct work_struct *work)
 int usb_type_event_notify(int result)
 {
 	pr_info("[BATT] %s result : %d\n", __func__, result);
+
+	
+	
+	if(latest_chg_src == CHARGER_BATTERY &&
+		result >= CONNECT_TYPE_NONE	&&
+		result <= CONNECT_TYPE_9V_AC){
+		pr_info("[BATT] %s Cable removed USB sent event:%d, skip it\n", __func__, result);
+		return 0;
+	}
+
 	switch(result)
 	{
 		
@@ -1606,10 +1622,40 @@ static int htc_batt_get_chg_status(enum power_supply_property psp)
 			return htc_batt_info.icharger->get_charge_type();
 		else
 			break;
+	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->get_system_temp_level)
+			return htc_batt_info.icharger->get_system_temp_level();
+		else
+			break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->get_input_current_max)
+			return htc_batt_info.icharger->get_input_current_max();
+		else
+			break;
 	case POWER_SUPPLY_PROP_FLASH_ACTIVE:
 		if (htc_batt_info.icharger &&
 				htc_batt_info.icharger->get_otg_pulse_skip)
 			return htc_batt_info.icharger->get_otg_pulse_skip();
+		else
+			break;
+	case POWER_SUPPLY_PROP_DP_DM:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->get_dp_dm)
+			return htc_batt_info.icharger->get_dp_dm();
+		else
+			break;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->get_input_current_limited)
+			return htc_batt_info.icharger->get_input_current_limited();
+		else
+			break;
+	case POWER_SUPPLY_PROP_RERUN_AICL:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->get_rerun_aicl)
+			return htc_batt_info.icharger->get_rerun_aicl();
 		else
 			break;
 	default:
@@ -1645,6 +1691,24 @@ htc_batt_set_chg_property(enum power_supply_property psp, int val)
 		if (htc_batt_info.icharger &&
 				htc_batt_info.icharger->set_otg_pulse_skip)
 			return htc_batt_info.icharger->set_otg_pulse_skip(val);
+		else
+			break;
+	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->set_system_temp_level)
+			return htc_batt_info.icharger->set_system_temp_level(val);
+		else
+			break;
+	case POWER_SUPPLY_PROP_DP_DM:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->set_dp_dm)
+			return htc_batt_info.icharger->set_dp_dm(val);
+		else
+			break;
+	case POWER_SUPPLY_PROP_RERUN_AICL:
+		if (htc_batt_info.icharger &&
+				htc_batt_info.icharger->set_rerun_aicl)
+			return htc_batt_info.icharger->set_rerun_aicl(val);
 		else
 			break;
 	default:
@@ -1839,6 +1903,89 @@ static inline int is_bounding_fully_charged_level_dis_batt_chg(void)
 	return 0;
 }
 
+#define CC_UAH_PER_PERCENT	21000
+static void wa_for_soc_stuck_when_charging(void)
+{
+	static bool s_wa_for_soc_stuck_is_run = false;
+	static int s_pre_level_raw = 0;
+	static int s_pre_cc_uah = 0;
+	int cc_uah = 0;
+	int delta_cc_soc = 0;
+	int rc = 0;
+
+	if (!htc_batt_info.igauge->get_battery_cc)
+		
+		return;
+
+	if (htc_batt_info.rep.batt_temp > 480
+			|| htc_batt_info.rep.batt_temp < 150) {
+		s_wa_for_soc_stuck_is_run = false;
+		s_pre_level_raw = 0;
+		s_pre_cc_uah = 0;
+		return;
+	}
+
+	
+	if (s_wa_for_soc_stuck_is_run == false
+			&& htc_batt_info.rep.charging_source == 0) {
+		s_pre_level_raw = 0;
+		s_pre_cc_uah = 0;
+		return;
+	}
+
+	
+	rc = htc_batt_info.igauge->get_battery_cc(&cc_uah);
+	if (rc != 0)
+		
+		return;
+
+	if (s_pre_level_raw == 0) {
+		
+		s_wa_for_soc_stuck_is_run = false;
+		s_pre_level_raw = htc_batt_info.rep.level_raw;
+		s_pre_cc_uah = cc_uah;
+	} else {
+		if (s_pre_level_raw != htc_batt_info.rep.level_raw) {
+			
+			s_wa_for_soc_stuck_is_run = false;
+			s_pre_level_raw = htc_batt_info.rep.level_raw;
+			s_pre_cc_uah = cc_uah;
+		} else {
+			
+			delta_cc_soc = (cc_uah - s_pre_cc_uah) / CC_UAH_PER_PERCENT;
+
+			if (delta_cc_soc > 5 || delta_cc_soc < (-5)) {
+				
+				
+				s_wa_for_soc_stuck_is_run = true;
+			} else
+				s_wa_for_soc_stuck_is_run = false;
+
+			if (s_wa_for_soc_stuck_is_run == true) {
+				htc_batt_info.rep.level_raw += delta_cc_soc;
+
+				if (htc_batt_info.rep.level_raw > 100)
+					htc_batt_info.rep.level_raw = 100;
+
+				if (htc_batt_info.rep.level_raw < 0)
+					htc_batt_info.rep.level_raw = 0;
+			}
+
+			BATT_LOG("WA_SOC_STUCK: "
+				"pre_cc_uah=%d, "
+				"cc_uah=%d, "
+				"delta_cc_soc=%d, "
+				"stuck_level_raw=%d, "
+				"cc_level_raw=%d",
+				s_pre_cc_uah,
+				cc_uah,
+				delta_cc_soc,
+				s_pre_level_raw,
+				htc_batt_info.rep.level_raw);
+		}
+	}
+}
+
 static void batt_update_info_from_charger(void)
 {
 	if (!htc_batt_info.icharger) {
@@ -1910,7 +2057,9 @@ static void batt_update_info_from_gauge(void)
 
 	htc_batt_info.igauge->get_battery_soc(
 		&htc_batt_info.rep.level_raw);
+	wa_for_soc_stuck_when_charging();
 	htc_batt_info.rep.level = htc_batt_info.rep.level_raw;
+
 	
 	if (htc_batt_info.icharger->is_ovp)
 		htc_batt_info.icharger->is_ovp(&htc_batt_info.rep.over_vchg);
@@ -2341,7 +2490,7 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	store_level = htc_batt_info.rep.level - htc_batt_info.rep.level_raw;
 
 	
-	if (htc_batt_info.rep.level == 0 && htc_batt_info.rep.batt_vol > 3250 && htc_batt_info.rep.batt_temp > 0) {
+	if (htc_batt_info.rep.level == 0 && htc_batt_info.rep.batt_vol > ui_zero_voltage && htc_batt_info.rep.batt_temp > 0) {
 		pr_info("Not reach shutdown voltage, vol:%d\n", htc_batt_info.rep.batt_vol);
 		htc_batt_info.rep.level = 1;
 		store_level = 1;
@@ -2358,6 +2507,11 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 
 static void batt_update_limited_charge(void)
 {
+	if (strcmp(htc_get_bootmode(),"")) {
+		pr_debug("[BATT] %s bootmode=%s\n", __func__, htc_get_bootmode());
+		return;
+	}
+
 	if (htc_batt_info.state & STATE_EARLY_SUSPEND) {
 		
 		if (htc_batt_info.rep.batt_temp > SMALL_CHG_TEMP_HEAVY) {
@@ -2389,6 +2543,11 @@ static void batt_update_limited_charge(void)
 
 static void batt_update_limited_input_current(void)
 {
+	if (strcmp(htc_get_bootmode(),"")) {
+		pr_debug("[BATT] %s bootmode=%s\n", __func__, htc_get_bootmode());
+		return;
+	}
+
 	if (htc_batt_info.state & STATE_EARLY_SUSPEND) {
 		
 		if(iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_TALK) {
@@ -2397,6 +2556,9 @@ static void batt_update_limited_input_current(void)
 			
 			if (iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_KDDI)
 				set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_KDDI);
+			
+			if (iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_THRML_IUSB)
+				set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML_IUSB);
 		}
 	} else {
 		
@@ -2408,6 +2570,8 @@ static void batt_update_limited_input_current(void)
 				set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_NAVI);
 			
 			set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_KDDI);
+			
+			set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML_IUSB);
 		}
 	}
 }
@@ -2462,11 +2626,13 @@ static void sw_safety_timer_check(unsigned long time_since_last_update_ms)
 
 void update_htc_extension_state(void)
 {
+#if 0 
 	
 	if (HTC_PWR_SOURCE_TYPE_UNKNOWN_USB == htc_batt_info.rep.charging_source)
 		htc_batt_info.rep.htc_extension |= HTC_EXT_UNKNOWN_USB_CHARGER;
 	else
 		htc_batt_info.rep.htc_extension &= ~HTC_EXT_UNKNOWN_USB_CHARGER;
+#endif
 	
 	if (charger_under_rating &&
 		HTC_PWR_SOURCE_TYPE_AC == htc_batt_info.rep.charging_source)
@@ -2729,14 +2895,16 @@ static void batt_worker(struct work_struct *work)
 	cable_source = htc_batt_info.rep.charging_source;
 
 	
-	if(htc_batt_info.rep.charging_source < CHARGER_MHL_UNKNOWN)
+	
+	if (htc_batt_info.rep.charging_source < CHARGER_MHL_UNKNOWN &&
+			prev_pwrsrc_enabled == 1)
 		batt_error_handle();
 
 	
 	batt_level_adjust(time_since_last_update_ms);
 
 	
-	if(htc_batt_info.igauge->ready
+	if (htc_batt_info.igauge->ready
 			&& htc_batt_info.icharger->ready
 			&& checked_consistent_flag
 			&& !(htc_batt_info.rep.batt_state))
@@ -3701,8 +3869,10 @@ static int critical_alarm_voltage_mv[] = {3000, 3200, 3400};
 
 static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.guage_driver = 0,
-	.chg_limit_active_mask = HTC_BATT_CHG_LIMIT_BIT_NAVI |
-								HTC_BATT_CHG_LIMIT_BIT_NET_TALK,
+	.chg_limit_active_mask = HTC_BATT_CHG_LIMIT_BIT_TALK |
+								HTC_BATT_CHG_LIMIT_BIT_NAVI |
+								HTC_BATT_CHG_LIMIT_BIT_NET_TALK |
+								HTC_BATT_CHG_LIMIT_BIT_THRML_IUSB,
 #ifdef CONFIG_DUTY_CYCLE_LIMIT
 	.chg_limit_timer_sub_mask = HTC_BATT_CHG_LIMIT_BIT_THRML,
 #endif
@@ -3756,6 +3926,14 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.icharger.get_vbus = pmi8952_get_vbus,
 	.icharger.get_max_iusb = pmi8952_get_max_iusb,
 	.icharger.get_AICL = pmi8952_get_AICL,
+	.icharger.set_system_temp_level = pmi8952_set_system_temp_level,
+	.icharger.get_system_temp_level = pmi8952_get_system_temp_level,
+	.icharger.get_input_current_max = pmi8952_get_input_current_max,
+	.icharger.set_dp_dm = pmi8952_set_dp_dm,
+	.icharger.get_dp_dm = pmi8952_get_dp_dm,
+	.icharger.get_input_current_limited = pmi8952_get_input_current_limited,
+	.icharger.set_rerun_aicl = pmi8952_set_rerun_aicl,
+	.icharger.get_rerun_aicl = pmi8952_get_rerun_aicl,
 
 	
 	.igauge.name = "pmi8994",
@@ -3774,6 +3952,7 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.igauge.store_battery_ui_soc = pmi8994_fg_store_battery_ui_soc,
 	.igauge.check_consistent = pmi8994_fg_check_consistent,
 	.igauge.get_batt_cycle = pmi8994_fg_get_batt_cycle,
+	.igauge.get_battery_cc = pmi8952_fg_get_batt_cc,
 
 #if 0
 

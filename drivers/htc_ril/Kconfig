@@ -30,3 +30,11 @@ config HTC_DEBUG_RIL_PCN0010_HTC_DUMP_IPCROUTER_LOG
     depends on IPC_ROUTER
     ---help---
       Dump IPC router modem log message
+
+config HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE
+    tristate "HTC_DEBUG_RIL_PCN0011_HTC_DUMP_IPC_UNREAD_PACKAGE"
+    default y
+    depends on IPC_ROUTER
+    ---help---
+      Dump IPC router unread package
+

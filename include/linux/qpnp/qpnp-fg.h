@@ -52,6 +52,7 @@ int pmi8994_fg_check_consistent(void);
 void pmi8994_fg_get_batt_cycle(unsigned int *total_level, unsigned int *overheat_sec,
 				unsigned int *first_use_time, unsigned int *batt_checksum);
 int emmc_misc_write(int val, int offset);
+int pmi8952_fg_get_batt_cc(int *result);
 
 #endif
 #else 
@@ -104,6 +105,10 @@ static inline int pmi8994_fg_check_consistent(void)
 }
 static inline void pmi8994_fg_get_batt_cycle(unsigned int *total_level, unsigned int *overheat_sec,
 						unsigned int *first_use_time, unsigned int *batt_checksum)
+{
+	return -ENXIO;
+}
+static inline int pmi8952_fg_get_batt_cc(int *result)
 {
 	return -ENXIO;
 }

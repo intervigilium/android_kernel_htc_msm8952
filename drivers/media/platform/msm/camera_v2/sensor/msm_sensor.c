@@ -17,9 +17,47 @@
 #include "msm_camera_i2c_mux.h"
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
+#ifdef CONFIG_OIS_CALIBRATION
+#include "lc898123AXD_htc.h"
+#endif
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_info("[CAM]"fmt, ##args)
+
+#ifdef CONFIG_OIS_CALIBRATION
+
+#define OIS_COMPONENT_I2C_ADDR_WRITE 0x7C
+
+int htc_ois_calibration(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int rc = -1;
+	uint16_t cci_client_sid_backup;
+    pr_info("[OIS_Cali]%s:E \n", __func__);
+
+	
+	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
+
+	
+	s_ctrl->sensor_i2c_client->cci_client->sid = OIS_COMPONENT_I2C_ADDR_WRITE >> 1;
+
+    
+    rc = htc_GyroReCalib(s_ctrl);
+    if (rc != 0)
+          pr_err("[OIS_Cali]htc_GyroReCalib fail.\n");
+    else{
+        rc = htc_WrGyroOffsetData();
+        if (rc != 0)
+            pr_err("[OIS_Cali]htc_WrGyroOffsetData fail.\n");
+        else
+            pr_info("[OIS_Cali]Gyro calibration success.\n");
+    }
+
+	
+	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
+
+	return rc;
+}
+#endif
 
 static struct v4l2_file_operations msm_sensor_v4l2_subdev_fops;
 static void msm_sensor_adjust_mclk(struct msm_camera_power_ctrl_t *ctrl)
@@ -1075,6 +1113,14 @@ int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid32(cdata, s_ctrl);
 	break;
 
+    case CFG_SET_GYRO_CALIBRATION:
+#ifdef CONFIG_OIS_CALIBRATION
+        rc = htc_ois_calibration(s_ctrl);
+#else
+        rc = 0;
+#endif
+    break;
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1546,6 +1592,14 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid(cdata, s_ctrl);
 	break;
+
+    case CFG_SET_GYRO_CALIBRATION:
+#ifdef CONFIG_OIS_CALIBRATION
+        rc = htc_ois_calibration(s_ctrl);
+#else
+        rc = 0;
+#endif
+    break;
 
 	default:
 		rc = -EFAULT;

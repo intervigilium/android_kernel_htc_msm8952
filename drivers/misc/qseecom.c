@@ -560,7 +560,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 			if (!tzbuf)
 				return -ENOMEM;
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_generate_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_GEN_KEY_ID;
 			desc.arginfo = TZ_OS_KS_GEN_KEY_ID_PARAM_ID;
@@ -581,7 +583,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_delete_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_DEL_KEY_ID;
 			desc.arginfo = TZ_OS_KS_DEL_KEY_ID_PARAM_ID;
@@ -602,7 +606,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_select_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_SET_PIPE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_SET_PIPE_KEY_ID_PARAM_ID;
@@ -623,7 +629,9 @@ static int qseecom_scm_call2(uint32_t svc_id, uint32_t tz_cmd_id,
 				return -ENOMEM;
 			}
 			memset(tzbuf, 0, tzbuflen);
-			memcpy(tzbuf, req_buf + sizeof(uint32_t), tzbuflen);
+			memcpy(tzbuf, req_buf + sizeof(uint32_t),
+				sizeof(struct qseecom_key_userinfo_update_ireq) -
+				sizeof(uint32_t));
 			dmac_flush_range(tzbuf, tzbuf + tzbuflen);
 			smc_id = TZ_OS_KS_UPDATE_KEY_ID;
 			desc.arginfo = TZ_OS_KS_UPDATE_KEY_ID_PARAM_ID;
@@ -4402,6 +4410,10 @@ static int __qseecom_set_clear_ce_key(struct qseecom_dev_handle *data,
 			resp.result == QSEOS_RESULT_FAIL_MAX_ATTEMPT) {
 			pr_debug("Max attempts to input password reached.\n");
 			ret = -ERANGE;
+		} else if (ret == -EINVAL &&
+			resp.result == QSEOS_RESULT_FAIL_PENDING_OPERATION) {
+			pr_debug("Set Key operation under processing...\n");
+			ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
 		} else {
 			pr_err("scm call to set QSEOS_PIPE_ENC key failed : %d\n",
 				ret);
@@ -4418,6 +4430,11 @@ static int __qseecom_set_clear_ce_key(struct qseecom_dev_handle *data,
 		if (ret) {
 			pr_err("process_incomplete_cmd FAILED, resp.result %d\n",
 					resp.result);
+			if (resp.result ==
+				QSEOS_RESULT_FAIL_PENDING_OPERATION) {
+				pr_debug("Set Key operation under processing...\n");
+				ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
+			}
 			if (resp.result == QSEOS_RESULT_FAIL_MAX_ATTEMPT) {
 				pr_debug("Max attempts to input password reached.\n");
 				ret = -ERANGE;
@@ -4427,6 +4444,10 @@ static int __qseecom_set_clear_ce_key(struct qseecom_dev_handle *data,
 	case QSEOS_RESULT_FAIL_MAX_ATTEMPT:
 		pr_debug("Max attempts to input password reached.\n");
 		ret = -ERANGE;
+		break;
+	case QSEOS_RESULT_FAIL_PENDING_OPERATION:
+		pr_debug("Set Key operation under processing...\n");
+		ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
 		break;
 	case QSEOS_RESULT_FAILURE:
 	default:
@@ -4461,9 +4482,16 @@ static int __qseecom_update_current_key_user_info(
 		ireq, sizeof(struct qseecom_key_userinfo_update_ireq),
 		&resp, sizeof(struct qseecom_command_scm_resp));
 	if (ret) {
-		pr_err("scm call to update key userinfo failed : %d\n", ret);
-		__qseecom_disable_clk(CLK_QSEE);
-		return -EFAULT;
+		if (ret == -EINVAL &&
+			resp.result == QSEOS_RESULT_FAIL_PENDING_OPERATION) {
+			pr_debug("Set Key operation under processing...\n");
+			ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
+		} else {
+			pr_err("scm call to update key userinfo failed: %d\n",
+									ret);
+			__qseecom_disable_clk(CLK_QSEE);
+			return -EFAULT;
+		}
 	}
 
 	switch (resp.result) {
@@ -4471,9 +4499,18 @@ static int __qseecom_update_current_key_user_info(
 		break;
 	case QSEOS_RESULT_INCOMPLETE:
 		ret = __qseecom_process_incomplete_cmd(data, &resp);
+		if (resp.result ==
+			QSEOS_RESULT_FAIL_PENDING_OPERATION) {
+			pr_debug("Set Key operation under processing...\n");
+			ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
+		}
 		if (ret)
 			pr_err("process_incomplete_cmd FAILED, resp.result %d\n",
 					resp.result);
+		break;
+	case QSEOS_RESULT_FAIL_PENDING_OPERATION:
+		pr_debug("Update Key operation under processing...\n");
+		ret = QSEOS_RESULT_FAIL_PENDING_OPERATION;
 		break;
 	case QSEOS_RESULT_FAILURE:
 	default:
@@ -4605,9 +4642,11 @@ static int qseecom_create_key(struct qseecom_dev_handle *data,
 		if (qseecom_enable_ice_setup(create_key_req.usage))
 			goto free_buf;
 
-		ret = __qseecom_set_clear_ce_key(data,
+		do {
+			ret = __qseecom_set_clear_ce_key(data,
 					create_key_req.usage,
 					&set_key_ireq);
+		} while (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION);
 
 		qseecom_disable_ice_setup(create_key_req.usage);
 
@@ -4765,8 +4804,11 @@ static int qseecom_update_key_user_info(struct qseecom_dev_handle *data,
 	memcpy((void *)ireq.new_hash32,
 		(void *)update_key_req.new_hash32, QSEECOM_HASH_SIZE);
 
-	ret = __qseecom_update_current_key_user_info(data, update_key_req.usage,
+	do {
+		ret = __qseecom_update_current_key_user_info(data,
+						update_key_req.usage,
 						&ireq);
+	} while (ret == QSEOS_RESULT_FAIL_PENDING_OPERATION);
 	if (ret) {
 		pr_err("Failed to update key info: %d\n", ret);
 		return ret;
@@ -6546,6 +6588,9 @@ static int qseecom_probe(struct platform_device *pdev)
 				rc = -EINVAL;
 				goto exit_destroy_hw_instance_list;
 			}
+		}
+		if (qseecom.appsbl_qseecom_support) {
+			qseecom.commonlib_loaded = true;
 		}
 	} else {
 		qseecom_platform_support = (struct msm_bus_scale_pdata *)

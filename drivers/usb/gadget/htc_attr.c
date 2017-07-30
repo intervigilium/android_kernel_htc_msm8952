@@ -124,10 +124,13 @@ int htc_usb_enable_function(char *name, int ebl)
 static int usb_disable;
 
 const char * change_charging_to_ums(const char *buff) {
+	USB_INFO("switch ums function from %s\n", buff);
 	if (!strcmp(buff, "charging"))
 		return "mass_storage";
 	else if (!strcmp(buff, "adb"))
 		return "mass_storage,adb";
+	else if (!strcmp(buff, "ffs"))
+		return "mass_storage,ffs";
 	return buff;
 }
 void change_charging_pid_to_ums(struct usb_composite_dev *cdev) {
@@ -147,10 +150,9 @@ void change_charging_pid_to_ums(struct usb_composite_dev *cdev) {
 }
 
 const char * add_usb_radio_debug_function(const char *buff) {
+	USB_INFO("switch to radio debug function from %s\n", buff);
 	if (!strcmp(buff, "ffs,acm")) 
 		return "adb,diag,modem,acm";
-	else if (!strcmp(buff, "mtp,adb")) 
-		return "adb,diag,modem,rmnet";
 	else if (!strcmp(buff, "mass_storage,adb")) 
 		return "mass_storage,adb,diag,modem,rmnet";
 	else if (!strcmp(buff, "mass_storage,adb,acm")) 
@@ -163,44 +165,47 @@ const char * add_usb_radio_debug_function(const char *buff) {
 		return "rndis,diag,modem";
 	else if (!strcmp(buff, "rndis,adb"))
 		return "rndis,adb,diag,modem";
-	USB_INFO("switch to radio debug function:%s\n", buff);
+	else if (!strcmp(buff, "mtp")) 
+		return "mtp,diag,modem,rmnet";
+	else if (!strcmp(buff, "mtp,adb")) 
+		return "mtp,adb,diag,modem,rmnet";
 	return buff;
 }
 void check_usb_vid_pid(struct usb_composite_dev *cdev) {
 	switch(cdev->desc.idProduct) {
+		case 0x0c93:
+			cdev->desc.idProduct = 0x0f12;
+			break;
+		case 0x0f87:
+		case 0x0ca8:
+			cdev->desc.idProduct = 0x0f11;
+			break;
 		case 0x0ffe:
-			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0f82;
 			break;
 		case 0x0ffc:
-			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0f83;
-			break;
-		case 0x0f87:
-			cdev->desc.idVendor = 0x0bb4;
-			cdev->desc.idProduct = 0x0f24;
 			break;
 		case 0x0f86:
 		case 0x0ff5:
-			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0fd8;
 			break;
 		case 0x0f65:
 		case 0x0ff9:
-			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0fd9;
 			break;
 		case 0x0f15:
-			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0f17;
 		default:
 			break;
 	}
+	cdev->desc.idVendor = 0x0bb4;
 	return;
 }
 
 static void setup_usb_denied(int htc_mode)
 {
+	USB_INFO("%s: htc_mode = %d\n", __func__, htc_mode);
 	if (htc_mode)
 		_android_dev->autobot_mode = 1;
 	else
@@ -231,7 +236,6 @@ static ssize_t show_is_usb_denied(struct device *dev,
 	}
 
 	length = sprintf(buf, "%d\n", deny);
-	USB_INFO("%s: %s\n", __func__, buf);
 	return length;
 }
 

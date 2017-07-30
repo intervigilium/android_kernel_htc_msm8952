@@ -11,10 +11,10 @@
  * GNU General Public License for more details.
  */
 
-#include "msm8976.dtsi"
 #include "msm8976-pinctrl.dtsi"
 #include "msm8976-camera-sensor-cdp.dtsi"
 #include "msm8976-mdss-cdp.dtsi"
+#include "msm8976-wsa881x.dtsi"
 
 &i2c_4 { /* BLSP1 QUP4 */
 	synaptics@20 {
@@ -83,6 +83,17 @@
 		interrupt-parent = <&msm_gpio>;
 		interrupts = <102 2>;    /* MSM GPIO 102, TRIGGER_FALLING */
 		pericom,enb-gpio = <&msm_gpio 101 0x1>;	/* active low ENB */
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbc_int_default>;
+	};
+
+	ti-type-c@61 {
+		compatible = "ti,usb-type-c";
+		reg = <0x61>;
+		vdd_io-supply = <&pm8950_l5>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <102 2>;    /* MSM GPIO 102, TRIGGER_FALLING */
+		ti,enb-gpio = <&msm_gpio 101 0x1>;	/* active low ENB */
 		pinctrl-names = "default";
 		pinctrl-0 = <&usbc_int_default>;
 	};
@@ -188,10 +199,6 @@
 	pinctrl-0 = <&sdc1_clk_on &sdc1_cmd_on &sdc1_data_on &sdc1_rclk_on>;
 	pinctrl-1 = <&sdc1_clk_off &sdc1_cmd_off &sdc1_data_off &sdc1_rclk_off>;
 
-	qcom,clk-rates = <400000 25000000 50000000 100000000
-				177777778 342850000>;
-	qcom,bus-speed-mode = "HS400_1p8v", "HS200_1p8v", "DDR_1p8v";
-
 	qcom,nonremovable;
 
 	status = "ok";
@@ -254,7 +261,8 @@
 	pinctrl-7 = <&qdsd_clk_spmi &qdsd_cmd_spmi
 		    &qdsd_data0_spmi &qdsd_data3_spmi>;
 };
-
+//HTC_AUDIO_START
+/*
 &slim_msm {
 	tasha_codec {
 		swr_master {
@@ -280,6 +288,16 @@
 			};
 		};
 	};
+};
+*/
+//HTC_AUDIO_END
+
+&pm8950_cajon_dig {
+	status = "disabled";
+};
+
+&pm8950_cajon_analog {
+	status = "disabled";
 };
 
 &pm8004_mpps {

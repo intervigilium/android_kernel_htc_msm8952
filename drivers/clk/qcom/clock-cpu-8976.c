@@ -144,7 +144,7 @@ static struct pll_clk a72ss_hf_pll = {
 	},
 	.base = &virt_bases[APCS_C1_PLL_BASE],
 	.max_rate = 1843200000,
-	.min_rate = 1190400000,
+	.min_rate = 940800000,
 	.c = {
 		.parent = &xo_a_clk.c,
 		.dbg_name = "a72ss_hf_pll",
@@ -338,7 +338,7 @@ struct cpu_clk_8976 {
 };
 
 static void do_nothing(void *unused) { }
-#define CPU_LATENCY_NO_L2_PC_US (500)
+#define CPU_LATENCY_NO_L2_PC_US (280)
 
 static inline struct cpu_clk_8976 *to_cpu_clk_8976(struct clk *c)
 {
@@ -867,6 +867,7 @@ static int cpu_parse_devicetree(struct platform_device *pdev)
 				"Unable to get vdd_mx_hf regulator!!!\n");
 		return PTR_ERR(vdd_hf.regulator[1]);
 	}
+	vdd_hf.use_max_uV = true;
 
 	/* SR PLLs core logic */
 	vdd_mx_sr.regulator[0] = devm_regulator_get(&pdev->dev,
@@ -877,6 +878,7 @@ static int cpu_parse_devicetree(struct platform_device *pdev)
 				"Unable to get vdd_mx_sr regulator!!!\n");
 		return PTR_ERR(vdd_mx_sr.regulator[0]);
 	}
+	vdd_mx_sr.use_max_uV = true;
 
 	vdd_cpu_a72.regulator[0] = devm_regulator_get(&pdev->dev,
 							"vdd_a72");
@@ -886,6 +888,7 @@ static int cpu_parse_devicetree(struct platform_device *pdev)
 				"Unable to get vdd_a72 regulator!!!\n");
 		return PTR_ERR(vdd_cpu_a72.regulator[0]);
 	}
+	vdd_cpu_a72.use_max_uV = true;
 
 	vdd_cpu_a53.regulator[0] = devm_regulator_get(&pdev->dev,
 							"vdd_a53");
@@ -895,6 +898,7 @@ static int cpu_parse_devicetree(struct platform_device *pdev)
 				"Unable to get vdd_a53 regulator!!!\n");
 		return PTR_ERR(vdd_cpu_a53.regulator[0]);
 	}
+	vdd_cpu_a53.use_max_uV = true;
 
 	vdd_cpu_cci.regulator[0] = devm_regulator_get(&pdev->dev,
 							"vdd_cci");
@@ -904,6 +908,7 @@ static int cpu_parse_devicetree(struct platform_device *pdev)
 				"Unable to get vdd_cci regulator!!!\n");
 		return PTR_ERR(vdd_cpu_cci.regulator[0]);
 	}
+	vdd_cpu_cci.use_max_uV = true;
 
 	for (mux_id = 0; mux_id < A53SS_MUX_NUM; mux_id++) {
 		snprintf(rcg_name, ARRAY_SIZE(rcg_name), "%s-mux",

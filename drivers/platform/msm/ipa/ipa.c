@@ -47,6 +47,7 @@
 #define IPA_BAM_CNFG_BITS_VALv2_0 (0xFFFFE004)
 #define IPA_STATUS_CLEAR_OFST (0x3f28)
 #define IPA_STATUS_CLEAR_SIZE (32)
+#define SPS_IPC_LOGLEVEL 3
 
 #define IPA_AGGR_MAX_STR_LENGTH (10)
 
@@ -169,9 +170,6 @@ struct ipa_ioc_nat_alloc_mem32 {
 static void ipa_start_tag_process(struct work_struct *work);
 static DECLARE_WORK(ipa_tag_work, ipa_start_tag_process);
 
-static void ipa_sps_process_irq(struct work_struct *work);
-static DECLARE_WORK(ipa_sps_process_irq_work, ipa_sps_process_irq);
-
 static void ipa_sps_release_resource(struct work_struct *work);
 static DECLARE_DELAYED_WORK(ipa_sps_release_resource_work,
 	ipa_sps_release_resource);
@@ -279,6 +277,61 @@ static int ipa_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+/**
+* ipa_flow_control() - Enable/Disable flow control on a particular client.
+* Return codes:
+* None
+*/
+void ipa_flow_control(enum ipa_client_type ipa_client,
+		bool enable, uint32_t qmap_id)
+{
+	struct ipa_ep_cfg_ctrl ep_ctrl = {0};
+	int ep_idx;
+	struct ipa_ep_context *ep;
+
+	/* Check if tethered flow control is needed or not.*/
+	if (!ipa_ctx->tethered_flow_control) {
+		IPADBG("Apps flow control is not needed\n");
+		return;
+	}
+
+	/* Check if ep is valid. */
+	ep_idx = ipa_get_ep_mapping(ipa_client);
+	if (ep_idx == -1) {
+		IPADBG("Invalid IPA client\n");
+		return;
+	}
+
+	ep = &ipa_ctx->ep[ep_idx];
+	if (!ep->valid || (ep->client != IPA_CLIENT_USB_PROD)) {
+		IPADBG("EP not valid/Not applicable for client.\n");
+		return;
+	}
+
+	spin_lock(&ipa_ctx->disconnect_lock);
+	/* Check if the QMAP_ID matches. */
+	if (ep->cfg.meta.qmap_id != qmap_id) {
+		IPADBG("Flow control ind not for same flow: %u %u\n",
+			ep->cfg.meta.qmap_id, qmap_id);
+		spin_unlock(&ipa_ctx->disconnect_lock);
+		return;
+	}
+	if (!ep->disconnect_in_progress) {
+		if (enable) {
+			IPADBG("Enabling Flow\n");
+			ep_ctrl.ipa_ep_delay = false;
+			IPA_STATS_INC_CNT(ipa_ctx->stats.flow_enable);
+		} else {
+			IPADBG("Disabling Flow\n");
+			ep_ctrl.ipa_ep_delay = true;
+			IPA_STATS_INC_CNT(ipa_ctx->stats.flow_disable);
+		}
+		ep_ctrl.ipa_ep_suspend = false;
+		ipa_cfg_ep_ctrl(ep_idx, &ep_ctrl);
+	} else
+		IPADBG("EP disconnect is in progress\n");
+	spin_unlock(&ipa_ctx->disconnect_lock);
+}
 static void ipa_wan_msg_free_cb(void *buff, u32 len, u32 type)
 {
 	if (!buff) {
@@ -1275,31 +1328,60 @@ static void ipa_free_buffer(void *user1, int user2)
 	kfree(user1);
 }
 
-static int ipa_q6_pipe_delay(void)
+static int ipa_q6_pipe_delay(bool zip_pipes)
 {
 	u32 reg_val = 0;
 	int client_idx;
 	int ep_idx;
 
+	/* For ZIP pipes, processing is done in AFTER_SHUTDOWN callback. */
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
-		if (IPA_CLIENT_IS_Q6_PROD(client_idx)) {
+		/* Skip the processing for non Q6 pipes. */
+		if (!IPA_CLIENT_IS_Q6_PROD(client_idx))
+			continue;
+		/* Skip the processing for NON-ZIP pipes. */
+		else if (zip_pipes && IPA_CLIENT_IS_Q6_NON_ZIP_PROD(client_idx))
+			continue;
+		/* Skip the processing for ZIP pipes. */
+		else if (!zip_pipes && IPA_CLIENT_IS_Q6_ZIP_PROD(client_idx))
+			continue;
+
+		ep_idx = ipa_get_ep_mapping(client_idx);
+		if (ep_idx == -1)
+			continue;
+
+		IPA_SETFIELD_IN_REG(reg_val, 1,
+			IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_SHFT,
+			IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_BMSK);
+
+		ipa_write_reg(ipa_ctx->mmio,
+			IPA_ENDP_INIT_CTRL_N_OFST(ep_idx), reg_val);
+	}
+
+	return 0;
+}
+
+int ipa_q6_monitor_holb_mitigation(bool enable)
+{
+	int ep_idx;
+	int client_idx;
+
+	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
+		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx)) {
 			ep_idx = ipa_get_ep_mapping(client_idx);
 			if (ep_idx == -1)
 				continue;
-
-			IPA_SETFIELD_IN_REG(reg_val, 1,
-				IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_SHFT,
-				IPA_ENDP_INIT_CTRL_N_ENDP_DELAY_BMSK);
-
-			ipa_write_reg(ipa_ctx->mmio,
-				IPA_ENDP_INIT_CTRL_N_OFST(ep_idx), reg_val);
+			/* Send a command to Uc to enable/disable
+			 * holb monitoring.
+			 */
+			ipa_uc_monitor_holb(client_idx, enable);
 		}
 	}
 
 	return 0;
 }
 
-static int ipa_q6_avoid_holb(void)
+static int ipa_q6_avoid_holb(bool zip_pipes)
 {
 	u32 reg_val;
 	int ep_idx;
@@ -1309,38 +1391,47 @@ static int ipa_q6_avoid_holb(void)
 	memset(&avoid_holb, 0, sizeof(avoid_holb));
 	avoid_holb.ipa_ep_suspend = true;
 
+	/* For ZIP pipes, processing is done in AFTER_SHUTDOWN callback. */
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
-		if (IPA_CLIENT_IS_Q6_CONS(client_idx)) {
-			ep_idx = ipa_get_ep_mapping(client_idx);
-			if (ep_idx == -1)
-				continue;
+		/* Skip the processing for non Q6 pipes. */
+		if (!IPA_CLIENT_IS_Q6_CONS(client_idx))
+			continue;
+		/* Skip the processing for NON-ZIP pipes. */
+		else if (zip_pipes && IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx))
+			continue;
+		/* Skip the processing for ZIP pipes. */
+		else if (!zip_pipes && IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx))
+			continue;
 
-			/*
-			 * ipa_cfg_ep_holb is not used here because we are
-			 * setting HOLB on Q6 pipes, and from APPS perspective
-			 * they are not valid, therefore, the above function
-			 * will fail.
-			 */
-			reg_val = 0;
-			IPA_SETFIELD_IN_REG(reg_val, 0,
-				IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_SHFT,
-				IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_BMSK);
+		ep_idx = ipa_get_ep_mapping(client_idx);
+		if (ep_idx == -1)
+			continue;
 
-			ipa_write_reg(ipa_ctx->mmio,
-			IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_OFST_v2_0(ep_idx),
-				reg_val);
+		/*
+		 * ipa_cfg_ep_holb is not used here because we are
+		 * setting HOLB on Q6 pipes, and from APPS perspective
+		 * they are not valid, therefore, the above function
+		 * will fail.
+		 */
+		reg_val = 0;
+		IPA_SETFIELD_IN_REG(reg_val, 0,
+			IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_SHFT,
+			IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_TIMER_BMSK);
 
-			reg_val = 0;
-			IPA_SETFIELD_IN_REG(reg_val, 1,
-				IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_SHFT,
-				IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_BMSK);
+		ipa_write_reg(ipa_ctx->mmio,
+		IPA_ENDP_INIT_HOL_BLOCK_TIMER_N_OFST_v2_0(ep_idx),
+			reg_val);
 
-			ipa_write_reg(ipa_ctx->mmio,
-				IPA_ENDP_INIT_HOL_BLOCK_EN_N_OFST_v2_0(ep_idx),
-				reg_val);
+		reg_val = 0;
+		IPA_SETFIELD_IN_REG(reg_val, 1,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_SHFT,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_EN_BMSK);
 
-			ipa_cfg_ep_ctrl(ep_idx, &avoid_holb);
-		}
+		ipa_write_reg(ipa_ctx->mmio,
+			IPA_ENDP_INIT_HOL_BLOCK_EN_N_OFST_v2_0(ep_idx),
+			reg_val);
+
+		ipa_cfg_ep_ctrl(ep_idx, &avoid_holb);
 	}
 
 	return 0;
@@ -1378,7 +1469,7 @@ static int ipa_q6_clean_q6_tables(void)
 	mem.base = dma_alloc_coherent(ipa_ctx->pdev, 4, &mem.phys_base,
 		GFP_KERNEL);
 	if (!mem.base) {
-		IPAERR("failed to alloc DMA buff of size %d\n", mem.size);
+		IPAERR("failed to alloc DMA buff of size 4\n");
 		return -ENOMEM;
 	}
 
@@ -1561,7 +1652,8 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 
 	/* Disable AGGR on IPA->Q6 pipes */
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++) {
-		if (IPA_CLIENT_IS_Q6_CONS(client_idx)) {
+		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx)) {
 			reg_write = kzalloc(sizeof(*reg_write), GFP_KERNEL);
 
 			if (!reg_write) {
@@ -1601,15 +1693,16 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 }
 
 /**
-* ipa_q6_cleanup() - A cleanup for all Q6 related configuration
-*                    in IPA HW. This is performed in case of SSR.
+* ipa_q6_pre_shutdown_cleanup() - A cleanup for all Q6 related configuration
+*                    in IPA HW before modem shutdown. This is performed in
+*                    case of SSR.
 *
 * Return codes:
 * 0: success
 * This is a mandatory procedure, in case one of the steps fails, the
 * AP needs to restart.
 */
-int ipa_q6_cleanup(void)
+int ipa_q6_pre_shutdown_cleanup(void)
 {
 	/* If uC has notified the APPS upon a ZIP engine error,
 	 * APPS need to assert (This is a non recoverable error).
@@ -1618,12 +1711,21 @@ int ipa_q6_cleanup(void)
 		BUG();
 
 	ipa_inc_client_enable_clks();
-
-	if (ipa_q6_pipe_delay()) {
+	/*
+	 * pipe delay and holb discard for ZIP pipes are handled
+	 * in post shutdown callback.
+	 */
+	if (ipa_q6_pipe_delay(false)) {
 		IPAERR("Failed to delay Q6 pipes\n");
 		BUG();
 	}
-	if (ipa_q6_avoid_holb()) {
+
+	if (ipa_q6_monitor_holb_mitigation(false)) {
+		IPAERR("Failed to disable HOLB monitroing on Q6 pipes\n");
+		BUG();
+	}
+
+	if (ipa_q6_avoid_holb(false)) {
 		IPAERR("Failed to set HOLB on Q6 pipes\n");
 		BUG();
 	}
@@ -1640,18 +1742,33 @@ int ipa_q6_cleanup(void)
 }
 
 /**
-* ipa_q6_pipe_reset() - A cleanup for the Q6 pipes
-*                    in IPA HW. This is performed in case of SSR.
+* ipa_q6_post_shutdown_cleanup() - A cleanup for the Q6 pipes
+*                    in IPA HW after modem shutdown. This is performed
+*                    in case of SSR.
 *
 * Return codes:
 * 0: success
 * This is a mandatory procedure, in case one of the steps fails, the
 * AP needs to restart.
 */
-int ipa_q6_pipe_reset(void)
+int ipa_q6_post_shutdown_cleanup(void)
 {
 	int client_idx;
 	int res;
+
+	/*
+	 * pipe delay and holb discard for ZIP pipes are handled in
+	 * post shutdown.
+	 */
+	if (ipa_q6_pipe_delay(true)) {
+		IPAERR("Failed to delay Q6 ZIP pipes\n");
+		BUG();
+	}
+	if (ipa_q6_avoid_holb(true)) {
+		IPAERR("Failed to set HOLB on Q6 ZIP pipes\n");
+		BUG();
+	}
+
 	/*
 	 * Q6 relies on the AP to reset all Q6 IPA pipes.
 	 * In case the uC is not loaded, or upon any failure in the
@@ -1663,8 +1780,10 @@ int ipa_q6_pipe_reset(void)
 	}
 
 	for (client_idx = 0; client_idx < IPA_CLIENT_MAX; client_idx++)
-		if (IPA_CLIENT_IS_Q6_CONS(client_idx) ||
-			IPA_CLIENT_IS_Q6_PROD(client_idx)) {
+		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx) ||
+			IPA_CLIENT_IS_Q6_NON_ZIP_PROD(client_idx) ||
+			IPA_CLIENT_IS_Q6_ZIP_PROD(client_idx)) {
 			res = ipa_uc_reset_pipe(client_idx);
 			if (res)
 				BUG();
@@ -2212,7 +2331,7 @@ static int ipa_setup_apps_pipes(void)
 	 * thread may nullify it - e.g. on EP disconnect.
 	 * This lock intended to protect the access to the source EP call-back
 	 */
-	spin_lock_init(&ipa_ctx->lan_rx_clnt_notify_lock);
+	spin_lock_init(&ipa_ctx->disconnect_lock);
 	if (ipa_setup_sys_pipe(&sys_in, &ipa_ctx->clnt_hdl_data_in)) {
 		IPAERR(":setup sys pipe failed.\n");
 		result = -EPERM;
@@ -2473,6 +2592,9 @@ void _ipa_enable_clks_v2_0(void)
 
 	if (smmu_clk)
 		clk_prepare_enable(smmu_clk);
+	/* Enable the BAM IRQ. */
+	ipa_sps_irq_control_all(true);
+	ipa_suspend_apps_pipes(false);
 }
 
 void _ipa_enable_clks_v1_1(void)
@@ -2594,6 +2716,8 @@ void _ipa_disable_clks_v1_1(void)
 void _ipa_disable_clks_v2_0(void)
 {
 	IPADBG("disabling gcc_ipa_clk\n");
+	ipa_suspend_apps_pipes(true);
+	ipa_sps_irq_control_all(false);
 	ipa_uc_notify_clk_state(false);
 	if (ipa_clk)
 		clk_disable_unprepare(ipa_clk);
@@ -2908,6 +3032,13 @@ static int ipa_init_flt_block(void)
 	return result;
 }
 
+static int ipa_sps_process_irq_schedule_rel(void)
+{
+	return queue_delayed_work(ipa_ctx->sps_power_mgmt_wq,
+		&ipa_sps_release_resource_work,
+		msecs_to_jiffies(IPA_SPS_PROD_TIMEOUT_MSEC));
+}
+
 /**
 * ipa_suspend_handler() - Handles the suspend interrupt:
 * wakes up the suspended peripheral by requesting its consumer
@@ -2924,46 +3055,51 @@ void ipa_suspend_handler(enum ipa_irq_type interrupt,
 		((struct ipa_tx_suspend_irq_data *)interrupt_data)->endpoints;
 	u32 bmsk = 1;
 	u32 i = 0;
+	int res;
+	struct ipa_ep_cfg_holb holb_cfg;
 
 	IPADBG("interrupt=%d, interrupt_data=%u\n", interrupt, suspend_data);
+	memset(&holb_cfg, 0, sizeof(holb_cfg));
+	holb_cfg.tmr_val = 0;
+
 	for (i = 0; i < ipa_ctx->ipa_num_pipes; i++) {
 		if ((suspend_data & bmsk) && (ipa_ctx->ep[i].valid)) {
-			resource = ipa_get_rm_resource_from_ep(i);
-			ipa_rm_request_resource_with_timer(resource);
+			if (IPA_CLIENT_IS_APPS_CONS(ipa_ctx->ep[i].client)) {
+				/*
+				 * pipe will be unsuspended as part of
+				 * enabling IPA clocks
+				 */
+				if (!atomic_read(
+					&ipa_ctx->sps_pm.dec_clients)
+					) {
+					ipa_inc_client_enable_clks();
+					IPADBG("Pipes un-suspended.\n");
+					IPADBG("Enter poll mode.\n");
+					atomic_set(
+						&ipa_ctx->sps_pm.dec_clients,
+						1);
+					ipa_sps_process_irq_schedule_rel();
+				}
+			} else {
+				resource = ipa_get_rm_resource_from_ep(i);
+				res = ipa_rm_request_resource_with_timer(
+					resource);
+				if (res == -EPERM &&
+				    IPA_CLIENT_IS_CONS(
+					ipa_ctx->ep[i].client)) {
+					holb_cfg.en = 1;
+					res = ipa_cfg_ep_holb_by_client(
+					   ipa_ctx->ep[i].client, &holb_cfg);
+					if (res) {
+						IPAERR("holb en fail\n");
+						IPAERR("IPAHW stall\n");
+						BUG();
+					}
+				}
+			}
 		}
 		bmsk = bmsk << 1;
 	}
-}
-
-static void ipa_sps_process_irq_schedule_rel(void)
-{
-	ipa_ctx->sps_pm.res_rel_in_prog = true;
-	queue_delayed_work(ipa_ctx->sps_power_mgmt_wq,
-			   &ipa_sps_release_resource_work,
-			   msecs_to_jiffies(IPA_SPS_PROD_TIMEOUT_MSEC));
-}
-
-static void ipa_sps_process_irq(struct work_struct *work)
-{
-	unsigned long flags;
-	int ret;
-
-	/* request IPA clocks */
-	ipa_inc_client_enable_clks();
-
-	/* mark SPS resource as granted */
-	spin_lock_irqsave(&ipa_ctx->sps_pm.lock, flags);
-	ipa_ctx->sps_pm.res_granted = true;
-	IPADBG("IPA is ON, calling sps driver\n");
-
-	/* process bam irq */
-	ret = sps_bam_process_irq(ipa_ctx->bam_handle);
-	if (ret)
-		IPAERR("sps_process_eot_event failed %d\n", ret);
-
-	/* release IPA clocks */
-	ipa_sps_process_irq_schedule_rel();
-	spin_unlock_irqrestore(&ipa_ctx->sps_pm.lock, flags);
 }
 
 static int apps_cons_release_resource(void)
@@ -2978,19 +3114,17 @@ static int apps_cons_request_resource(void)
 
 static void ipa_sps_release_resource(struct work_struct *work)
 {
-	unsigned long flags;
-	bool dec_clients = false;
-
-	spin_lock_irqsave(&ipa_ctx->sps_pm.lock, flags);
 	/* check whether still need to decrease client usage */
-	if (ipa_ctx->sps_pm.res_rel_in_prog) {
-		dec_clients = true;
-		ipa_ctx->sps_pm.res_rel_in_prog = false;
-		ipa_ctx->sps_pm.res_granted = false;
+	if (atomic_read(&ipa_ctx->sps_pm.dec_clients)) {
+		if (atomic_read(&ipa_ctx->sps_pm.eot_activity)) {
+			IPADBG("EOT pending Re-scheduling\n");
+			ipa_sps_process_irq_schedule_rel();
+		} else {
+			atomic_set(&ipa_ctx->sps_pm.dec_clients, 0);
+			ipa_dec_client_disable_clks();
+		}
 	}
-	spin_unlock_irqrestore(&ipa_ctx->sps_pm.lock, flags);
-	if (dec_clients)
-		ipa_dec_client_disable_clks();
+	atomic_set(&ipa_ctx->sps_pm.eot_activity, 0);
 }
 
 int ipa_create_apps_resource(void)
@@ -3016,62 +3150,7 @@ int ipa_create_apps_resource(void)
 	return result;
 }
 
-/**
- * sps_event_cb() - Handles SPS events
- * @event: event to handle
- * @param: event-specific paramer
- *
- * This callback support the following events:
- *	- SPS_CALLBACK_BAM_RES_REQ: request resource
- *		Try to increase IPA active client counter.
- *		In case this can be done synchronously then
- *		return in *param true. Otherwise return false in *param
- *		and request IPA clocks. Later call to
- *		sps_bam_process_irq to process the pending irq.
- *	- SPS_CALLBACK_BAM_RES_REL: release resource
- *		schedule a delayed work for decreasing IPA active client
- *		counter. In case that during this time another request arrives,
- *		this work will be canceled.
- */
-static void sps_event_cb(enum sps_callback_case event, void *param)
-{
-	unsigned long flags;
 
-	spin_lock_irqsave(&ipa_ctx->sps_pm.lock, flags);
-
-	switch (event) {
-	case SPS_CALLBACK_BAM_RES_REQ:
-	{
-		bool *ready = (bool *)param;
-
-		/* make sure no release will happen */
-		cancel_delayed_work(&ipa_sps_release_resource_work);
-		ipa_ctx->sps_pm.res_rel_in_prog = false;
-
-		if (ipa_ctx->sps_pm.res_granted) {
-			*ready = true;
-		} else {
-			if (ipa_inc_client_enable_clks_no_block() == 0) {
-				ipa_ctx->sps_pm.res_granted = true;
-				*ready = true;
-			} else {
-				queue_work(ipa_ctx->sps_power_mgmt_wq,
-					   &ipa_sps_process_irq_work);
-				*ready = false;
-			}
-		}
-		break;
-	}
-
-	case SPS_CALLBACK_BAM_RES_REL:
-		ipa_sps_process_irq_schedule_rel();
-		break;
-	default:
-		IPADBG("unsupported event %d\n", event);
-	}
-
-	spin_unlock_irqrestore(&ipa_ctx->sps_pm.lock, flags);
-}
 /**
 * ipa_init() - Initialize the IPA Driver
 * @resource_p:	contain platform specific values from DST file
@@ -3140,6 +3219,7 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	ipa_ctx->modem_cfg_emb_pipe_flt = resource_p->modem_cfg_emb_pipe_flt;
 	ipa_ctx->wan_rx_ring_size = resource_p->wan_rx_ring_size;
 	ipa_ctx->skip_uc_pipe_reset = resource_p->skip_uc_pipe_reset;
+	ipa_ctx->tethered_flow_control = resource_p->tethered_flow_control;
 
 	/* default aggregation parameters */
 	ipa_ctx->aggregation_type = IPA_MBIM_16;
@@ -3249,10 +3329,6 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 		goto fail_create_sps_wq;
 	}
 
-	spin_lock_init(&ipa_ctx->sps_pm.lock);
-	ipa_ctx->sps_pm.res_granted = false;
-	ipa_ctx->sps_pm.res_rel_in_prog = false;
-
 	/* register IPA with SPS driver */
 	bam_props.phys_addr = resource_p->bam_mem_base;
 	bam_props.virt_size = resource_p->bam_mem_size;
@@ -3263,13 +3339,12 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	bam_props.options |= SPS_BAM_NO_LOCAL_CLK_GATING;
 	if (ipa_ctx->ipa_hw_mode != IPA_HW_MODE_VIRTUAL)
 		bam_props.options |= SPS_BAM_OPT_IRQ_WAKEUP;
-	bam_props.options |= SPS_BAM_RES_CONFIRM;
 	if (ipa_ctx->ipa_bam_remote_mode == true)
 		bam_props.manage |= SPS_BAM_MGR_DEVICE_REMOTE;
 	if (ipa_ctx->smmu_present)
 		bam_props.options |= SPS_BAM_SMMU_EN;
 	bam_props.ee = resource_p->ee;
-	bam_props.callback = sps_event_cb;
+	bam_props.ipc_loglevel = SPS_IPC_LOGLEVEL;
 
 	result = sps_register_bam_device(&bam_props, &ipa_ctx->bam_handle);
 	if (result) {
@@ -3502,6 +3577,9 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 		goto fail_init_hw;
 	}
 
+	/* Create a wakeup source. */
+	ipa_ctx->pdev->power.wakeup = wakeup_source_register("IPA_WS");
+
 	/* Initialize IPA RM (resource manager) */
 	result = ipa_rm_initialize();
 	if (result) {
@@ -3529,7 +3607,7 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 
 	/*add handler for suspend interrupt*/
 	result = ipa_add_interrupt_handler(IPA_TX_SUSPEND_IRQ,
-			ipa_suspend_handler, true, NULL);
+			ipa_suspend_handler, false, NULL);
 	if (result) {
 		IPAERR("register handler for suspend interrupt failed\n");
 		result = -ENODEV;
@@ -3709,6 +3787,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 		"qcom,skip-uc-pipe-reset");
 	IPADBG(": skip uC pipe reset = %s\n",
 		ipa_drv_res->skip_uc_pipe_reset
+		? "True" : "False");
+
+	ipa_drv_res->tethered_flow_control =
+		of_property_read_bool(pdev->dev.of_node,
+		"qcom,tethered-flow-control");
+	IPADBG(": Use apps based flow control = %s\n",
+		ipa_drv_res->tethered_flow_control
 		? "True" : "False");
 
 	/* Get IPA wrapper address */
@@ -4126,15 +4211,6 @@ static int ipa_ap_suspend(struct device *dev)
 	int i;
 
 	IPADBG("Enter...\n");
-	/*
-	 * In case SPS requested IPA resources fail to suspend.
-	 * This can happen if SPS driver is during the processing of
-	 * IPA BAM interrupt
-	 */
-	if (ipa_ctx->sps_pm.res_granted && !ipa_ctx->sps_pm.res_rel_in_prog) {
-		IPAERR("SPS resource is granted, do not suspend\n");
-		return -EAGAIN;
-	}
 
 	/* In case there is a tx/rx handler in polling mode fail to suspend */
 	for (i = 0; i < ipa_ctx->ipa_num_pipes; i++) {
@@ -4147,6 +4223,7 @@ static int ipa_ap_suspend(struct device *dev)
 	}
 
 	/* release SPS IPA resource without waiting for inactivity timer */
+	atomic_set(&ipa_ctx->sps_pm.eot_activity, 0);
 	ipa_sps_release_resource(NULL);
 	IPADBG("Exit\n");
 

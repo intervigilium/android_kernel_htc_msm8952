@@ -673,12 +673,9 @@ static void pmic_arb_log_mapping_v2(struct spmi_pmic_arb_dev *dev,
 	u32 chnl_ppid;
 	const char *diag;
 
-	PRINT_IPC_OR_SEQ(dev, file,
-			 "Discrepancy detection between channels and radix");
-	PRINT_IPC_OR_SEQ(dev, file,
-			 "APID Owner chnls-reg  chnl-PPID radix-APID");
-	PRINT_IPC_OR_SEQ(dev, file,
-			 "------------------------------------------");
+	printk("Discrepancy detection between channels and radix\n");
+	printk("APID Owner chnls-reg  chnl-PPID radix-APID\n");
+	printk("------------------------------------------");
 
 	for (apid = 0; apid < SPMI_OWNERSHIP_TABLE_LEN; ++apid) {
 		reg = readl_relaxed(dev->cnfg + SPMI_OWNERSHIP_TABLE_REG(apid));
@@ -694,11 +691,10 @@ static void pmic_arb_log_mapping_v2(struct spmi_pmic_arb_dev *dev,
 			(rdx_apid != SPMI_MAPPING_TABLE_LEN)) ?
 			" <= Discrepancy detected" : "";
 
-		PRINT_IPC_OR_SEQ(dev, file,
-			   "%03d  %2d    0x%08x 0x%03x     %03d%s",
-			   apid, owner, chnl_reg, chnl_ppid, rdx_apid, diag);
+		printk("%03d  %2d    0x%08x 0x%03x     %03d%s\n",
+			apid, owner, chnl_reg, chnl_ppid, rdx_apid, diag);
 	}
-	PRINT_IPC_OR_SEQ(dev, file, "\n");
+	printk("\n");
 }
 
 void pmic_arb_dbg_dump_radix_and_requested_irqs(struct spmi_pmic_arb_dev *dev,
@@ -707,27 +703,25 @@ void pmic_arb_dbg_dump_radix_and_requested_irqs(struct spmi_pmic_arb_dev *dev,
 	int i;
 	u32 reg;
 
-	PRINT_IPC_OR_SEQ(dev, file, "Radix-tree@0x%p",
+	printk( "Radix-tree@0x%p\n",
 			 dev->cnfg + SPMI_MAPPING_TABLE_REG(0));
-	PRINT_IPC_OR_SEQ(dev, file,
-			 "------------------------------------------");
+	printk("------------------------------------------\n");
 	for (i = 0 ; i < SPMI_MAPPING_TABLE_LEN; ++i) {
 		reg = readl_relaxed(dev->cnfg + SPMI_MAPPING_TABLE_REG(i));
-		PRINT_IPC_OR_SEQ(dev, file, "0x%x", reg);
+		printk("0x%x\n", reg);
 	}
-	PRINT_IPC_OR_SEQ(dev, file, "\n");
+	printk("\n");
 
-	PRINT_IPC_OR_SEQ(dev, file, "The Driver's cached requested irqs table");
-	PRINT_IPC_OR_SEQ(dev, file, "APID PPID  Acc-enabled");
-	PRINT_IPC_OR_SEQ(dev, file, "------------------------------------");
+	printk("The Driver's cached requested irqs table\n");
+	printk("APID PPID  Acc-enabled\n");
+	printk("------------------------------------\n");
 	for (i = dev->min_intr_apid; i <= dev->max_intr_apid; ++i)
 		if (is_apid_valid(dev, i))
-			PRINT_IPC_OR_SEQ(dev, file,
-					   "%3d  0x%03x  %d", i,
-					   get_peripheral_id(dev, i),
-					   readl_relaxed(dev->intr +
-						dev->ver->acc_enable(i)));
-	PRINT_IPC_OR_SEQ(dev, file, "\n");
+			printk("%3d  0x%03x  %d\n", i,
+					get_peripheral_id(dev, i),
+					readl_relaxed(dev->intr +
+					dev->ver->acc_enable(i)));
+			printk("\n");
 }
 
 static const struct spmi_pmic_arb_ver spmi_pmic_arb_v1 = {
@@ -983,6 +977,9 @@ __pmic_arb_periph_irq(int irq, void *dev_id, bool show)
 			}
 		}
 	}
+
+	if (IRQ_NONE == ret)
+		ret = IRQ_HANDLED;
 
 	return ret;
 }

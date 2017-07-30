@@ -53,7 +53,7 @@
 #define STREAM_ID	((uint64_t)AUDIO_ADSP_STREAM_ID << 32)
 #define RPC_TIMEOUT	(5 * HZ)
 #define BALIGN		32
-#define NUM_CHANNELS    1 /*8 compute 2 cpz 1 modem*/
+#define NUM_CHANNELS    1 
 
 #define IS_CACHE_ALIGNED(x) (((x) & ((L1_CACHE_BYTES)-1)) == 0)
 
@@ -156,6 +156,7 @@ struct fastrpc_chan_ctx {
 	struct kref kref;
 	struct notifier_block nb;
 	int ssrcount;
+	int prevssrcount;
 };
 
 struct fastrpc_apps {
@@ -366,7 +367,12 @@ static int fastrpc_buf_alloc(struct fastrpc_file *fl, ssize_t size,
 	struct fastrpc_buf *buf = 0, *fr = 0;
 	struct hlist_node *n;
 	size_t len = 0;
-	/* find the smallest buffer that fits in the cache */
+
+	VERIFY(err, size > 0);
+	if (err)
+		goto bail;
+
+	
 	spin_lock(&fl->hlock);
 	hlist_for_each_entry_safe(buf, n, &fl->bufs, hn) {
 		if (buf->size >= size && (!fr || fr->size > buf->size))
@@ -444,9 +450,9 @@ static int overlap_ptr_cmp(const void *a, const void *b)
 {
 	struct overlap *pa = *((struct overlap **)a);
 	struct overlap *pb = *((struct overlap **)b);
-	/* sort with lowest starting buffer first */
+	
 	int st = CMP(pa->start, pb->start);
-	/* sort with highest ending buffer first */
+	
 	int ed = CMP(pb->end, pa->end);
 	return st == 0 ? ed : st;
 }
@@ -576,7 +582,7 @@ static void context_save_interrupted(struct smq_invoke_ctx *ctx)
 	hlist_del_init(&ctx->hn);
 	hlist_add_head(&ctx->hn, &clst->interrupted);
 	spin_unlock(&ctx->fl->hlock);
-	/* free the cache on power collapse */
+	
 	fastrpc_buf_list_free(ctx->fl);
 }
 
@@ -703,7 +709,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	int err = 0;
 	int mflags = 0;
 
-	/* calculate size of the metadata */
+	
 	rpra = 0;
 	list = smq_invoke_buf_start(rpra, sc);
 	pages = smq_phy_page_start(sc, list);
@@ -724,7 +730,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		ipage += 1;
 	}
 	metalen = copylen = (ssize_t)&ipage[0];
-	/* calculate len requreed for copying */
+	
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
 		ssize_t len = lpra[i].buf.len;
@@ -738,13 +744,13 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	}
 	ctx->used = copylen;
 
-	/* allocate new buffer */
+	
 	if (copylen) {
 		VERIFY(err, !fastrpc_buf_alloc(ctx->fl, copylen, &ctx->buf));
 		if (err)
 			goto bail;
 	}
-	/* copy metadata */
+	
 	rpra = ctx->buf->virt;
 	ctx->rpra = rpra;
 	list = smq_invoke_buf_start(rpra, sc);
@@ -761,7 +767,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		list[i].pgidx = ipage - pages;
 		ipage++;
 	}
-	/* map ion buffers */
+	
 	for (i = 0; i < inbufs + outbufs; ++i) {
 		struct fastrpc_mmap *map = ctx->maps[i];
 		uint64_t buf = ptr_to_uint64(lpra[i].buf.pv);
@@ -771,10 +777,16 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		if (!len)
 			continue;
 		if (map) {
-			uintptr_t offset = buf_page_start(buf)
-				- buf_page_start(map->va);
+			struct vm_area_struct *vma;
+			uintptr_t offset;
 			int num = buf_num_pages(buf, len);
 			int idx = list[i].pgidx;
+
+			VERIFY(err, NULL != (vma = find_vma(current->mm,
+								map->va)));
+			if (err)
+				goto bail;
+			offset = buf_page_start(buf) - vma->vm_start;
 			pages[idx].addr = map->phys + offset;
 			if (msm_audio_ion_is_smmu_available())
 				pages[idx].addr |= STREAM_ID;
@@ -782,7 +794,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		}
 		rpra[i].buf.pv = buf;
 	}
-	/* copy non ion buffers */
+	
 	rlen = copylen - metalen;
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
@@ -1435,6 +1447,8 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd, uintptr_t va,
 		map->apps = me;
 		map->fl = 0;
 		VERIFY(err, !dma_alloc_memory(&region_start, len));
+		if (err)
+			goto bail;
 		map->phys = (uintptr_t)region_start;
 		map->size = len;
 	} else {
@@ -1578,8 +1592,14 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 		kref_init(&me->channel[cid].kref);
 		pr_info("'opened /dev/%s c %d %d'\n", gcinfo[cid].name,
 						MAJOR(me->dev_no), cid);
-		if (fastrpc_mmap_remove_ssr(fl))
-			pr_err("ADSPRPC: SSR: Failed to unmap remote heap\n");
+		if (me->channel[cid].ssrcount !=
+				 me->channel[cid].prevssrcount) {
+			if (fastrpc_mmap_remove_ssr(fl))
+				pr_err("ADSPRPC: SSR: Failed to unmap"
+							" remote heap\n");
+			me->channel[cid].prevssrcount =
+						me->channel[cid].ssrcount;
+		}
 	}
 	spin_lock(&me->hlock);
 	hlist_add_head(&fl->hn, &me->drivers);

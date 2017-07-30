@@ -36,16 +36,31 @@
 #include <linux/qdsp6v2/apr_tal.h>
 #include <linux/qdsp6v2/dsp_debug.h>
 #include <linux/ratelimit.h>
+#include <linux/io.h>
 
+#define LPASS_QDSP6SS_QDSP6SS_SAW2 0x0C2B0000
+#define LPM_REGISTER_TABLE_SIZE 3
 #define SCM_Q6_NMI_CMD 0x1
 
+struct lpass_spm_register_offset {
+	char name[80];
+	uint32_t offset;
+};
+
+static const struct lpass_spm_register_offset
+		register_table[LPM_REGISTER_TABLE_SIZE] = {
+	{"LPASS_QDSP6SS_SAW2_SPM_STS", 0xC},
+	{"LPASS_QDSP6SS_SAW2_SPM_CTL", 0x30},
+	{"LPASS_QDSP6SS_SAW2_SPM_STS2", 0x38},
+};
+
+static void __iomem *lpass_qdsp6ss_saw2;
 static struct apr_q6 q6;
 static struct apr_client client[APR_DEST_MAX][APR_CLIENT_MAX];
 
 static wait_queue_head_t dsp_wait;
 static wait_queue_head_t modem_wait;
 static bool is_modem_up;
-/* Subsystem restart: QDSP6 data, functions */
 static struct workqueue_struct *apr_reset_workqueue;
 static void apr_reset_deregister(struct work_struct *work);
 struct apr_reset_work {
@@ -182,6 +197,22 @@ static struct apr_svc_table svc_tbl_voice[] = {
 static struct apr_func_dsp apr_dsp_func;
 static const char *apr_invalid = "invalid";
 
+static void log_spm_registers(void)
+{
+	int i = 0, *v_add;
+
+	if (lpass_qdsp6ss_saw2) {
+		pr_err("<--- Logging LPASS SPM registers --->");
+		for (i = 0; i < LPM_REGISTER_TABLE_SIZE; i++) {
+			v_add = lpass_qdsp6ss_saw2 + register_table[i].offset;
+			pr_err("%s : 0x%x\n", register_table[i].name,
+							ioread32(v_add));
+		}
+		pr_err("<---------------- END -------------->");
+	} else
+		pr_err("Failure in ioremap of LPASS SPM SAW2 register!\n");
+}
+
 const char *apr_get_adsp_subsys_name(void)
 {
 	if (apr_dsp_func.apr_get_adsp_subsys_name)
@@ -249,7 +280,7 @@ int apr_wait_for_device_up(int dest_id)
 				    (1 * HZ));
 	else
 		pr_err("%s: unknown dest_id %d\n", __func__, dest_id);
-	/* returns left time */
+	
 	return rc;
 }
 
@@ -357,7 +388,7 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 	if (!strcmp(dest, "ADSP"))
 		domain_id = APR_DOMAIN_ADSP;
 	else if (!strcmp(dest, "MODEM")) {
-		/* Register voice services if destination permits */
+		
 		if (!apr_register_voice_svc())
 			goto done;
 		domain_id = APR_DOMAIN_MODEM;
@@ -712,7 +743,6 @@ void apr_reset(void *handle)
 	queue_work(apr_reset_workqueue, &apr_reset_worker->work);
 }
 
-/* Dispatch the Reset events to Modem and audio clients */
 void dispatch_event(unsigned long code, uint16_t proc)
 {
 	struct apr_client *apr_client;
@@ -724,7 +754,7 @@ void dispatch_event(unsigned long code, uint16_t proc)
 	data.opcode = RESET_EVENTS;
 	data.reset_event = code;
 
-	/* Service domain can be different from the processor */
+	
 	data.reset_proc = apr_get_reset_domain(proc);
 
 	clnt = APR_CLIENT_AUDIO;
@@ -826,7 +856,7 @@ static int lpass_notifier_cb(struct notifier_block *this, unsigned long code,
 		apr_set_q6_state(APR_SUBSYS_DOWN);
 		dispatch_event(code, APR_DEST_QDSP6);
 		if (data && data->crashed) {
-			/* Send NMI to QDSP6 via an SCM call. */
+			
 			if (!is_scm_armv8()) {
 				scm_call_atomic1(SCM_SVC_UTIL,
 						 SCM_Q6_NMI_CMD, 0x1);
@@ -836,7 +866,7 @@ static int lpass_notifier_cb(struct notifier_block *this, unsigned long code,
 				scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_UTIL,
 						 SCM_Q6_NMI_CMD), &desc);
 			}
-			/* The write should go through before q6 is shutdown */
+			
 			mb();
 			pr_debug("L-Notify: Q6 NMI was sent.\n");
 		}
@@ -855,6 +885,10 @@ static int lpass_notifier_cb(struct notifier_block *this, unsigned long code,
 		powered_on = true;
 		pr_debug("L-Notify: Bootup Completed\n");
 		break;
+	case SUBSYS_SOC_RESET:
+		pr_debug("L-Notify: SoC Reset Initiated\n");
+		log_spm_registers();
+		break;
 	default:
 		pr_err("L-Notify: Generel: %lu\n", code);
 		break;
@@ -872,7 +906,7 @@ static int panic_handler(struct notifier_block *this,
 	struct scm_desc desc;
 
 	if (powered_on) {
-		/* Send NMI to QDSP6 via an SCM call. */
+		
 		if (!is_scm_armv8()) {
 			scm_call_atomic1(SCM_SVC_UTIL, SCM_Q6_NMI_CMD, 0x1);
 		} else {
@@ -978,6 +1012,9 @@ static void apr_cleanup(void)
 				mutex_destroy(&client[i][j].svc[k].m_lock);
 		}
 	}
+	
+	if (lpass_qdsp6ss_saw2)
+		iounmap(lpass_qdsp6ss_saw2);
 }
 
 static int apr_probe(struct platform_device *pdev)
@@ -1045,6 +1082,12 @@ static int apr_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "%s: subsys_notif_register failed ret = %d\n",
 				__func__, ret);
 	}
+
+	
+	lpass_qdsp6ss_saw2 = ioremap(LPASS_QDSP6SS_QDSP6SS_SAW2, 0x1000);
+	if (lpass_qdsp6ss_saw2 == NULL)
+		pr_err("ioremap failure for the lpass spm saw2 register\n");
+
 	return 0;
 }
 

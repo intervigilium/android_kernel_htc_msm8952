@@ -37,7 +37,7 @@ static int mmc_prep_request(struct request_queue *q, struct request *req)
 		return BLKPREP_KILL;
 	}
 
-	if (mq && mmc_card_removed(mq->card))
+	if (mq && (mmc_card_removed(mq->card) || mmc_access_rpmb(mq)))
 		return BLKPREP_KILL;
 
 	req->cmd_flags |= REQ_DONTPREP;
@@ -95,7 +95,9 @@ static int mmc_cmdq_thread(void *d)
 			spin_unlock_irqrestore(q->queue_lock, flags);
 			if (ret) {
 				test_and_set_bit(0, &ctx->req_starved);
-				schedule();
+				up(&mq->thread_sem);
+				schedule_timeout(HZ / 100);
+				down(&mq->thread_sem);
 			} else {
 				if (!mmc_cmdq_should_pull_reqs(host, ctx,
 							       req)) {
@@ -104,7 +106,9 @@ static int mmc_cmdq_thread(void *d)
 					spin_unlock_irqrestore(q->queue_lock,
 							       flags);
 					test_and_set_bit(0, &ctx->req_starved);
-					schedule();
+					up(&mq->thread_sem);
+					schedule_timeout(HZ / 100);
+					down(&mq->thread_sem);
 					continue;
 				}
 				set_current_state(TASK_RUNNING);
@@ -741,6 +745,8 @@ int mmc_queue_suspend(struct mmc_queue *mq, int wait)
 				spin_lock_irqsave(q->queue_lock, flags);
 				blk_start_queue(q);
 				spin_unlock_irqrestore(q->queue_lock, flags);
+				if (!rc)
+					up(&mq->thread_sem);
 				rc = -EBUSY;
 			}
 		}

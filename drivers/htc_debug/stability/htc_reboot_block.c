@@ -98,7 +98,6 @@ static struct cmd_reason_map {
 	{ "eraseflash",     RESTART_REASON_ERASE_FLASH },
 	{ "download",       RESTART_REASON_DOWNLOAD },
 	{ "ftm",            RESTART_REASON_FTM },
-	{ "force-dog-bark", RESTART_REASON_RAMDUMP },
 	{ "power-key-force-hard", RESTART_REASON_RAMDUMP },
 	{ "dm-verity device corrupted", RESTART_REASON_LOGGING },
 };
