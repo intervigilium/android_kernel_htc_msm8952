@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/kmemleak.h>
+
 #include "diagchar.h"
 #include "diagmem.h"
 

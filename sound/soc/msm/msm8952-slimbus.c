@@ -115,7 +115,6 @@ static int slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 
 static int slim1_tx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim1_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
-
 static int msm_slim_0_rx_ch = 1;
 static int msm_slim_0_tx_ch = 1;
 static int msm_slim_1_tx_ch = 1;
@@ -141,6 +140,11 @@ atomic_t quin_mi2s_clk_ref;
 static int msm8952_enable_codec_mclk(struct snd_soc_codec *codec, int enable,
 					bool dapm);
 
+/*
+ * Android L spec
+ * Need to report LINEIN
+ * if R/L channel impedance is larger than 5K ohm
+ */
 static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.read_fw_bin = false,
 	.calibration = NULL,
@@ -1597,13 +1601,17 @@ int msm_snd_hw_params(struct snd_pcm_substream *substream,
 				__func__, ret);
 			goto end;
 		}
-		
+		/* For <codec>_tx1 case */
 		if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_0_TX)
 			user_set_tx_ch = msm_slim_0_tx_ch;
-		
+		/* For <codec>_tx2 case */
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_1_TX)
 			user_set_tx_ch = msm_slim_1_tx_ch;
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_3_TX)
+			/* DAI 5 is used for external EC reference from codec.
+			 * Since Rx is fed as reference for EC, the config of
+			 * this DAI is based on that of the Rx path.
+			 */
 			user_set_tx_ch = msm_slim_0_rx_ch;
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_4_TX)
 			user_set_tx_ch = msm_vi_feed_tx_ch;
@@ -2106,7 +2114,7 @@ int msm_prim_auxpcm_startup(struct snd_pcm_substream *substream)
 	pr_debug("%s(): substream = %s\n",
 			__func__, substream->name);
 
-	
+	/* mux config to route the AUX MI2S */
 	if (pdata->vaddr_gpio_mux_mic_ctl) {
 		val = ioread32(pdata->vaddr_gpio_mux_mic_ctl);
 		val = val | 0x2;
@@ -2119,7 +2127,7 @@ int msm_prim_auxpcm_startup(struct snd_pcm_substream *substream)
 	}
 	atomic_inc(&pdata->clk_ref.auxpcm_mi2s_clk_ref);
 
-	
+	/* enable the gpio's used for the external AUXPCM interface */
 	ret = msm_gpioset_activate(CLIENT_WCD_EXT, "quat_i2s");
 	if (ret < 0)
 		pr_err("%s(): configure gpios failed = %s\n",
@@ -2205,7 +2213,7 @@ int msm_quat_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		 substream->name, substream->stream);
 
 	if (((pdata->ext_pa & QUAT_MI2S_ID) == QUAT_MI2S_ID)) {
-		
+		/* Configure mux for quaternary i2s */
 		if (pdata->vaddr_gpio_mux_mic_ctl) {
 			val = ioread32(pdata->vaddr_gpio_mux_mic_ctl);
 			val = val | 0x02020002;
@@ -2850,6 +2858,11 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_aux_dev *aux_dev = rtd->card->aux_dev;
 
+	/* Codec SLIMBUS configuration
+	 * RX1, RX2, RX3, RX4, RX5, RX6, RX7, RX8, RX9, RX10, RX11, RX12, RX13
+	 * TX1, TX2, TX3, TX4, TX5, TX6, TX7, TX8, TX9, TX10, TX11, TX12, TX13
+	 * TX14, TX15, TX16
+	 */
 	unsigned int rx_ch[TOMTOM_RX_MAX] = {144, 145, 146, 147, 148, 149, 150,
 					    151, 152, 153, 154, 155, 156};
 	unsigned int tx_ch[TOMTOM_TX_MAX]  = {128, 129, 130, 131, 132, 133,
@@ -2915,6 +2928,10 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 				ARRAY_SIZE(msm8952_tasha_dapm_widgets));
 		snd_soc_dapm_add_routes(dapm, wcd9335_audio_paths,
 				ARRAY_SIZE(wcd9335_audio_paths));
+		/*
+		 * Send speaker configuration only for WSA8810.
+		 * Defalut configuration is for WSA8815.
+		 */
 		if (aux_dev)
 			if (!strcmp(aux_dev->codec_name, WSA8810_NAME_1) ||
 				!strcmp(aux_dev->codec_name, WSA8810_NAME_2)) {
@@ -3022,9 +3039,15 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		wcd9xxx_mbhc_cfg.gpio_level_insert = of_property_read_bool(
 						codec->card->dev->of_node,
 						"qcom,headset-jack-type-NC");
-		
+		/* start mbhc */
 		wcd9xxx_mbhc_cfg.calibration = def_codec_mbhc_cal();
 		if (wcd9xxx_mbhc_cfg.calibration) {
+			/*
+			 * mbhc inital calibration needs mclk to be enabled,
+			 * so schedule headset detection for 4sec so that
+			 * adsp gets loaded and will be ready to accept
+			 * mclk request command.
+			 */
 			pdata->codec = codec;
 			schedule_delayed_work(&pdata->hs_detect_dwork,
 					msecs_to_jiffies(HS_STARTWORK_TIMEOUT));
@@ -3097,6 +3120,10 @@ static void hs_detect_work(struct work_struct *work)
 	if (ret < 0)
 		pr_err("%s: Failed to intialise mbhc %d\n", __func__, ret);
 	tomtom_enable_qfuse_sensing(pdata->codec);
+	/*
+	 * Set pdata->codec back to NULL, to ensure codec pointer
+	 * is not referenced further from this structure.
+	 */
 	pdata->codec =  NULL;
 	pr_debug("%s: leave\n", __func__);
 }
@@ -3138,7 +3165,7 @@ static int is_us_eu_switch_gpio_support(struct platform_device *pdev,
 
 	pr_debug("%s\n", __func__);
 
-	
+	/* check if US-EU GPIO is supported */
 	pdata->us_euro_gpio = of_get_named_gpio(pdev->dev.of_node,
 					"qcom,cdc-us-euro-gpios", 0);
 	if (pdata->us_euro_gpio < 0) {
@@ -3183,7 +3210,7 @@ static int msm8952_populate_dai_link_component_of_node(
 	for (i = 0; i < card->num_links; i++) {
 		if (dai_link[i].platform_of_node && dai_link[i].cpu_of_node)
 			continue;
-		
+		/* populate platform_of_node for snd card dai links */
 		if (dai_link[i].platform_name &&
 		    !dai_link[i].platform_of_node) {
 			index = of_property_match_string(cdev->of_node,
@@ -3209,7 +3236,7 @@ static int msm8952_populate_dai_link_component_of_node(
 			dai_link[i].platform_name = NULL;
 		}
 cpu_dai:
-		
+		/* populate cpu_of_node for snd card dai links */
 		if (dai_link[i].cpu_dai_name && !dai_link[i].cpu_of_node) {
 			index = of_property_match_string(cdev->of_node,
 						 "asoc-cpu-names",
@@ -3230,7 +3257,7 @@ cpu_dai:
 			dai_link[i].cpu_dai_name = NULL;
 		}
 codec_dai:
-		
+		/* populate codec_of_node for snd card dai links */
 		if (dai_link[i].codec_name && !dai_link[i].codec_of_node) {
 			index = of_property_match_string(cdev->of_node,
 						 "asoc-codec-names",
@@ -3406,13 +3433,17 @@ static int msm8952_asoc_machine_probe(struct platform_device *pdev)
 			pdata->ext_pa = (pdata->ext_pa | QUIN_MI2S_ID);
 	}
 
-	
+	/* Reading the gpio configurations from dtsi file*/
 	ret = msm_gpioset_initialize(CLIENT_WCD_EXT, &pdev->dev);
 	if (ret < 0) {
 		pr_err("Error reading dtsi file for gpios\n");
 		goto err;
 	}
 
+	/* Parse US-Euro gpio info from DT. Report no error if us-euro
+	 * entry is not found in DT file as some targets do not support
+	 * US-Euro detection
+	 */
 	ret = is_us_eu_switch_gpio_support(pdev, pdata);
 	if (ret < 0) {
 		pr_err("%s: failed to is_us_eu_switch_gpio_support %d\n",

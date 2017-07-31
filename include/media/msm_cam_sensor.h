@@ -42,15 +42,15 @@
 #define MAX_AF_ITERATIONS 3
 #define MAX_NUMBER_OF_STEPS 47
 
-#define MSM_V4L2_PIX_FMT_META v4l2_fourcc('M', 'E', 'T', 'A') 
+#define MSM_V4L2_PIX_FMT_META v4l2_fourcc('M', 'E', 'T', 'A') /* META */
 #define MSM_V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4')
-	
+	/* 14  BGBG.. GRGR.. */
 #define MSM_V4L2_PIX_FMT_SGBRG14 v4l2_fourcc('G', 'B', '1', '4')
-	
+	/* 14  GBGB.. RGRG.. */
 #define MSM_V4L2_PIX_FMT_SGRBG14 v4l2_fourcc('B', 'A', '1', '4')
-	
+	/* 14  GRGR.. BGBG.. */
 #define MSM_V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4')
-	
+	/* 14  RGRG.. GBGB.. */
 
 #define LC898214_HEX_MAX 0x7FFF 
 #define LC898214_HEX_MIN 0x8001 
@@ -692,6 +692,7 @@ struct msm_flash_cfg_data_t {
 	} cfg;
 };
 
+/* sensor init structures and enums */
 enum msm_sensor_init_cfg_type_t {
 	CFG_SINIT_PROBE,
 	CFG_SINIT_PROBE_DONE,
@@ -914,7 +915,7 @@ struct msm_flash_cfg_data_t32 {
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 13, struct msm_flash_cfg_data_t32)
 #endif
 
-#endif 
+#endif /* __LINUX_MSM_CAM_SENSOR_H */
 
 
 #else 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -101,9 +101,9 @@ enum {
 	AUDIO_DEVICE_OUT_COUNT
 };
 
-#define AUDIO_DEVICE_COMBO 0x400000 
+#define AUDIO_DEVICE_COMBO 0x400000 /* bit 23 */
 
-enum { 
+enum { /* cache block */
 	CB_0 = 0,
 	CB_1,
 	CB_2,
@@ -116,7 +116,7 @@ enum {
 	CB_COUNT
 };
 
-enum { 
+enum { /* cache block description */
 	CBD_DEV_MASK = 0,
 	CBD_OFFSG,
 	CBD_CMD0,
@@ -179,11 +179,13 @@ static inline void *_getd(struct dts_eagle_param_desc *depd)
 }
 
 static int _ref_cnt;
+/* dts eagle parameter cache */
 static char *_depc;
 static u32 _depc_size;
 static s32 _c_bl[CB_COUNT][CBD_COUNT];
 static u32 _device_primary;
 static u32 _device_all;
+/* ION states */
 static struct ion_client *_ion_client;
 static struct ion_handle *_ion_handle;
 static struct param_outband _po;
@@ -193,12 +195,14 @@ static struct ion_handle *_ion_handle_NT;
 static struct param_outband _po_NT;
 
 #define SEC_BLOB_MAX_CNT 10
-#define SEC_BLOB_MAX_SIZE 0x4004 
+#define SEC_BLOB_MAX_SIZE 0x4004 /*extra 4 for size*/
 static char *_sec_blob[SEC_BLOB_MAX_CNT];
 struct mutex _sec_lock;
 
+/* multi-copp support */
 static int _cidx[AFE_MAX_PORTS] = {-1};
 
+/* volume controls */
 #define VOL_CMD_CNT_MAX 10
 static u32 _vol_cmd_cnt;
 static s32 **_vol_cmds;
@@ -208,7 +212,9 @@ struct vol_cmds_d {
 static struct vol_cmds_d *_vol_cmds_d;
 static const s32 _log10_10_inv_x20 = 0x0008af84;
 
+/* hpx master control */
 static u32 _is_hpx_enabled;
+/* flag to identify if slim be to be used */
 static u32 _use_slim_be;
 
 static void _volume_cmds_free(void)
@@ -238,6 +244,7 @@ static s32 _volume_cmds_alloc1(s32 size)
 	return -ENOMEM;
 }
 
+/* assumes size is equal or less than 0xFFF */
 static s32 _volume_cmds_alloc2(s32 idx, s32 size)
 {
 	kfree(_vol_cmds[idx]);
@@ -459,7 +466,7 @@ static int _sendcache_pre(struct audio_client *ac)
 	offset = _c_bl[cidx][CBD_OFFSG];
 	cmd = _c_bl[cidx][CBD_CMD0];
 	size = _c_bl[cidx][CBD_SZ0];
-	
+	/* check for integer overflow */
 	if (offset > (UINT_MAX - size))
 		err = -EINVAL;
 	if ((_depc_size == 0) || !_depc || (size == 0) ||
@@ -543,7 +550,7 @@ NT_MODE_GOTO:
 	cmd = _c_bl[cidx][CBD_CMD2];
 	size = _c_bl[cidx][CBD_SZ2];
 
-	
+	/* check for integer overflow */
 	if (offset > (UINT_MAX - size))
 		err = -EINVAL;
 	if ((_depc_size == 0) || !_depc || (err != 0) || (size == 0) ||
@@ -600,7 +607,7 @@ static int _enable_post_put_control(struct snd_kcontrol *kcontrol,
 
 	_is_hpx_enabled = flag ? true : false;
 	msm_pcm_routing_acquire_lock();
-	
+	/* send cache postmix params when hpx is set On */
 	for (be_index = 0; be_index < MSM_BACKEND_DAI_MAX; be_index++) {
 		msm_pcm_routing_get_bedai_info(be_index, &msm_bedai);
 		port_id = msm_bedai.port_id;
@@ -647,6 +654,14 @@ static const struct snd_kcontrol_new _hpx_be_controls[] = {
 	SOC_SINGLE_EXT("Set HPX ActiveBe", SND_SOC_NOPM, 0, 1, 0,
 	_be_post_get_control, _be_post_put_control)
 };
+/**
+ * msm_dts_ion_memmap() - helper function to map ION memory
+ * @po_:	Out of band memory structure used as memory.
+ *
+ * Assign already allocated ION memory for mapping it to dsp.
+ *
+ * Return: No return value.
+ */
 void msm_dts_ion_memmap(struct param_outband *po_)
 {
 	po_->size = ION_MEM_SIZE;
@@ -654,6 +669,16 @@ void msm_dts_ion_memmap(struct param_outband *po_)
 	po_->paddr = _po.paddr;
 }
 
+/**
+ * msm_dts_eagle_enable_asm() - Enable/disable dts module
+ * @ac:	Enable/disable module in ASM session associated with this audio client.
+ * @enable:	Enable/disable the dts module.
+ * @module:	module id.
+ *
+ * Enable/disable specified dts module id in asm.
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_enable_asm(struct audio_client *ac, u32 enable, int module)
 {
 	int ret = 0;
@@ -672,6 +697,16 @@ int msm_dts_eagle_enable_asm(struct audio_client *ac, u32 enable, int module)
 	return ret;
 }
 
+/**
+ * msm_dts_eagle_enable_adm() - Enable/disable dts module in adm
+ * @port_id:	Send enable/disable param to this port id.
+ * @copp_idx:	Send enable/disable param to the relevant copp.
+ * @enable:	Enable/disable the dts module.
+ *
+ * Enable/disable dts module in adm.
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_enable_adm(int port_id, int copp_idx, u32 enable)
 {
 	int ret = 0;
@@ -684,6 +719,14 @@ int msm_dts_eagle_enable_adm(int port_id, int copp_idx, u32 enable)
 	return ret;
 }
 
+/**
+ * msm_dts_eagle_add_controls() -  Add mixer control to Enable/Disable DTS HPX
+ * @platform:	Add mixer controls to this platform.
+ *
+ * Add mixer control to Enable/Disable DTS HPX module in ADM.
+ *
+ * Return: No return value.
+ */
 void msm_dts_eagle_add_controls(struct snd_soc_platform *platform)
 {
 	snd_soc_add_platform_controls(platform, _hpx_enabled_controls,
@@ -693,6 +736,16 @@ void msm_dts_eagle_add_controls(struct snd_soc_platform *platform)
 
 }
 
+/**
+ * msm_dts_eagle_set_stream_gain() -  Set stream gain to DTS Premix module
+ * @ac:	Set stream gain to ASM session associated with this audio client.
+ * @lgain:	Left gain value.
+ * @rgain:	Right gain value.
+ *
+ * Set stream gain to DTS Premix module in ASM.
+ *
+ * Return: failure or success.
+ */
 int msm_dts_eagle_set_stream_gain(struct audio_client *ac, int lgain, int rgain)
 {
 	u32 i, val;
@@ -728,7 +781,7 @@ int msm_dts_eagle_set_stream_gain(struct audio_client *ac, int lgain, int rgain)
 			return -EINVAL;
 		}
 		val = _c_bl[idx][CBD_OFFSG] + _vol_cmds[i][2];
-		
+		/* check for integer overflow */
 		if (val > (UINT_MAX - _vol_cmds[i][1]))
 			err = -EINVAL;
 		if ((err != 0) || ((val + _vol_cmds[i][1]) > _depc_size)) {
@@ -754,6 +807,19 @@ int msm_dts_eagle_set_stream_gain(struct audio_client *ac, int lgain, int rgain)
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_handle_asm() - Set or Get params from ASM
+ * @depd:	DTS Eagle Params structure.
+ * @buf:	Buffer to get queried param value.
+ * @for_pre:	For premix module or postmix module.
+ * @get:	Getting param from DSP or setting param.
+ * @ac:	Set/Get from ASM session associated with this audio client.
+ * @po:	Out of band memory to set or get postmix params.
+ *
+ * Set or Get params from modules in ASM session.
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_handle_asm(struct dts_eagle_param_desc *depd, char *buf,
 			     bool for_pre, bool get, struct audio_client *ac,
 			     struct param_outband *po)
@@ -764,7 +830,7 @@ int msm_dts_eagle_handle_asm(struct dts_eagle_param_desc *depd, char *buf,
 
 	eagle_asm_dbg("%s: set/get asm", __func__);
 
-	
+	/* special handling for ALSA route, to accommodate 64 bit platforms */
 	if (depd == NULL) {
 		long *arg_ = (long *)buf;
 		depd = &depd_;
@@ -814,7 +880,7 @@ int msm_dts_eagle_handle_asm(struct dts_eagle_param_desc *depd, char *buf,
 				return -EINVAL;
 			}
 			offset = _c_bl[tgt][CBD_OFFSG] + depd->offset;
-			
+			/* check for integer overflow */
 			if (offset > (UINT_MAX - depd->size))
 				err = -EINVAL;
 			if ((err != 0) || (offset + depd->size) > _depc_size) {
@@ -852,7 +918,7 @@ DTS_EAGLE_IOCTL_GET_PARAM_PRE_EXIT:
 			return -EINVAL;
 		}
 		offset = _c_bl[tgt][CBD_OFFSG] + depd->offset;
-		
+		/* check for integer overflow */
 		if (offset > (UINT_MAX - depd->size))
 			err = -EINVAL;
 		if ((err != 0) || ((offset + depd->size) > _depc_size)) {
@@ -892,6 +958,17 @@ DTS_EAGLE_IOCTL_GET_PARAM_PRE_EXIT:
 	return (int)ret;
 }
 
+/**
+ * msm_dts_eagle_handle_adm() - Set or Get params from ADM
+ * @depd:	DTS Eagle Params structure used to set or get.
+ * @buf:	Buffer to get queried param value in NT mode.
+ * @for_pre:	For premix module or postmix module.
+ * @get:	Getting param from DSP or setting param.
+ *
+ * Set or Get params from modules in ADM session.
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_handle_adm(struct dts_eagle_param_desc *depd, char *buf,
 			     bool for_pre, bool get)
 {
@@ -938,6 +1015,15 @@ int msm_dts_eagle_handle_adm(struct dts_eagle_param_desc *depd, char *buf,
 	return (int)ret;
 }
 
+/**
+ * msm_dts_eagle_ioctl() - ioctl handler function
+ * @cmd:	cmd to handle.
+ * @arg:	argument to the cmd.
+ *
+ * Handle DTS Eagle ioctl cmds.
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_ioctl(unsigned int cmd, unsigned long arg)
 {
 	s32 ret = 0;
@@ -1038,7 +1124,7 @@ int msm_dts_eagle_ioctl(unsigned int cmd, unsigned long arg)
 				return -EINVAL;
 			}
 			offset = _c_bl[cb][CBD_OFFSG] + depd.offset;
-			
+			/* check for integer overflow */
 			if (offset > (UINT_MAX - depd.size))
 				err = -EINVAL;
 			if ((err != 0) ||
@@ -1089,7 +1175,7 @@ int msm_dts_eagle_ioctl(unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		}
 		offset = _c_bl[tgt][CBD_OFFSG] + depd.offset;
-		
+		/* check for integer overflow */
 		if (offset > (UINT_MAX - depd.size))
 			err = -EINVAL;
 		if ((err != 0) || ((offset + depd.size) > _depc_size)) {
@@ -1396,6 +1482,15 @@ int msm_dts_eagle_ioctl(unsigned int cmd, unsigned long arg)
 	return (int)ret;
 }
 
+/**
+ * msm_dts_eagle_compat_ioctl() - To handle 32bit to 64bit ioctl compatibility
+ * @cmd:	cmd to handle.
+ * @arg:	argument to the cmd.
+ *
+ * Handle DTS Eagle ioctl cmds from 32bit userspace.
+ *
+ * Return: Return failure if any.
+ */
 #ifdef CONFIG_COMPAT
 int msm_dts_eagle_compat_ioctl(unsigned int cmd, unsigned long arg)
 {
@@ -1436,27 +1531,69 @@ int msm_dts_eagle_compat_ioctl(unsigned int cmd, unsigned long arg)
 	return msm_dts_eagle_ioctl(cmd, arg);
 }
 #endif
+/**
+ * msm_dts_eagle_init_pre() - Initialize DTS premix module
+ * @ac:	Initialize premix module in the ASM session.
+ *
+ * Initialize DTS premix module on provided ASM session
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_init_pre(struct audio_client *ac)
 {
 	return msm_dts_eagle_enable_asm(ac, _is_hpx_enabled,
 				 AUDPROC_MODULE_ID_DTS_HPX_PREMIX);
 }
 
+/**
+ * msm_dts_eagle_deinit_pre() - Deinitialize DTS premix module
+ * @ac:	Deinitialize premix module in the ASM session.
+ *
+ * Deinitialize DTS premix module on provided ASM session
+ *
+ * Return: Currently does nothing so 0.
+ */
 int msm_dts_eagle_deinit_pre(struct audio_client *ac)
 {
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_init_post() - Initialize DTS postmix module
+ * @port_id:	Port id for the ADM session.
+ * @copp_idx:	Copp idx for the ADM session.
+ *
+ * Initialize DTS postmix module on ADM session
+ *
+ * Return: Return failure if any.
+ */
 int msm_dts_eagle_init_post(int port_id, int copp_idx)
 {
 	return msm_dts_eagle_enable_adm(port_id, copp_idx, _is_hpx_enabled);
 }
 
+/**
+ * msm_dts_eagle_deinit_post() - Deinitialize DTS postmix module
+ * @port_id:	Port id for the ADM session.
+ * @topology:	Topology in use.
+ *
+ * Deinitialize DTS postmix module on ADM session
+ *
+ * Return: Currently does nothing so 0.
+ */
 int msm_dts_eagle_deinit_post(int port_id, int topology)
 {
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_init_master_module() - Initialize both DTS modules
+ * @ac:	Initialize modules in the ASM session.
+ *
+ * Initialize DTS modules on ASM session
+ *
+ * Return: Success.
+ */
 int msm_dts_eagle_init_master_module(struct audio_client *ac)
 {
 	_set_audioclient(ac);
@@ -1467,6 +1604,14 @@ int msm_dts_eagle_init_master_module(struct audio_client *ac)
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_deinit_master_module() - Deinitialize both DTS modules
+ * @ac:	Deinitialize modules in the ASM session.
+ *
+ * Deinitialize DTS modules on ASM session
+ *
+ * Return: Success.
+ */
 int msm_dts_eagle_deinit_master_module(struct audio_client *ac)
 {
 	msm_dts_eagle_deinit_pre(ac);
@@ -1475,11 +1620,26 @@ int msm_dts_eagle_deinit_master_module(struct audio_client *ac)
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_is_hpx_on() - Check if HPX effects are On
+ *
+ * Check if HPX effects are On
+ *
+ * Return: On/Off.
+ */
 int msm_dts_eagle_is_hpx_on(void)
 {
 	return _is_hpx_enabled;
 }
 
+/**
+ * msm_dts_eagle_pcm_new() - Create hwdep node
+ * @runtime:	snd_soc_pcm_runtime structure.
+ *
+ * Create hwdep node
+ *
+ * Return: Success.
+ */
 int msm_dts_eagle_pcm_new(struct snd_soc_pcm_runtime *runtime)
 {
 	if (!_ref_cnt++) {
@@ -1490,6 +1650,14 @@ int msm_dts_eagle_pcm_new(struct snd_soc_pcm_runtime *runtime)
 	return 0;
 }
 
+/**
+ * msm_dts_eagle_pcm_free() - remove hwdep node
+ * @runtime:	snd_soc_pcm_runtime structure.
+ *
+ * Remove hwdep node
+ *
+ * Return: void.
+ */
 void msm_dts_eagle_pcm_free(struct snd_pcm *pcm)
 {
 	if (!--_ref_cnt)

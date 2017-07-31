@@ -515,6 +515,10 @@ static void smd_late_init(struct diag_smd_info *smd_info)
 			 (void *)smd_info, &smd_ops, &smd_info->fwd_ctxt);
 	fwd_info = smd_info->fwd_ctxt;
 	smd_info->inited = 1;
+	/*
+	 * The channel is already open by the probe call as a result of other
+	 * peripheral. Inform the diag fwd layer that the channel is open.
+	 */
 	if (atomic_read(&smd_info->opened))
 		diagfwd_channel_open(smd_info->fwd_ctxt);
 
@@ -621,6 +625,12 @@ static int diag_smd_write_ext(struct diag_smd_info *smd_info,
 				avail = 1;
 				break;
 			}
+			/*
+			 * The channel maybe busy - the FIFO can be full. Retry
+			 * after sometime. The value of 10000 was chosen
+			 * emprically as the optimal value for the peripherals
+			 * to read data from the SMD channel.
+			 */
 			usleep_range(10000, 10100);
 			retry_count++;
 		} while (retry_count < max_retries);
@@ -681,6 +691,12 @@ static int diag_smd_write(void *ctxt, unsigned char *buf, int len)
 		mutex_unlock(&smd_info->lock);
 		if (write_len == len)
 			break;
+		/*
+		 * The channel maybe busy - the FIFO can be full. Retry after
+		 * sometime. The value of 10000 was chosen emprically as the
+		 * optimal value for the peripherals to read data from the SMD
+		 * channel.
+		 */
 		usleep_range(10000, 10100);
 		retry_count++;
 	} while (retry_count < max_retries);
@@ -713,6 +729,10 @@ static int diag_smd_read(void *ctxt, unsigned char *buf, int buf_len)
 	    !atomic_read(&smd_info->opened))
 		return -EIO;
 
+	/*
+	 * Always try to read the data if notification is received from smd
+	 * In case if packet size is 0 release the wake source hold earlier
+	 */
 	err = wait_event_interruptible(smd_info->read_wait_q,
 				(smd_info->hdl != NULL) &&
 				(atomic_read(&smd_info->opened) == 1));
@@ -721,6 +741,10 @@ static int diag_smd_read(void *ctxt, unsigned char *buf, int buf_len)
 		return -ERESTARTSYS;
 	}
 
+	/*
+	 * In this case don't reset the buffers as there is no need to further
+	 * read over peripherals. Also release the wake source hold earlier.
+	 */
 	if (atomic_read(&smd_info->diag_state) == 0) {
 		DIAG_LOG(DIAG_DEBUG_PERIPHERALS,
 			 "%s closing read thread. diag state is closed\n",

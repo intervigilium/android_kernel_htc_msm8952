@@ -26,6 +26,7 @@
 #define MAX_SESSIONS 2
 
 #define SPLIT_MIXER_OFFSET 0x800
+/* wait for at most 2 vsync for lowest refresh rate (24hz) */
 #define KOFF_TIMEOUT msecs_to_jiffies(84)
 
 #define STOP_TIMEOUT(hz) msecs_to_jiffies((1000 / hz) * (VSYNC_EXPIRE_TICK + 2))
@@ -63,10 +64,10 @@ struct mdss_mdp_cmd_ctx {
 
 	struct mdss_intf_recovery intf_recovery;
 	struct mdss_intf_recovery intf_mdp_callback;
-	struct mdss_mdp_cmd_ctx *sync_ctx; 
+	struct mdss_mdp_cmd_ctx *sync_ctx; /* for partial update */
 	u32 pp_timeout_report_cnt;
 	int pingpong_split_slave;
-	bool pending_mode_switch; 
+	bool pending_mode_switch; /* Used to prevent powering down in stop */
 };
 
 struct mdss_mdp_cmd_ctx mdss_mdp_cmd_ctx_list[MAX_SESSIONS];
@@ -87,7 +88,7 @@ static bool __mdss_mdp_cmd_is_panel_power_on_interactive(
 static inline u32 mdss_mdp_cmd_line_count(struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_mdp_mixer *mixer;
-	u32 cnt = 0xffff;	
+	u32 cnt = 0xffff;	/* init it to an invalid value */
 	u32 init;
 	u32 height;
 
@@ -115,7 +116,7 @@ static inline u32 mdss_mdp_cmd_line_count(struct mdss_mdp_ctl *ctl)
 	cnt = mdss_mdp_pingpong_read(mixer->pingpong_base,
 		MDSS_MDP_REG_PP_INT_COUNT_VAL) & 0xffff;
 
-	if (cnt < init)		
+	if (cnt < init)		/* wrap around happened at height */
 		cnt += (height - init);
 	else
 		cnt -= init;
@@ -154,6 +155,10 @@ static int mdss_mdp_tearcheck_enable(struct mdss_mdp_ctl *ctl, bool enable)
 		MDSS_MDP_REG_PP_TEAR_CHECK_EN,
 		(te ? te->tear_check_en : 0) && enable);
 
+	/*
+	 * When there are two controls, driver needs to enable
+	 * tear check configuration for both.
+	 */
 	if (sctl) {
 		mixer = mdss_mdp_mixer_get(sctl, MDSS_MDP_MIXER_MUX_LEFT);
 		te = &sctl->panel_data->panel_info.te;
@@ -162,6 +167,11 @@ static int mdss_mdp_tearcheck_enable(struct mdss_mdp_ctl *ctl, bool enable)
 				(te ? te->tear_check_en : 0) && enable);
 	}
 
+	/*
+	 * In the case of pingpong split, there is no second
+	 * control and enables only slave tear check block as
+	 * defined in slave_pingpong_base.
+	 */
 	if (is_pingpong_split(ctl->mfd))
 		mdss_mdp_pingpong_write(mdata->slave_pingpong_base,
 				MDSS_MDP_REG_PP_TEAR_CHECK_EN,
@@ -315,7 +325,7 @@ static inline void mdss_mdp_cmd_clk_off(struct mdss_mdp_cmd_ctx *ctx)
 	int set_clk_off = 0;
 
 	if (ctx->autorefresh_init) {
-		
+		/* Do not turn off clocks if aurtorefresh is on. */
 		return;
 	}
 
@@ -358,7 +368,7 @@ static void mdss_mdp_cmd_readptr_done(void *arg)
 		complete_all(&ctx->readptr_done);
 	}
 
-	
+	/* If caller is waiting for the read pointer, notify */
 	if (atomic_read(&ctx->readptr_cnt)) {
 		if (atomic_add_unless(&ctx->readptr_cnt, -1, 0)) {
 			MDSS_XLOG(atomic_read(&ctx->readptr_cnt));
@@ -387,7 +397,7 @@ static void mdss_mdp_cmd_readptr_done(void *arg)
 		if (ctx->rdptr_enabled && !ctx->autorefresh_init)
 			ctx->rdptr_enabled--;
 
-		
+		/* keep clk on during kickoff */
 		if (ctx->rdptr_enabled == 0 && atomic_read(&ctx->koff_cnt))
 			ctx->rdptr_enabled++;
 	}
@@ -438,11 +448,15 @@ static void mdss_mdp_cmd_intf_callback(void *data, int event)
 		pr_debug("%s: wait for frame cnt:%d event:%d\n",
 			__func__, atomic_read(&ctx->readptr_cnt), event);
 
+		/*
+		 * if we are going to suspended or pp split is not enabled,
+		 * just return
+		 */
 		if (ctx->intf_stopped || !is_pingpong_split(ctx->ctl->mfd))
 			return;
 
 		atomic_inc(&ctx->readptr_cnt);
-		
+		/* enable clks and rd_ptr interrupt */
 		mdss_mdp_cmd_clk_on(ctx);
 
 		te = &ctx->ctl->panel_data->panel_info.te;
@@ -452,7 +466,7 @@ static void mdss_mdp_cmd_intf_callback(void *data, int event)
 			return;
 		}
 
-		
+		/* wait for read pointer and frame transfer to start */
 		MDSS_XLOG(atomic_read(&ctx->readptr_cnt));
 		if (mdss_mdp_cmd_wait4readptr(ctx))
 			readl_poll_timeout(mixer->pingpong_base +
@@ -460,6 +474,10 @@ static void mdss_mdp_cmd_intf_callback(void *data, int event)
 				(val & 0xffff) > (te->start_pos +
 				te->sync_threshold_start), 10, timeout_us);
 
+		/*
+		 * rdptr interrupt will be disabled from command mode
+		 * clock work queue
+		 */
 		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
@@ -481,6 +499,11 @@ static void mdss_mdp_cmd_intf_recovery(void *data, int event)
 	if (!ctx->ctl)
 		return;
 
+	/*
+	 * Currently, only intf_fifo_underflow is
+	 * supported for recovery sequence for command
+	 * mode DSI interface
+	 */
 	if (event != MDP_INTF_DSI_CMD_FIFO_UNDERFLOW) {
 		pr_warn("%s: unsupported recovery event:%d\n",
 					__func__, event);
@@ -595,7 +618,7 @@ static void clk_ctrl_work(struct work_struct *work)
 			sctx =
 			(struct mdss_mdp_cmd_ctx *)sctl->intf_ctx[MASTER_CTX];
 		} else {
-			
+			/* slave ctl, let master ctl do clk control */
 			mutex_unlock(&cmd_clk_mtx);
 			return;
 		}
@@ -796,7 +819,7 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 
 	cancel_work_sync(&ctx->pp_done_work);
 
-	
+	/* signal any pending ping pong done events */
 	while (atomic_add_unless(&ctx->pp_done_cnt, -1, 0))
 		mdss_mdp_ctl_notify(ctx->ctl, MDP_NOTIFY_FRAME_DONE);
 
@@ -832,11 +855,11 @@ static void mdss_mdp_cmd_set_sync_ctx(
 	sctx = (struct mdss_mdp_cmd_ctx *)sctl->intf_ctx[MASTER_CTX];
 
 	if (!sctl->roi.w && !sctl->roi.h) {
-		
+		/* left only */
 		ctx->sync_ctx = NULL;
 		sctx->sync_ctx = NULL;
 	} else  {
-		
+		/* left + right */
 		ctx->sync_ctx = sctx;
 		sctx->sync_ctx = ctx;
 	}
@@ -849,7 +872,7 @@ static int mdss_mdp_cmd_set_partial_roi(struct mdss_mdp_ctl *ctl)
 	if (!ctl->panel_data->panel_info.partial_update_supported)
 		return rc;
 
-	
+	/* set panel col and page addr */
 	rc = mdss_mdp_ctl_intf_event(ctl,
 			MDSS_EVENT_ENABLE_PARTIAL_ROI, NULL);
 	return rc;
@@ -862,7 +885,7 @@ static int mdss_mdp_cmd_set_stream_size(struct mdss_mdp_ctl *ctl)
 	if (!ctl->panel_data->panel_info.partial_update_supported)
 		return rc;
 
-	
+	/* set dsi controller stream size */
 	rc = mdss_mdp_ctl_intf_event(ctl,
 			MDSS_EVENT_DSI_STREAM_SIZE, NULL);
 	return rc;
@@ -955,12 +978,22 @@ static int __mdss_mdp_cmd_configure_autorefresh(struct mdss_mdp_ctl *ctl, int
 			mdss_mdp_pingpong_write(ctl->mixer_left->pingpong_base,
 					MDSS_MDP_REG_PP_AUTOREFRESH_CONFIG,
 					BIT(31) | frame_cnt);
+			/*
+			 * This manual kickoff is needed to actually start the
+			 * autorefresh feature. The h/w relies on one commit
+			 * before it starts counting the read ptrs to trigger
+			 * the frames.
+			 */
 			mdss_mdp_ctl_write(ctl, MDSS_MDP_REG_CTL_START, 1);
 			ctl->autorefresh_frame_cnt = frame_cnt;
 			ctl->cmd_autorefresh_en = true;
 		}
 	} else {
 		if (ctx->autorefresh_init) {
+			/*
+			 * Safe to turn off the feature. The clocks will be on
+			 * at this time since the feature was enabled.
+			 */
 
 			mdss_mdp_pingpong_write(ctl->mixer_left->pingpong_base,
 					MDSS_MDP_REG_PP_AUTOREFRESH_CONFIG, 0);
@@ -979,17 +1012,38 @@ static int __mdss_mdp_cmd_configure_autorefresh(struct mdss_mdp_ctl *ctl, int
 	return 0;
 }
 
+/*
+ * This function will be called from the sysfs node to enable and disable the
+ * feature.
+ */
 int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *ctl, int frame_cnt)
 {
 	return __mdss_mdp_cmd_configure_autorefresh(ctl, frame_cnt, true);
 }
 
+/*
+ * This function is called from the commit thread. This function will check if
+ * there was are any pending requests from the sys fs node for the feature and
+ * if so then it will enable in the h/w.
+ */
 static int mdss_mdp_cmd_enable_cmd_autorefresh(struct mdss_mdp_ctl *ctl,
 	int frame_cnt)
 {
 	return __mdss_mdp_cmd_configure_autorefresh(ctl, frame_cnt, false);
 }
 
+/*
+ * There are 3 partial update possibilities
+ * left only ==> enable left pingpong_done
+ * left + right ==> enable both pingpong_done
+ * right only ==> enable right pingpong_done
+ *
+ * notification is triggered at pingpong_done which will
+ * signal timeline to release source buffer
+ *
+ * for left+right case, pingpong_done is enabled for both and
+ * only the last pingpong_done should trigger the notification
+ */
 int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 {
 	struct mdss_mdp_ctl *sctl = NULL;
@@ -1007,11 +1061,11 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 	}
 
 	INIT_COMPLETION(ctx->readptr_done);
-	
+	/* sctl will be null for right only in the case of Partial update */
 	sctl = mdss_mdp_get_split_ctl(ctl);
 
 	if (sctl && (sctl->roi.w == 0 || sctl->roi.h == 0)) {
-		
+		/* left update only */
 		sctl = NULL;
 	}
 
@@ -1024,6 +1078,11 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 			PERF_HW_MDP_STATE, PERF_STATUS_BUSY);
 	}
 
+	/*
+	 * Turn on the panel, if not already. This is because the panel is
+	 * turned on only when we send the first frame and not during cmd
+	 * start. This is to ensure that no artifacts are seen on the panel.
+	 */
 	if (__mdss_mdp_cmd_is_panel_power_off(ctx))
 		mdss_mdp_cmd_panel_on(ctl, sctl);
 
@@ -1040,6 +1099,9 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 
 	mdss_mdp_cmd_set_partial_roi(ctl);
 
+	/*
+	 * tx dcs command if had any
+	 */
 	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_DSI_CMDLIST_KOFF, NULL);
 
 	mdss_mdp_cmd_set_stream_size(ctl);
@@ -1047,6 +1109,11 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 	mdss_mdp_cmd_set_sync_ctx(ctl, sctl);
 
 	if (ctx->autorefresh_init || ctx->autorefresh_off_pending) {
+		/*
+		 * If autorefresh is enabled then do not queue the frame till
+		 * the next read ptr is done otherwise we might get a pp done
+		 * immediately for the past autorefresh frame instead.
+		 */
 		pr_debug("Wait for read pointer done before enabling PP irq\n");
 		wait_for_completion(&ctx->readptr_done);
 		mdss_mdp_cmd_clk_on(ctx);
@@ -1057,7 +1124,7 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 		mdss_mdp_irq_enable(MDSS_MDP_IRQ_PING_PONG_COMP, sctx->pp_num);
 
 	if (!ctx->autorefresh_pending_frame_cnt && !ctl->cmd_autorefresh_en) {
-		
+		/* Kickoff */
 		mdss_mdp_ctl_write(ctl, MDSS_MDP_REG_CTL_START, 1);
 	} else {
 		pr_debug("Enabling autorefresh in hardware.\n");
@@ -1108,12 +1175,16 @@ int mdss_mdp_cmd_ctx_stop(struct mdss_mdp_ctl *ctl,
 	if (sctl)
 		sctx = (struct mdss_mdp_cmd_ctx *) sctl->intf_ctx[MASTER_CTX];
 
-	
+	/* intf stopped,  no more kickoff */
 	ctx->intf_stopped = 1;
 	spin_lock_irqsave(&ctx->clk_lock, flags);
 	if (ctx->rdptr_enabled) {
 		INIT_COMPLETION(ctx->stop_comp);
 		need_wait = 1;
+		/*
+		 * clk off at next vsync after pp_done  OR
+		 * next vsync if there has no kickoff pending
+		 */
 		ctx->rdptr_enabled = 1;
 		if (sctx) {
 			spin_lock_irqsave(&sctx->clk_lock, sflags);
@@ -1222,7 +1293,7 @@ static int mdss_mdp_cmd_stop_sub(struct mdss_mdp_ctl *ctl,
 	MDSS_XLOG(ctl->num, atomic_read(&ctx->koff_cnt), ctx->clk_enabled,
 				ctx->rdptr_enabled, XLOG_FUNC_ENTRY);
 
-	
+	/* Command mode is supported only starting at INTF1 */
 	session = ctl->intf_num - MDSS_MDP_INTF1;
 	return mdss_mdp_cmd_intfs_stop(ctl, session, panel_power_state,
 			pend_switch);
@@ -1269,20 +1340,37 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 
 	mutex_lock(&ctl->offlock);
 	if (mdss_panel_is_power_off(panel_power_state)) {
-		
+		/* Transition to display off */
 		send_panel_events = true;
 		turn_off_clocks = true;
 		panel_off = true;
 	} else if (__mdss_mdp_cmd_is_panel_power_on_interactive(ctx)) {
+		/*
+		 * If we are transitioning from interactive to low
+		 * power, then we need to send events to the interface
+		 * so that the panel can be configured in low power
+		 * mode.
+		 */
 		send_panel_events = true;
 		if (mdss_panel_is_power_on_ulp(panel_power_state))
 			turn_off_clocks = true;
 	} else {
-		
+		/* Transitions between low power and ultra low power */
 		if (mdss_panel_is_power_on_ulp(panel_power_state)) {
+			/*
+			 * If we are transitioning from low power to ultra low
+			 * power mode, no more display updates are expected.
+			 * Turn off the interface clocks.
+			 */
 			pr_debug("%s: turn off clocks\n", __func__);
 			turn_off_clocks = true;
 		} else {
+			/*
+			 * Transition from ultra low power to low power does
+			 * not require any special handling. Just rest the
+			 * intf_stopped flag so that the clocks would
+			 * get turned on when the first update comes.
+			 */
 			pr_debug("%s: reset intf_stopped flag.\n", __func__);
 			mdss_mdp_ctl_intf_event(ctl,
 				MDSS_EVENT_REGISTER_MDP_CALLBACK,
@@ -1291,6 +1379,10 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl, int panel_power_state)
 			if (sctx)
 				sctx->intf_stopped = 0;
 
+			/*
+			 * Tearcheck was disabled while entering LP2 state.
+			 * Enable it back to allow updates in LP1 state.
+			 */
 			mdss_mdp_tearcheck_enable(ctl, true);
 			goto end;
 		}
@@ -1428,9 +1520,17 @@ static int mdss_mdp_cmd_intfs_setup(struct mdss_mdp_ctl *ctl,
 		if (mdss_panel_is_power_on(ctx->panel_power_state)) {
 			pr_debug("%s: cmd_start with panel always on\n",
 				__func__);
+			/*
+			 * It is possible that the resume was called from the
+			 * panel always on state without MDSS every
+			 * power-collapsed (such as a case with any other
+			 * interfaces connected). In such cases, we need to
+			 * explictly call the restore function to enable
+			 * tearcheck logic.
+			 */
 			mdss_mdp_cmd_restore(ctl);
 
-			
+			/* Turn on panel so that it can exit low power mode */
 			return mdss_mdp_cmd_panel_on(ctl, sctl);
 		} else {
 			pr_err("Intf %d already in use\n", session);
@@ -1447,6 +1547,10 @@ static int mdss_mdp_cmd_intfs_setup(struct mdss_mdp_ctl *ctl,
 
 	ctl->intf_ctx[MASTER_CTX] = ctx;
 
+	/*
+	 * pp_num for master ctx is same as mixer num independent
+	 * of pingpong split enabled/disabled
+	 */
 	ret = mdss_mdp_cmd_ctx_setup(ctl, ctx, mixer->num, false);
 	if (ret) {
 		pr_err("mdss_mdp_cmd_ctx_setup failed for ping ping: %d\n",
@@ -1509,6 +1613,11 @@ void mdss_mdp_switch_to_vid_mode(struct mdss_mdp_ctl *ctl, int prep)
 	pr_debug("%s start, prep = %d\n", __func__, prep);
 
 	if (prep) {
+		/*
+		 * In dsi_on there is an explicit decrement to dsi clk refcount
+		 * if we are in cmd mode. We need to rebalance clock in order
+		 * to properly enable vid mode compnents
+		 */
 		rc = mdss_mdp_ctl_intf_event
 			(ctl, MDSS_EVENT_PANEL_CLK_CTRL, (void *)1);
 
@@ -1526,7 +1635,7 @@ int mdss_mdp_cmd_start(struct mdss_mdp_ctl *ctl)
 
 	pr_debug("%s:+\n", __func__);
 
-	
+	/* Command mode is supported only starting at INTF1 */
 	session = ctl->intf_num - MDSS_MDP_INTF1;
 	ret = mdss_mdp_cmd_intfs_setup(ctl, session);
 	if (IS_ERR_VALUE(ret)) {

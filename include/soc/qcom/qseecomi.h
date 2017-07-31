@@ -18,7 +18,7 @@
 
 #define QSEECOM_KEY_ID_SIZE   32
 
-#define QSEOS_RESULT_FAIL_SEND_CMD_NO_THREAD  -19   
+#define QSEOS_RESULT_FAIL_SEND_CMD_NO_THREAD  -19   /*0xFFFFFFED*/
 #define QSEOS_RESULT_FAIL_UNSUPPORTED_CE_PIPE -63
 #define QSEOS_RESULT_FAIL_KS_OP               -64
 #define QSEOS_RESULT_FAIL_KEY_ID_EXISTS       -65
@@ -116,10 +116,10 @@ __packed struct qseecom_check_app_ireq {
 
 __packed struct qseecom_load_app_ireq {
 	uint32_t qsee_cmd_id;
-	uint32_t mdt_len;		
-	uint32_t img_len;		
-	uint32_t phy_addr;		
-	char     app_name[MAX_APP_NAME_SIZE];	
+	uint32_t mdt_len;		/* Length of the mdt file */
+	uint32_t img_len;		/* Length of .bxx and .mdt files */
+	uint32_t phy_addr;		/* phy addr of the start of image */
+	char     app_name[MAX_APP_NAME_SIZE];	/* application name*/
 };
 
 __packed struct qseecom_load_app_64bit_ireq {
@@ -177,7 +177,7 @@ __packed struct qseecom_client_send_data_ireq {
 	uint32_t app_id;
 	uint32_t req_ptr;
 	uint32_t req_len;
-	uint32_t rsp_ptr;
+	uint32_t rsp_ptr;/* First 4 bytes should be the return status */
 	uint32_t rsp_len;
 	uint32_t sglistinfo_ptr;
 	uint32_t sglistinfo_len;
@@ -206,12 +206,20 @@ __packed struct qseecom_reg_log_buf_64bit_ireq {
 	uint32_t len;
 };
 
+/* send_data resp */
 __packed struct qseecom_client_listener_data_irsp {
 	uint32_t qsee_cmd_id;
 	uint32_t listener_id;
 	uint32_t status;
 };
 
+/*
+ * struct qseecom_command_scm_resp - qseecom response buffer
+ * @cmd_status: value from enum tz_sched_cmd_status
+ * @sb_in_rsp_addr: points to physical location of response
+ *                buffer
+ * @sb_in_rsp_len: length of command response
+ */
 __packed struct qseecom_command_scm_resp {
 	uint32_t result;
 	enum qseecom_command_scm_resp_type resp_type;
@@ -224,10 +232,10 @@ struct qseecom_rpmb_provision_key {
 
 __packed struct qseecom_client_send_service_ireq {
 	uint32_t qsee_cmd_id;
-	uint32_t key_type; 
-	unsigned int req_len; 
-	uint32_t rsp_ptr; 
-	unsigned int rsp_len; 
+	uint32_t key_type; /* in */
+	unsigned int req_len; /* in */
+	uint32_t rsp_ptr; /* in/out */
+	unsigned int rsp_len; /* in/out */
 };
 
 __packed struct qseecom_client_send_service_64bit_ireq {
@@ -310,24 +318,31 @@ __packed struct qseecom_client_send_fsm_key_req {
 };
 
 
+/**********      ARMV8 SMC INTERFACE TZ MACRO     *******************/
 
-#define TZ_SVC_APP_MGR                   1     
-#define TZ_SVC_LISTENER                  2     
-#define TZ_SVC_EXTERNAL                  3     
-#define TZ_SVC_RPMB                      4     
-#define TZ_SVC_KEYSTORE                  5     
-#define TZ_SVC_ES                        16    
-#define TZ_SVC_MDTP                      18    
+#define TZ_SVC_APP_MGR                   1     /* Application management */
+#define TZ_SVC_LISTENER                  2     /* Listener service management */
+#define TZ_SVC_EXTERNAL                  3     /* External image loading */
+#define TZ_SVC_RPMB                      4     /* RPMB */
+#define TZ_SVC_KEYSTORE                  5     /* Keystore management */
+#define TZ_SVC_ES                        16    /* Enterprise Security */
+#define TZ_SVC_MDTP                      18    /* Mobile Device Theft */
 
-#define TZ_OWNER_ARM                     0     
-#define TZ_OWNER_CPU                     1     
-#define TZ_OWNER_SIP                     2     
-#define TZ_OWNER_OEM                     3     
-#define TZ_OWNER_STD                     4     
+/*----------------------------------------------------------------------------
+ * Owning Entity IDs (defined by ARM SMC doc)
+ * -------------------------------------------------------------------------*/
+#define TZ_OWNER_ARM                     0     /** ARM Architecture call ID */
+#define TZ_OWNER_CPU                     1     /** CPU service call ID */
+#define TZ_OWNER_SIP                     2     /** SIP service call ID */
+#define TZ_OWNER_OEM                     3     /** OEM service call ID */
+#define TZ_OWNER_STD                     4     /** Standard service call ID */
 
+/** Values 5-47 are reserved for future use */
 
+/** Trusted Application call IDs */
 #define TZ_OWNER_TZ_APPS                 48
 #define TZ_OWNER_TZ_APPS_RESERVED        49
+/** Trusted OS Call IDs */
 #define TZ_OWNER_QSEE_OS                 50
 #define TZ_OWNER_MOBI_OS                 51
 #define TZ_OWNER_OS_RESERVED_3           52
@@ -343,12 +358,18 @@ __packed struct qseecom_client_send_fsm_key_req {
 #define TZ_OWNER_OS_RESERVED_13          62
 #define TZ_OWNER_OS_RESERVED_14          63
 
-#define TZ_SVC_INFO                      6     
+#define TZ_SVC_INFO                      6     /* Misc. information services */
 
-#define TZ_SVC_APP_ID_PLACEHOLDER        0     
+/** Trusted Application call groups */
+#define TZ_SVC_APP_ID_PLACEHOLDER        0     /* SVC bits will contain App ID */
 
+/** General helper macro to create a bitmask from bits low to high. */
 #define TZ_MASK_BITS(h, l)     ((0xffffffff >> (32 - ((h - l) + 1))) << l)
 
+/**
+   Macro used to define an SMC ID based on the owner ID,
+   service ID, and function number.
+*/
 #define TZ_SYSCALL_CREATE_SMC_ID(o, s, f) \
 	((uint32_t)((((o & 0x3f) << 24) | (s & 0xff) << 8) | (f & 0xff)))
 
@@ -369,6 +390,9 @@ __packed struct qseecom_client_send_fsm_key_req {
 	((p9&TZ_SYSCALL_PARAM_TYPE_MASK)<<20)+ \
 	((p10&TZ_SYSCALL_PARAM_TYPE_MASK)<<22))
 
+/**
+   Macros used to create the Parameter ID associated with the syscall
+ */
 #define TZ_SYSCALL_CREATE_PARAM_ID_0 0
 #define TZ_SYSCALL_CREATE_PARAM_ID_1(p1) \
 	TZ_SYSCALL_CREATE_PARAM_ID(1, p1, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -391,11 +415,14 @@ __packed struct qseecom_client_send_fsm_key_req {
 #define TZ_SYSCALL_CREATE_PARAM_ID_10(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) \
 	TZ_SYSCALL_CREATE_PARAM_ID(10, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
 
+/**
+   Macro used to obtain the Parameter ID associated with the syscall
+ */
 #define TZ_SYSCALL_GET_PARAM_ID(CMD_ID)        CMD_ID ## _PARAM_ID
 
-#define TZ_SYSCALL_PARAM_TYPE_VAL              0x0     
-#define TZ_SYSCALL_PARAM_TYPE_BUF_RO           0x1     
-#define TZ_SYSCALL_PARAM_TYPE_BUF_RW           0x2     
+#define TZ_SYSCALL_PARAM_TYPE_VAL              0x0     /** type of value */
+#define TZ_SYSCALL_PARAM_TYPE_BUF_RO           0x1     /** type of buffer read-only */
+#define TZ_SYSCALL_PARAM_TYPE_BUF_RW           0x2     /** type of buffer read-write */
 
 #define TZ_OS_APP_START_ID \
 	TZ_SYSCALL_CREATE_SMC_ID(TZ_OWNER_QSEE_OS, TZ_SVC_APP_MGR, 0x01)
@@ -652,4 +679,4 @@ __packed struct qseecom_client_send_fsm_key_req {
 	TZ_SYSCALL_PARAM_TYPE_VAL, TZ_SYSCALL_PARAM_TYPE_BUF_RW,	\
 	TZ_SYSCALL_PARAM_TYPE_VAL)
 
-#endif 
+#endif /* __QSEECOMI_H_ */

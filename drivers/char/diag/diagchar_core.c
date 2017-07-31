@@ -63,48 +63,85 @@ struct diagchar_priv {
 #define USER_SPACE_RAW_DATA	0
 #define USER_SPACE_HDLC_DATA	1
 
+/* Memory pool variables */
+/* Used for copying any incoming packet from user space clients. */
 static unsigned int poolsize = 12;
 module_param(poolsize, uint, 0);
 
+/*
+ * Used for HDLC encoding packets coming from the user
+ * space.
+ */
 static unsigned int poolsize_hdlc = 10;
 module_param(poolsize_hdlc, uint, 0);
 
+/*
+ * This is used for incoming DCI requests from the user space clients.
+ * Don't expose itemsize as it is internal.
+ */
 static unsigned int poolsize_user = 8;
 module_param(poolsize_user, uint, 0);
 
+/*
+ * USB structures allocated for writing Diag data generated on the Apps to USB.
+ * Don't expose itemsize as it is constant.
+ */
 static unsigned int itemsize_usb_apps = sizeof(struct diag_request);
 static unsigned int poolsize_usb_apps = 10;
 module_param(poolsize_usb_apps, uint, 0);
 
+/* Used for DCI client buffers. Don't expose itemsize as it is constant. */
 static unsigned int poolsize_dci = 10;
 module_param(poolsize_dci, uint, 0);
 
 #ifdef CONFIG_DIAGFWD_BRIDGE_CODE
+/* Used for reading data from the remote device. */
 static unsigned int itemsize_mdm = DIAG_MDM_BUF_SIZE;
 static unsigned int poolsize_mdm = 9;
 module_param(itemsize_mdm, uint, 0);
 module_param(poolsize_mdm, uint, 0);
 
+/*
+ * Used for reading DCI data from the remote device.
+ * Don't expose poolsize for DCI data. There is only one read buffer
+ */
 static unsigned int itemsize_mdm_dci = DIAG_MDM_BUF_SIZE;
 static unsigned int poolsize_mdm_dci = 1;
 module_param(itemsize_mdm_dci, uint, 0);
 
+/*
+ * Used for USB structues associated with a remote device.
+ * Don't expose the itemsize since it is constant.
+ */
 static unsigned int itemsize_mdm_usb = sizeof(struct diag_request);
 static unsigned int poolsize_mdm_usb = 9;
 module_param(poolsize_mdm_usb, uint, 0);
 
+/*
+ * Used for writing read DCI data to remote peripherals. Don't
+ * expose poolsize for DCI data. There is only one read
+ * buffer. Add 6 bytes for DCI header information: Start (1),
+ * Version (1), Length (2), Tag (2)
+ */
 static unsigned int itemsize_mdm_dci_write = DIAG_MDM_DCI_BUF_SIZE;
 static unsigned int poolsize_mdm_dci_write = 1;
 module_param(itemsize_mdm_dci_write, uint, 0);
 
+/*
+ * Used for USB structures associated with a remote SMUX
+ * device Don't expose the itemsize since it is constant
+ */
 static unsigned int itemsize_qsc_usb = sizeof(struct diag_request);
 static unsigned int poolsize_qsc_usb = 8;
 module_param(poolsize_qsc_usb, uint, 0);
 #endif
 
+/* This is the max number of user-space clients supported at initialization*/
 static unsigned int max_clients = 15;
 static unsigned int threshold_client_limit = 50;
 module_param(max_clients, uint, 0);
+
+/* Timer variables */
 static struct timer_list drain_timer;
 static int timer_in_progress;
 
@@ -263,6 +300,10 @@ uint16_t diag_debug_mask;
 void *diag_ipc_log;
 #endif
 
+/*
+ * Returns the next delayed rsp id. If wrapping is enabled,
+ * wraps the delayed rsp id to DIAGPKT_MAX_DELAYED_RSP.
+ */
 static uint16_t diag_get_next_delayed_rsp_id(void)
 {
 	uint16_t rsp_id = 0;
@@ -306,6 +347,7 @@ do {								\
 	}							\
 	ret += length;						\
 } while (0)
+
 static void drain_timer_func(unsigned long data)
 {
 	queue_work(driver->diag_wq , &(driver->diag_drain_work));
@@ -510,6 +552,11 @@ static void diag_close_logging_process(int pid)
 	queue_work(driver->diag_real_time_wq, &driver->diag_real_time_work);
 
 	if (driver->rsp_buf_busy) {
+		/*
+		 * This condition is true when the logging process did
+		 * not get a chance to read the last response. Clear the
+		 * busy flag for the response buffer.
+		 */
 		spin_lock_irqsave(&driver->rsp_buf_busy_lock, flags);
 		driver->rsp_buf_busy = 0;
 		spin_unlock_irqrestore(&driver->rsp_buf_busy_lock,
@@ -518,6 +565,11 @@ static void diag_close_logging_process(int pid)
 			 __func__, pid);
 	}
 
+	/*
+	 * There can be multiple instances of Callback applications in the
+	 * system. Ensure that there are no other Memory Device logging process
+	 * before you switch the mode back to USB.
+	 */
 	for (i = 0; i < DIAG_NUM_PROC; i++) {
 		logging_proc = &driver->md_proc[i];
 		if ((logging_proc->callback_process) &&
@@ -568,6 +620,10 @@ static int diag_remove_client_entry(struct file *file)
 
 	diagpriv_data = file->private_data;
 
+	/* clean up any DCI registrations, if this is a DCI client
+	* This will specially help in case of ungraceful exit of any DCI client
+	* This call will remove any pending registrations of such client
+	*/
 	mutex_lock(&driver->dci_mutex);
 	dci_entry = dci_lookup_client_entry_pid(current->tgid);
 	if (dci_entry)
@@ -576,7 +632,7 @@ static int diag_remove_client_entry(struct file *file)
 
 	diag_close_logging_process(current->tgid);
 
-	
+	/* Delete the pkt response table entry for the exiting process */
 	diag_cmd_remove_reg_by_pid(current->tgid);
 
 	mutex_lock(&driver->diagchar_mutex);
@@ -626,7 +682,7 @@ void diag_record_stats(int type, int flag)
 				   __func__);
 		return;
 	case DATA_TYPE_DELAYED_RESPONSE:
-		
+		/* No counters to increase for Delayed responses */
 		return;
 	default:
 		pr_err_ratelimited("diag: In %s, invalid pkt_type: %d\n",
@@ -961,7 +1017,7 @@ drop:
 	}
 
 	if (total_data_len > 0) {
-		
+		/* Copy the total data length */
 		COPY_USER_SPACE_OR_EXIT(buf+8, total_data_len, 4);
 		ret -= 4;
 	} else {
@@ -1047,6 +1103,10 @@ static int diag_send_raw_data_remote(int proc, void *buf, int len,
 	if (driver->hdlc_disabled) {
 		payload = *(uint16_t *)(buf + 2);
 		driver->hdlc_encode_buf_len = payload;
+		/*
+		 * Adding 4 bytes for start (1 byte), version (1 byte) and
+		 * payload (2 bytes)
+		 */
 		memcpy(driver->hdlc_encode_buf, buf + 4, payload);
 		goto send_data;
 	}
@@ -1062,6 +1122,10 @@ static int diag_send_raw_data_remote(int proc, void *buf, int len,
 		goto send_data;
 	}
 
+	/*
+	 * The worst case length will be twice as the incoming packet length.
+	 * Add 3 bytes for CRC bytes (2 bytes) and delimiter (1 byte)
+	 */
 	max_len = (2 * len) + 3;
 	if (DIAG_MAX_HDLC_BUF_SIZE < max_len) {
 		pr_err("diag: Dropping packet, HDLC encoded packet payload size crosses buffer limit. Current payload size %d\n",
@@ -1069,7 +1133,7 @@ static int diag_send_raw_data_remote(int proc, void *buf, int len,
 		return -EBADMSG;
 	}
 
-	
+	/* Perform HDLC encoding on incoming data */
 	send.state = DIAG_STATE_START;
 	send.pkt = (void *)(buf);
 	send.last = (void *)(buf + len - 1);
@@ -1176,36 +1240,36 @@ static int mask_request_validate(unsigned char mask_buf[])
 	} else if (packet_id == 0x4B) {
 		subsys_id = mask_buf[1];
 		ss_cmd = *(uint16_t *)(mask_buf + 2);
-		
+		/* Packets with SSID which are allowed */
 		switch (subsys_id) {
-		case 0x04: 
+		case 0x04: /* DIAG_SUBSYS_WCDMA */
 			if ((ss_cmd == 0) || (ss_cmd == 0xF))
 				return 1;
 			break;
-		case 0x08: 
+		case 0x08: /* DIAG_SUBSYS_GSM */
 			if ((ss_cmd == 0) || (ss_cmd == 0x1))
 				return 1;
 			break;
-		case 0x09: 
-		case 0x0F: 
+		case 0x09: /* DIAG_SUBSYS_UMTS */
+		case 0x0F: /* DIAG_SUBSYS_CM */
 			if (ss_cmd == 0)
 				return 1;
 			break;
-		case 0x0C: 
+		case 0x0C: /* DIAG_SUBSYS_OS */
 			if ((ss_cmd == 2) || (ss_cmd == 0x100))
-				return 1; 
+				return 1; /* MPU and APU */
 			break;
-		case 0x12: 
+		case 0x12: /* DIAG_SUBSYS_DIAG_SERV */
 			if ((ss_cmd == 0) || (ss_cmd == 0x6) || (ss_cmd == 0x7))
 				return 1;
-			else if (ss_cmd == 0x218) 
+			else if (ss_cmd == 0x218) /* HDLC Disabled Command*/
 				return 0;
 			else if (ss_cmd == DIAG_GET_TIME_API)
 				return 1;
 			else if (ss_cmd == DIAG_SET_TIME_API)
 				return 1;
 			break;
-		case 0x13: 
+		case 0x13: /* DIAG_SUBSYS_FS */
 			if ((ss_cmd == 0) || (ss_cmd == 0x1))
 				return 1;
 			break;
@@ -1217,10 +1281,10 @@ static int mask_request_validate(unsigned char mask_buf[])
 		}
 	} else {
 		switch (packet_id) {
-		case 0x00:    
-		case 0x0C:    
-		case 0x1C:    
-		case 0x1D:    
+		case 0x00:    /* Version Number */
+		case 0x0C:    /* CDMA status packet */
+		case 0x1C:    /* Diag Version */
+		case 0x1D:    /* Time Stamp */
 		case 0x20:    
 		case 0x26:    
 		case 0x27:    
@@ -1230,13 +1294,13 @@ static int mask_request_validate(unsigned char mask_buf[])
 		case 0x40:    
 		case 0x41:    
 		case 0x4B:    
-		case 0x60:    
-		case 0x63:    
-		case 0x73:    
-		case 0x7C:    
-		case 0x7D:    
-		case 0x81:    
-		case 0x82:    
+		case 0x60:    /* Event Report Control */
+		case 0x63:    /* Status snapshot */
+		case 0x73:    /* Logging Configuration */
+		case 0x7C:    /* Extended build ID */
+		case 0x7D:    /* Extended Message configuration */
+		case 0x81:    /* Event get mask */
+		case 0x82:    /* Set the event mask */
 			return 1;
 			break;
 		default:
@@ -1251,7 +1315,7 @@ static int diag_switch_logging(const int requested_mode)
 {
 	int i;
 	int err = 0;
-	int mux_mode = DIAG_USB_MODE; 
+	int mux_mode = DIAG_USB_MODE; /* set the mode from diag_mux.h */
 	int new_mode = USB_MODE;
 	int current_mode = driver->logging_mode;
 	int found = 0;
@@ -1288,6 +1352,11 @@ static int diag_switch_logging(const int requested_mode)
 		return 0;
 	}
 
+	/*
+	 * When any mdlog process exits, or votes for USB mode, check if the
+	 * process is the original requestor for the mode change. Don't allow
+	 * any mdlog process to vote for mode change.
+	 */
 	if (current_mode == MEMORY_DEVICE_MODE && new_mode == USB_MODE) {
 		for (i = 0; i < DIAG_NUM_PROC && !found; i++) {
 			if (driver->md_proc[i].pid == current->tgid)
@@ -1332,6 +1401,10 @@ static int diag_switch_logging(const int requested_mode)
 			   &driver->diag_real_time_work);
 	}
 
+	/*
+	 * Set the pid and context for md_proc. For callback processes, the
+	 * context will be set by DIAG_IOCTL_REGISTER_CALLBACK.
+	 */
 	for (i = 0; i < DIAG_NUM_PROC && new_mode == MEMORY_DEVICE_MODE; i++) {
 		switch (requested_mode) {
 		case SOCKET_MODE:
@@ -1510,6 +1583,11 @@ static int diag_ioctl_get_real_time(unsigned long ioarg)
 	while (retry_count < 3) {
 		if (driver->real_time_update_busy > 0) {
 			retry_count++;
+			/*
+			 * The value 10000 was chosen empirically as an
+			 * optimum value in order to give the work in
+			 * diag_real_time_wq to complete processing.
+			 */
 			for (timer = 0; timer < 5; timer++)
 				usleep_range(10000, 10100);
 		} else {
@@ -1526,6 +1604,10 @@ static int diag_ioctl_get_real_time(unsigned long ioarg)
 		return -EINVAL;
 	}
 	rt_query.real_time = driver->real_time_mode[rt_query.proc];
+	/*
+	 * For the local processor, if any of the peripherals is in buffering
+	 * mode, overwrite the value of real time with UNKNOWN_MODE
+	 */
 	if (rt_query.proc == DIAG_LOCAL_PROC) {
 		for (i = 0; i < NUM_PERIPHERALS; i++) {
 			if (!driver->feature[i].peripheral_buffering)
@@ -1627,6 +1709,10 @@ static int diag_ioctl_register_callback(unsigned long ioarg)
 		return -EINVAL;
 	}
 
+	/*
+	 * The IOCTL will just send the context for md_proc.
+	 * The pid will be set by diag_switch_logging.
+	 */
 	mutex_lock(&driver->diagchar_mutex);
 	driver->md_proc[reg.proc].callback_process = current;
 	mutex_unlock(&driver->diagchar_mutex);
@@ -1695,6 +1781,11 @@ static int diag_ioctl_cmd_reg(unsigned long ioarg)
 }
 
 #ifdef CONFIG_COMPAT
+/*
+ * @sync_obj_name: name of the synchronization object associated with this proc
+ * @count: number of entries in the bind
+ * @params: the actual packet registrations
+ */
 struct diag_cmd_reg_tbl_compat_t {
 	char sync_obj_name[MAX_SYNC_OBJ_NAME_SIZE];
 	uint32_t count;
@@ -1995,6 +2086,11 @@ static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 	struct diag_apps_data_t *data = &hdlc_data;
 	struct diag_send_desc_type send = { NULL, NULL, DIAG_STATE_START, 0 };
 	struct diag_hdlc_dest_type enc = { NULL, NULL, 0 };
+	/*
+	 * The maximum encoded size of the buffer can be atmost twice the length
+	 * of the packet. Add three bytes foe footer - 16 bit CRC (2 bytes) +
+	 * delimiter (1 byte).
+	 */
 	const uint32_t max_encoded_size = ((2 * len) + 3);
 
 	if (!buf || len <= 0) {
@@ -2045,6 +2141,12 @@ static int diag_process_apps_data_hdlc(unsigned char *buf, int len,
 	enc.dest_last = (void *)(data->buf + data->len + max_encoded_size);
 	diag_hdlc_encode(&send, &enc);
 
+	/*
+	 * This is to check if after HDLC encoding, we are still within
+	 * the limits of aggregation buffer. If not, we write out the
+	 * current buffer and start aggregation in a newly allocated
+	 * buffer.
+	 */
 	if ((uintptr_t)enc.dest >= (uintptr_t)(data->buf +
 					       DIAG_MAX_HDLC_BUF_SIZE)) {
 		err = diag_mux_write(DIAG_LOCAL_PROC, data->buf, data->len,
@@ -2103,6 +2205,11 @@ static int diag_process_apps_data_non_hdlc(unsigned char *buf, int len,
 	int ret = PKT_DROP;
 	struct diag_pkt_frame_t header;
 	struct diag_apps_data_t *data = &non_hdlc_data;
+	/*
+	 * The maximum packet size, when the data is non hdlc encoded is equal
+	 * to the size of the packet frame header and the length. Add 1 for the
+	 * delimiter 0x7E at the end.
+	 */
 	const uint32_t max_pkt_size = sizeof(header) + len + 1;
 
 	if (!buf || len <= 0) {
@@ -2268,7 +2375,7 @@ static int diag_user_process_raw_data(const char __user *buf, int len)
 		goto fail;
 	}
 
-	
+	/* Check for proc_type */
 	remote_proc = diag_get_remote(*(int *)user_space_data);
 	if (remote_proc) {
 		token_offset = sizeof(int);
@@ -2347,7 +2454,7 @@ static int diag_user_process_userspace_data(const char __user *buf, int len)
 					" to modem(first 16 bytes)", 16, 1,
 					DUMP_PREFIX_ADDRESS, driver->user_space_data_buf, 16, 1);
 		}
-	
+	/* Check for proc_type */
 	remote_proc = diag_get_remote(*(int *)driver->user_space_data_buf);
 	if (remote_proc) {
 		if (len <= MIN_SIZ_ALLOW) {
@@ -2359,7 +2466,7 @@ static int diag_user_process_userspace_data(const char __user *buf, int len)
 		len -= sizeof(int);
 	}
 
-	
+	/* Check masks for On-Device logging */
 	if (driver->mask_check) {
 		if (!mask_request_validate(driver->user_space_data_buf +
 					   token_offset)) {
@@ -2368,7 +2475,7 @@ static int diag_user_process_userspace_data(const char __user *buf, int len)
 		}
 	}
 
-	
+	/* send masks to local processor now */
 	if (!remote_proc) {
 		if (driver->hdlc_disabled == 0)
 			diag_process_hdlc_pkt((void *)
@@ -2516,15 +2623,17 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	if ((driver->data_ready[index] & USER_SPACE_DATA_TYPE) && (driver->
 					logging_mode == MEMORY_DEVICE_MODE)) {
 		DIAG_DBUG("diag: process woken up\n");
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & USER_SPACE_DATA_TYPE;
 		driver->data_ready[index] ^= USER_SPACE_DATA_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, sizeof(int));
-		
+		/* place holder for number of data field */
 		ret += sizeof(int);
 		exit_stat = diag_md_copy_to_user(buf, &ret, count);
 		goto exit;
 	} else if (driver->data_ready[index] & USER_SPACE_DATA_TYPE) {
+		/* In case, the thread wakes up and the logging mode is
+		not memory device any more, the condition needs to be cleared */
 		driver->data_ready[index] ^= USER_SPACE_DATA_TYPE;
 	} else if (driver->data_ready[index] & USERMODE_DIAGFWD) {
 			DIAG_DBUG("diag: process woken up\n");
@@ -2545,6 +2654,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 			 exit_stat = diag_md_copy_to_user(buf, &ret, count);
 			 goto exit;
 	}
+
 	if (driver->data_ready[index] & HDLC_SUPPORT_TYPE) {
 		data_type = driver->data_ready[index] & HDLC_SUPPORT_TYPE;
 		driver->data_ready[index] ^= HDLC_SUPPORT_TYPE;
@@ -2555,7 +2665,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & DEINIT_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & DEINIT_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		driver->data_ready[index] ^= DEINIT_TYPE;
@@ -2565,7 +2675,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & MSG_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & MSG_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, sizeof(int));
 		write_len = diag_copy_to_user_msg_mask(buf + ret, count);
@@ -2576,7 +2686,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & EVENT_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & EVENT_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(event_mask.ptr),
@@ -2586,7 +2696,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & LOG_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & LOG_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, sizeof(int));
 		write_len = diag_copy_to_user_log_mask(buf + ret, count);
@@ -2597,7 +2707,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & PKT_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & PKT_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, sizeof(data_type));
 		COPY_USER_SPACE_OR_EXIT(buf + sizeof(data_type),
@@ -2609,7 +2719,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & DCI_PKT_TYPE) {
-		
+		/* Copy the type of data being passed */
 		data_type = driver->data_ready[index] & DCI_PKT_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(driver->dci_pkt_buf),
@@ -2620,7 +2730,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & DCI_EVENT_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & DCI_EVENT_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, driver->num_dci_client, 4);
@@ -2631,7 +2741,7 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (driver->data_ready[index] & DCI_LOG_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & DCI_LOG_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, driver->num_dci_client, 4);
@@ -2645,7 +2755,7 @@ exit:
 	mutex_unlock(&driver->diagchar_mutex);
 	if (driver->data_ready[index] & DCI_DATA_TYPE) {
 		mutex_lock(&driver->dci_mutex);
-		
+		/* Copy the type of data being passed */
 		data_type = driver->data_ready[index] & DCI_DATA_TYPE;
 		list_for_each_safe(start, temp, &driver->dci_client_list) {
 			entry = list_entry(start, struct diag_dci_client_tbl,
@@ -2679,6 +2789,11 @@ exit:
 		goto end;
 	}
 end:
+	/*
+	 * Flush any read that is currently pending on DCI data and
+	 * command channnels. This will ensure that the next read is not
+	 * missed.
+	 */
 	if (copy_dci_data) {
 		diag_ws_on_copy_complete(DIAG_WS_DCI);
 		flush_workqueue(driver->diag_dci_wq);
@@ -2697,6 +2812,10 @@ static ssize_t diagchar_write(struct file *file, const char __user *buf,
 	void *user_space_data = NULL;
 	DIAG_DBUG("%s:%s(parent:%s): tgid=%d\n", __func__,
 			current->comm, current->parent->comm, current->tgid);
+	/*
+	 * The data coming from the user sapce should at least have the
+	 * packet type heeader.
+	 */
 	if (count < sizeof(int)) {
 		pr_err("diag: In %s, client is sending short data, len: %d\n",
 		       __func__, (int)count);
@@ -2773,6 +2892,11 @@ static ssize_t diagchar_write(struct file *file, const char __user *buf,
 			pkt_type ^= DATA_TYPE_DCI_LOG;
 		if (pkt_type & DATA_TYPE_DCI_EVENT)
 			pkt_type ^= DATA_TYPE_DCI_EVENT;
+		/*
+		 * Check if the log or event is selected even on the regular
+		 * stream. If USB is not connected and we are not in memory
+		 * device mode, we should not process these logs/events.
+		 */
 		if (pkt_type && driver->logging_mode == USB_MODE &&
 		    !driver->usb_connected)
 			return err;
@@ -2823,6 +2947,10 @@ static void diag_stats_init(void)
 
 void diag_ws_on_notify()
 {
+	/*
+	 * Do not deal with reference count here as there can be spurious
+	 * interrupts.
+	 */
 	pm_stay_awake(driver->diag_dev);
 }
 
@@ -2972,6 +3100,10 @@ static void diag_debug_init(void)
 	diag_ipc_log = ipc_log_context_create(DIAG_IPC_LOG_PAGES, "diag", 0);
 	if (!diag_ipc_log)
 		pr_err("diag: Failed to create IPC logging context\n");
+	/*
+	 * Set the bit mask here as per diag_ipc_logging.h to enable debug logs
+	 * to be logged to IPC
+	 */
 	diag_debug_mask = DIAG_DEBUG_PERIPHERALS | DIAG_DEBUG_DCI;
 }
 #else
@@ -3001,7 +3133,6 @@ static int diag_real_time_info_init(void)
 	mutex_init(&driver->real_time_mutex);
 	return 0;
 }
-
 
 static const struct file_operations diagcharfops = {
 	.owner = THIS_MODULE,
@@ -3067,7 +3198,7 @@ static int diagchar_cleanup(void)
 		current->comm, current->parent->comm, current->tgid);
 	if (driver) {
 		if (driver->cdev) {
-			
+			/* TODO - Check if device exists before deleting */
 			device_destroy(driver->diagchar_class,
 				       MKDEV(driver->major,
 					     driver->minor_start));
@@ -3117,6 +3248,13 @@ static int __init diagchar_init(void)
 	driver->poolsize_hdlc = poolsize_hdlc;
 	driver->poolsize_dci = poolsize_dci;
 	driver->poolsize_user = poolsize_user;
+	/*
+	 * POOL_TYPE_MUX_APPS is for the buffers in the Diag MUX layer.
+	 * The number of buffers encompasses Diag data generated on
+	 * the Apss processor + 1 for the responses generated exclusively on
+	 * the Apps processor + data from data channels (4 channels per
+	 * peripheral) + data from command channels (2)
+	 */
 	diagmem_setsize(POOL_TYPE_MUX_APPS, itemsize_usb_apps,
 			poolsize_usb_apps + 1 + (NUM_PERIPHERALS * 6));
 	driver->num_clients = max_clients;
@@ -3194,7 +3332,7 @@ static int __init diagchar_init(void)
 #if DIAG_XPST
 	driver->debug_dmbytes_recv = 0;
 #endif
-	
+	/* Get major number from kernel and initialize */
 	error = alloc_chrdev_region(&dev, driver->minor_start,
 				    driver->num, driver->name);
 	if (!error) {

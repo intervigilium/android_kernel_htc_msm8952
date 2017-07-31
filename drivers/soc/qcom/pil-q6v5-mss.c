@@ -193,7 +193,7 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
 
-	
+	/* Ignore if we're the one that set the force stop GPIO */
 	if (drv->crash_shutdown || subsys_get_crash_status(drv->subsys))
 		return IRQ_HANDLED;
 
@@ -257,6 +257,11 @@ static int modem_powerup(const struct subsys_desc *subsys)
 
 	if (subsys->is_not_loadable)
 		return 0;
+	/*
+	 * At this time, the modem is shutdown. Therefore this function cannot
+	 * run concurrently with the watchdog bite error handler, making it safe
+	 * to unset the flag below.
+	 */
 	INIT_COMPLETION(drv->stop_ack);
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->q6->desc.fw_name = subsys->fw_name;
@@ -473,7 +478,7 @@ static int pil_mss_loadable_init(struct modem_data *drv,
 	drv->subsys_desc.pil_mss_memsetup =
 	of_property_read_bool(pdev->dev.of_node, "qcom,pil-mss-memsetup");
 
-	
+	/* Optional. */
 	if (of_property_match_string(pdev->dev.of_node,
 			"qcom,active-clock-names", "gpll0_mss_clk") >= 0)
 		q6->gpll0_mss_clk = devm_clk_get(&pdev->dev, "gpll0_mss_clk");

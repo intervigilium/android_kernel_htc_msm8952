@@ -1141,6 +1141,7 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 	int ret;
 	struct wcd9xxx_pdata *pdata = wcd9xxx->dev->platform_data;
 
+
 	if (wcd9xxx->wcd_rst_np) {
 		/* use pinctrl and call into wcd-rst-gpio driver */
 		ret = wcd_gpio_ctrl_select_sleep_state(wcd9xxx->wcd_rst_np);
@@ -3073,7 +3074,6 @@ static int wcd9xxx_slim_device_reset(struct slim_device *sldev)
 	dev_info(wcd9xxx->dev, "%s: device reset\n", __func__);
 	if (wcd9xxx->slim_device_bootup)
 		return 0;
-
 	ret = wcd9xxx_reset(wcd9xxx);
 	if (ret)
 		dev_err(wcd9xxx->dev, "%s: Resetting Codec failed\n", __func__);

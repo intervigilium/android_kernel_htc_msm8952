@@ -78,6 +78,7 @@ static const struct file_operations binder_##name##_fops = { \
 static int binder_proc_show(struct seq_file *m, void *unused);
 BINDER_DEBUG_ENTRY(proc);
 
+/* This is only defined in include/asm-arm/sizes.h */
 #ifndef SZ_1K
 #define SZ_1K                               0x400
 #endif
@@ -252,10 +253,10 @@ struct binder_ref_death {
 };
 
 struct binder_ref {
-	
-	
-	
-	
+	/* Lookups needed: */
+	/*   node + proc => ref (transaction) */
+	/*   desc + proc => ref (transaction, inc/dec ref) */
+	/*   node => refs + procs (proc exit) */
 	int debug_id;
 	struct rb_node rb_node_desc;
 	struct rb_node rb_node_node;
@@ -269,9 +270,9 @@ struct binder_ref {
 };
 
 struct binder_buffer {
-	struct list_head entry; 
-	struct rb_node rb_node; 
-				
+	struct list_head entry; /* free and allocated entries by address */
+	struct rb_node rb_node; /* free entry by size or allocated entry */
+				/* by address */
 	unsigned free:1;
 	unsigned allow_user_free:1;
 	unsigned async_transaction:1;
@@ -343,10 +344,10 @@ struct binder_thread {
 	int looper;
 	struct binder_transaction *transaction_stack;
 	struct list_head todo;
-	uint32_t return_error; 
-	uint32_t return_error2; 
-		
-		
+	uint32_t return_error; /* Write failed, return error code in read buf */
+	uint32_t return_error2; /* Write failed, return error code in read */
+		/* buffer. Used when sending a reply to a dead process that */
+		/* we are also waiting on */
 	wait_queue_head_t wait;
 	struct binder_stats stats;
 };
@@ -360,7 +361,7 @@ struct binder_transaction {
 	struct binder_thread *to_thread;
 	struct binder_transaction *to_parent;
 	unsigned need_reply:1;
-		
+	/* unsigned is_dead:1; */	/* not used at the moment */
 
 	struct binder_buffer *buffer;
 	unsigned int	code;
@@ -396,6 +397,9 @@ static int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
 	return ret;
 }
 
+/*
+ * copied from fd_install
+ */
 static void task_fd_install(
 	struct binder_proc *proc, unsigned int fd, struct file *file)
 {
@@ -406,6 +410,9 @@ static void task_fd_install(
 	}
 }
 
+/*
+ * copied from sys_close
+ */
 static long task_close_fd(struct binder_proc *proc, unsigned int fd)
 {
 	int retval;
@@ -414,7 +421,7 @@ static long task_close_fd(struct binder_proc *proc, unsigned int fd)
 		return -ESRCH;
 
 	retval = __close_fd(proc->files, fd);
-	
+	/* can't restart close syscall because file table entry was cleared */
 	if (unlikely(retval == -ERESTARTSYS ||
 		     retval == -ERESTARTNOINTR ||
 		     retval == -ERESTARTNOHAND ||
@@ -674,7 +681,7 @@ static int binder_update_page_range(struct binder_proc *proc, int allocate,
 			       proc->pid, user_page_addr);
 			goto err_vm_insert_page_failed;
 		}
-		
+		/* vm_insert_page does not seem to increment the refcount */
 	}
 	if (mm) {
 		up_write(&mm->mmap_sem);
@@ -779,7 +786,7 @@ static struct binder_buffer *binder_alloc_buf(struct binder_proc *proc,
 		(void *)(((uintptr_t)buffer->data + buffer_size) & PAGE_MASK);
 	if (n == NULL) {
 		if (size + sizeof(struct binder_buffer) + 4 >= buffer_size)
-			buffer_size = size; 
+			buffer_size = size; /* no room for other buffers */
 		else
 			buffer_size = size + sizeof(struct binder_buffer);
 	}
@@ -1499,7 +1506,7 @@ static void binder_transaction(struct binder_proc *proc,
 	}
 	e->to_proc = target_proc->pid;
 
-	
+	/* TODO: reuse incoming transaction for reply */
 	t = kzalloc_preempt_disabled(sizeof(*t));
 	if (t == NULL) {
 		return_error = BR_FAILED_REPLY;
@@ -1723,7 +1730,7 @@ static void binder_transaction(struct binder_proc *proc,
 			trace_binder_transaction_fd(t, fp->handle, target_fd);
 			binder_debug(BINDER_DEBUG_TRANSACTION,
 				     "        fd %d -> %d\n", fp->handle, target_fd);
-			
+			/* TODO: fput? */
 			fp->handle = target_fd;
 		} break;
 
@@ -2298,7 +2305,7 @@ retry:
 			w = list_first_entry(&proc->todo, struct binder_work,
 					     entry);
 		} else {
-			
+			/* no data added */
 			if (ptr - buffer == 4 &&
 			    !(thread->looper & BINDER_LOOPER_STATE_NEED_RETURN))
 				goto retry;
@@ -2430,7 +2437,7 @@ retry:
 			} else
 				list_move(&w->entry, &proc->delivered_death);
 			if (cmd == BR_DEAD_BINDER)
-				goto done; 
+				goto done; /* DEAD_BINDER notifications can cause transactions */
 		} break;
 		}
 
@@ -2517,8 +2524,8 @@ done:
 	if (proc->requested_threads + proc->ready_threads == 0 &&
 	    proc->requested_threads_started < proc->max_threads &&
 	    (thread->looper & (BINDER_LOOPER_STATE_REGISTERED |
-	     BINDER_LOOPER_STATE_ENTERED)) 
-	     ) {
+	     BINDER_LOOPER_STATE_ENTERED)) /* the user-space code fails to */
+	     /*spawn a new thread if we leave this out */) {
 		proc->requested_threads++;
 		binder_debug(BINDER_DEBUG_THREADS,
 			     "%d:%d BR_SPAWN_LOOPER\n",
@@ -2796,6 +2803,8 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned int size = _IOC_SIZE(cmd);
 	void __user *ubuf = (void __user *)arg;
 
+	/*pr_info("binder_ioctl: %d:%d %x %lx\n",
+			proc->pid, current->pid, cmd, arg);*/
 
 	trace_binder_ioctl(cmd, arg);
 
@@ -2903,7 +2912,6 @@ static struct vm_operations_struct binder_vm_ops = {
 static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	int ret;
-
 	struct vm_struct *area;
 	struct binder_proc *proc = filp->private_data;
 	const char *failure_string;
@@ -2984,6 +2992,8 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
 	proc->vma = vma;
 	proc->vma_vm_mm = vma->vm_mm;
 
+	/*pr_info("binder_mmap: %d %lx-%lx maps %p\n",
+		 proc->pid, vma->vm_start, vma->vm_end, proc->buffer);*/
 	return 0;
 
 err_alloc_small_buf_failed:
@@ -3187,7 +3197,7 @@ static void binder_deferred_release(struct binder_proc *proc)
 			buffer->transaction = NULL;
 			pr_err("release proc %d, transaction %d, not freed\n",
 			       proc->pid, t->debug_id);
-			
+			/*BUG();*/
 		}
 
 		binder_free_buf(proc, buffer);
@@ -3265,7 +3275,7 @@ static void binder_deferred_func(struct work_struct *work)
 			binder_deferred_flush(proc);
 
 		if (defer & BINDER_DEFERRED_RELEASE)
-			binder_deferred_release(proc); 
+			binder_deferred_release(proc); /* frees proc */
 
 		trace_binder_unlock(__func__);
 		mutex_unlock(&binder_main_lock);

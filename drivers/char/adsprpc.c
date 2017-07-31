@@ -53,7 +53,7 @@
 #define STREAM_ID	((uint64_t)AUDIO_ADSP_STREAM_ID << 32)
 #define RPC_TIMEOUT	(5 * HZ)
 #define BALIGN		32
-#define NUM_CHANNELS    1 
+#define NUM_CHANNELS    1 /*8 compute 2 cpz 1 modem*/
 
 #define IS_CACHE_ALIGNED(x) (((x) & ((L1_CACHE_BYTES)-1)) == 0)
 
@@ -372,7 +372,7 @@ static int fastrpc_buf_alloc(struct fastrpc_file *fl, ssize_t size,
 	if (err)
 		goto bail;
 
-	
+	/* find the smallest buffer that fits in the cache */
 	spin_lock(&fl->hlock);
 	hlist_for_each_entry_safe(buf, n, &fl->bufs, hn) {
 		if (buf->size >= size && (!fr || fr->size > buf->size))
@@ -450,9 +450,9 @@ static int overlap_ptr_cmp(const void *a, const void *b)
 {
 	struct overlap *pa = *((struct overlap **)a);
 	struct overlap *pb = *((struct overlap **)b);
-	
+	/* sort with lowest starting buffer first */
 	int st = CMP(pa->start, pb->start);
-	
+	/* sort with highest ending buffer first */
 	int ed = CMP(pb->end, pa->end);
 	return st == 0 ? ed : st;
 }
@@ -592,7 +592,7 @@ static void context_save_interrupted(struct smq_invoke_ctx *ctx)
 	hlist_del_init(&ctx->hn);
 	hlist_add_head(&ctx->hn, &clst->interrupted);
 	spin_unlock(&ctx->fl->hlock);
-	
+	/* free the cache on power collapse */
 	fastrpc_buf_list_free(ctx->fl);
 }
 
@@ -719,7 +719,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	int err = 0;
 	int mflags = 0;
 
-	
+	/* calculate size of the metadata */
 	rpra = 0;
 	list = smq_invoke_buf_start(rpra, sc);
 	pages = smq_phy_page_start(sc, list);
@@ -740,7 +740,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		ipage += 1;
 	}
 	metalen = copylen = (ssize_t)&ipage[0];
-	
+	/* calculate len requreed for copying */
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
 		uintptr_t mstart, mend;
@@ -763,13 +763,13 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	}
 	ctx->used = copylen;
 
-	
+	/* allocate new buffer */
 	if (copylen) {
 		VERIFY(err, !fastrpc_buf_alloc(ctx->fl, copylen, &ctx->buf));
 		if (err)
 			goto bail;
 	}
-	
+	/* copy metadata */
 	rpra = ctx->buf->virt;
 	ctx->rpra = rpra;
 	list = smq_invoke_buf_start(rpra, sc);
@@ -786,7 +786,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		list[i].pgidx = ipage - pages;
 		ipage++;
 	}
-	
+	/* map ion buffers */
 	for (i = 0; i < inbufs + outbufs; ++i) {
 		struct fastrpc_mmap *map = ctx->maps[i];
 		uint64_t buf = ptr_to_uint64(lpra[i].buf.pv);
@@ -813,7 +813,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		}
 		rpra[i].buf.pv = buf;
 	}
-	
+	/* copy non ion buffers */
 	rlen = copylen - metalen;
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
