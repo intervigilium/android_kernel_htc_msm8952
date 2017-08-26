@@ -36,7 +36,9 @@ static int cfq_group_idle = HZ / 125;
 static const int cfq_target_latency = HZ * 3/10; /* 300 ms */
 static const int cfq_hist_divisor = 4;
 
+#ifdef CONFIG_HTC_PNPMGR
 extern int launch_event_enabled;
+#endif
 
 /*
  * offset from end of service tree
@@ -3447,6 +3449,7 @@ static void cfq_init_prio_data(struct cfq_queue *cfqq, struct cfq_io_cq *cic)
 	struct task_struct *tsk = current;
 	int ioprio_class;
 
+#ifdef CONFIG_HTC_PNPMGR
 	if (launch_event_enabled)
 	{
 		int bg;
@@ -3460,6 +3463,7 @@ static void cfq_init_prio_data(struct cfq_queue *cfqq, struct cfq_io_cq *cic)
 			return;
 		}
 	}
+#endif
 
 	if (!cfq_cfqq_prio_changed(cfqq))
 		return;
