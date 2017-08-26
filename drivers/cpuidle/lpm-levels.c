@@ -1020,8 +1020,10 @@ bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
 	init_cpu_foot_print(cpu, from_idle, is_pc);
 
 	if ((!from_idle && cpu_online(cpu))) {
+#ifdef CONFIG_HTC_POWER_DEBUG
 		msm_rpm_dump_stat(false);
 		pr_info("[R] suspend end\n");
+#endif
 	}
 
 	htc_lpm_pre_action(from_idle);
@@ -1032,8 +1034,10 @@ bool psci_enter_sleep(struct lpm_cluster *cluster, int idx, bool from_idle)
 
 	htc_lpm_post_action(from_idle);
 	if ((!from_idle && cpu_online(cpu))) {
+#ifdef CONFIG_HTC_POWER_DEBUG
 		pr_info("[R] resume start\n");
 		msm_rpm_dump_stat(false);
+#endif
 	}
 
 	return success;
