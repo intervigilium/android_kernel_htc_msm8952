@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,7 +24,6 @@
 #define CSIPHY_NUM_CLK_MAX  16
 
 struct csiphy_reg_parms_t {
-/*MIPI CSI PHY registers*/
 	uint32_t mipi_csiphy_lnn_cfg1_addr;
 	uint32_t mipi_csiphy_lnn_cfg2_addr;
 	uint32_t mipi_csiphy_lnn_cfg3_addr;
@@ -85,7 +84,6 @@ struct csiphy_device {
 	uint32_t csiphy_clk_index;
 	uint32_t csiphy_max_clk;
 	uint32_t csiphy_sof_debug;
-	uint32_t is_combo_mode;
 };
 
 #define VIDIOC_MSM_CSIPHY_RELEASE \

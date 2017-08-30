@@ -23,7 +23,6 @@
 #define CSID_NUM_CLK_MAX  16
 
 struct csid_reg_parms_t {
-/* MIPI	CSID registers */
 	uint32_t csid_hw_version_addr;
 	uint32_t csid_core_ctrl_0_addr;
 	uint32_t csid_core_ctrl_1_addr;

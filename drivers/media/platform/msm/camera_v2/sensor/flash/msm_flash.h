@@ -64,11 +64,11 @@ struct msm_flash_ctrl_t {
 	struct msm_flash_func_t *func_tbl;
 	struct msm_camera_power_ctrl_t power_info;
 
-	/* Switch node to trigger led */
+	
 	const char *switch_trigger_name;
 	struct led_trigger *switch_trigger;
 
-	/* Flash */
+	
 	uint32_t flash_num_sources;
 	const char *flash_trigger_name[MAX_LED_TRIGGERS];
 	struct led_trigger *flash_trigger[MAX_LED_TRIGGERS];
@@ -76,7 +76,7 @@ struct msm_flash_ctrl_t {
 	uint32_t flash_max_current[MAX_LED_TRIGGERS];
 	uint32_t flash_max_duration[MAX_LED_TRIGGERS];
 
-	/* Torch */
+	
 	uint32_t torch_num_sources;
 	const char *torch_trigger_name[MAX_LED_TRIGGERS];
 	struct led_trigger *torch_trigger[MAX_LED_TRIGGERS];
@@ -90,10 +90,10 @@ struct msm_flash_ctrl_t {
 	struct mutex *flash_mutex;
 	struct msm_sensor_power_setting_array power_setting_array;
 
-	/* flash driver type */
+	
 	enum msm_flash_driver_type flash_driver_type;
 
-	/* flash state */
+	
 	enum msm_camera_flash_state_t flash_state;
 };
 

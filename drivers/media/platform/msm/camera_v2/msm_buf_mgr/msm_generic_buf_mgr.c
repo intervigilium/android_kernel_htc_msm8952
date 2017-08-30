@@ -151,10 +151,6 @@ static int32_t msm_generic_buf_mngr_flush(
 	int32_t ret = -EINVAL;
 
 	spin_lock_irqsave(&buf_mngr_dev->buf_q_spinlock, flags);
-	/*
-	 * Sanity check on client buf list, remove buf mgr
-	 * queue entries in case any
-	 */
 	list_for_each_entry_safe(bufs, save, &buf_mngr_dev->buf_qhead, entry) {
 		if ((bufs->session_id == buf_info->session_id) &&
 			(bufs->stream_id == buf_info->stream_id)) {
@@ -169,7 +165,7 @@ static int32_t msm_generic_buf_mngr_flush(
 		}
 	}
 	spin_unlock_irqrestore(&buf_mngr_dev->buf_q_spinlock, flags);
-	/* Flush the remaining vb2 buffers in stream list */
+	
 	ret = buf_mngr_dev->vb2_ops.flush_buf(buf_info->session_id,
 			buf_info->stream_id);
 	return ret;
@@ -480,10 +476,6 @@ static long msm_bmgr_subdev_fops_compat_ioctl(struct file *file,
 
 	void __user *up = (void __user *)arg;
 
-	/* Convert 32 bit IOCTL ID's to 64 bit IOCTL ID's
-	 * except VIDIOC_MSM_CPP_CFG32, which needs special
-	 * processing
-	 */
 	switch (cmd) {
 	case VIDIOC_MSM_BUF_MNGR_GET_BUF32:
 		cmd = VIDIOC_MSM_BUF_MNGR_GET_BUF;
@@ -621,7 +613,7 @@ static int32_t __init msm_buf_mngr_init(void)
 		pr_err("%s: not enough memory", __func__);
 		return -ENOMEM;
 	}
-	/* Sub-dev */
+	
 	v4l2_subdev_init(&msm_buf_mngr_dev->subdev.sd,
 		&msm_buf_mngr_subdev_ops);
 

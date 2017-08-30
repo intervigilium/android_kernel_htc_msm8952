@@ -57,16 +57,6 @@ static int msm_camera_spi_txfr_read(struct spi_device *spi, char *txbuf,
 }
 
 
-/**
-  * msm_camera_set_addr() - helper function to set transfer address
-  * @addr:	device address
-  * @addr_len:	the addr field length of an instruction
-  * @type:	type (i.e. byte-length) of @addr
-  * @str:	shifted address output, must be zeroed when passed in
-  *
-  * This helper function sets @str based on the addr field length of an
-  * instruction and the data length.
-  */
 static void msm_camera_set_addr(uint32_t addr, uint8_t addr_len,
 				enum msm_camera_i2c_reg_addr_type type,
 				char *str)
@@ -78,7 +68,7 @@ static void msm_camera_set_addr(uint32_t addr, uint8_t addr_len,
 	if (addr_len < type)
 		SPIDBG("%s: omitting higher bits in address\n", __func__);
 
-	/* only support transfer MSB first for now */
+	
 	len = addr_len - type;
 	for (i = len; i < addr_len; i++) {
 		if (i >= 0)
@@ -88,29 +78,6 @@ static void msm_camera_set_addr(uint32_t addr, uint8_t addr_len,
 
 }
 
-/**
-  * msm_camera_spi_tx_helper() - wrapper for SPI transaction
-  * @client:	io client
-  * @inst:	inst of this transaction
-  * @addr:	device addr following the inst
-  * @data:	output byte array (could be NULL)
-  * @num_byte:	size of @data
-  * @tx, rx:	optional transfer buffer.  It must be at least header
-  *		+ @num_byte long.
-  *
-  * This is the core function for SPI transaction, except for writes.  It first
-  * checks address type, then allocates required memory for tx/rx buffers.
-  * It sends out <opcode><addr>, and optionally receives @num_byte of response,
-  * if @data is not NULL.  This function does not check for wait conditions,
-  * and will return immediately once bus transaction finishes.
-  *
-  * This function will allocate buffers of header + @num_byte long.  For
-  * large transfers, the allocation could fail.  External buffer @tx, @rx
-  * should be passed in to bypass allocation.  The size of buffer should be
-  * at least header + num_byte long.  Since buffer is managed externally,
-  * @data will be ignored, and read results will be in @rx.
-  * @tx, @rx also can be used for repeated transfers to improve performance.
-  */
 int32_t msm_camera_spi_tx_helper(struct msm_camera_i2c_client *client,
 	struct msm_camera_spi_inst *inst, uint32_t addr, uint8_t *data,
 	uint32_t num_byte, char *tx, char *rx)
@@ -273,19 +240,6 @@ int32_t msm_camera_spi_read_seq(struct msm_camera_i2c_client *client,
 		NULL, NULL);
 }
 
-/**
-  * msm_camera_spi_read_seq_l()- function for large SPI reads
-  * @client:	io client
-  * @addr:	device address to read
-  * @num_byte:	read length
-  * @tx,rx:	pre-allocated SPI buffer.  Its size must be at least
-  *		header + num_byte
-  *
-  * This function is used for large transactions.  Instead of allocating SPI
-  * buffer each time, caller is responsible for pre-allocating memory buffers.
-  * Memory buffer must be at least header + num_byte.  Header length can be
-  * obtained by msm_camera_spi_get_hlen().
-  */
 int32_t msm_camera_spi_read_seq_l(struct msm_camera_i2c_client *client,
 	uint32_t addr, uint32_t num_byte, char *tx, char *rx)
 {
@@ -399,19 +353,6 @@ int32_t msm_camera_spi_erase(struct msm_camera_i2c_client *client,
 	return rc;
 }
 
-/**
-  * msm_camera_spi_page_program() - core function to perform write
-  * @client: need for obtaining SPI device
-  * @addr: address to program on device
-  * @data: data to write
-  * @len: size of data
-  * @tx: tx buffer, size >= header + len
-  *
-  * This function performs SPI write, and has no boundary check.  Writing range
-  * should not cross page boundary, or data will be corrupted.  Transaction is
-  * guaranteed to be finished when it returns.  This function should never be
-  * used outside msm_camera_spi_write_seq().
-  */
 static int32_t msm_camera_spi_page_program(struct msm_camera_i2c_client *client,
 	uint32_t addr, uint8_t *data, uint16_t len, uint8_t *tx)
 {
@@ -459,7 +400,7 @@ int32_t msm_camera_spi_write_seq(struct msm_camera_i2c_client *client,
 		&& (client->addr_type != MSM_CAMERA_I2C_WORD_ADDR)
 		&& (client->addr_type != MSM_CAMERA_I2C_3B_ADDR))
 		return rc;
-    /* single page write */
+    
 	if ((addr % page_size) + num_byte <= page_size) {
 		len = header_len + num_byte;
 		tx = kmalloc(len, GFP_KERNEL);
@@ -471,7 +412,7 @@ int32_t msm_camera_spi_write_seq(struct msm_camera_i2c_client *client,
 			goto ERROR;
 		goto OUT;
 	}
-	/* multi page write */
+	
 	len = header_len + page_size;
 	tx = kmalloc(len, GFP_KERNEL);
 	if (!tx)
@@ -664,7 +605,7 @@ fail:
 	kfree(ctx);
 	return rc;
 }
-#else /* SPI_DYNAMIC_ALLOC */
+#else 
 int32_t msm_camera_spi_send_burst(struct msm_camera_i2c_client *client,
 	struct msm_camera_i2c_reg_array *reg_setting, uint32_t reg_size,
 	struct msm_camera_burst_info *info,
@@ -737,7 +678,7 @@ int32_t msm_camera_spi_send_burst(struct msm_camera_i2c_client *client,
 fail:
 	return rc;
 }
-#endif /* SPI_DYNAMIC_ALLOC */
+#endif 
 
 int32_t msm_camera_spi_write_burst(struct msm_camera_i2c_client *client,
 	struct msm_camera_i2c_reg_array *reg_setting, uint32_t reg_size,
@@ -822,7 +763,7 @@ int32_t msm_camera_spi_read_burst(struct msm_camera_i2c_client *client,
 	tx_buf[0] = pg->opcode;
 	tx_buf[1] = (burst_addr >> 8) & 0xff;
 	tx_buf[2] = burst_addr & 0xff;
-	tx_buf[3] = 0; /* dummy */
+	tx_buf[3] = 0; 
 	rc = msm_camera_spi_txfr_read(client->spi_client->spi_master,
 		&tx_buf[0], r, len, read_byte);
 	if (rc < 0)

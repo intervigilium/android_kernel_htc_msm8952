@@ -699,15 +699,6 @@ KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS += $(KAFLAGS)
 KBUILD_CFLAGS += $(KCFLAGS)
 
-#HTC_START
-ifneq ($(findstring AERO,$(PRIVATE_SKU_NAME)),)
-ifneq ($(findstring N70,$(PRIVATE_SKU_NAME)),)
-$(info using aero m config)
-KBUILD_CFLAGS += -DCONFIG_CAMERA_DRIVER_VER_M
-endif
-endif
-#HTC_END
-
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\
 			      $(call cc-ldoption, -Wl$(comma)--build-id,))

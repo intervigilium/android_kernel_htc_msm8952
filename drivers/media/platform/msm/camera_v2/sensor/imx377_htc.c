@@ -13,9 +13,7 @@
 #include "msm_sensor.h"
 #include <linux/async.h>
 
-/* HTC_START */
 #include "msm_cci.h"
-//#include "lc898123_htc.h"
 
 #if 0
 #if 1
@@ -24,7 +22,6 @@
 #undef HTC_OIS_HW_WORKAROUND
 #endif
 #endif
-/* HTC_END */
 
 #define IMX377_HTC_SENSOR_NAME "imx377_htc"
 #define imx377_htc_obj imx377_htc_##obj
@@ -56,7 +53,7 @@ static struct msm_sensor_power_setting imx377_htc_power_setting[] = {
 		.seq_type = SENSOR_VREG,
 		.seq_val = CAM_VIO,
 		.config_val = 1,
-		.delay = 3,
+		.delay = 1,
 	},
 	{
 		.seq_type = SENSOR_VREG,
@@ -173,12 +170,9 @@ static int imx377_htc_sysfs_init(void)
 }
 
 
-/* HTC_START */
 static uint8_t otp[20];
 #define EEPROM_COMPONENT_I2C_ADDR_WRITE 0xA0
-#define EEPROM_DEFECT_PIXEL_ADDR 0x15
-#define EEPROM_DEFECT_PIXEL_SHIFT_X -26 // Htc CAMIF RAW
-#define EEPROM_DEFECT_PIXEL_SHIFT_Y -18 // Htc CAMIF RAW
+
 static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
 	struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -188,15 +182,13 @@ static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
     uint16_t read_data = 0;
     static int first = true;
     uint16_t cci_client_sid_backup = s_ctrl->sensordata->slave_info->sensor_slave_addr;
-    static defect_pixels_t defect_pixels = {.count = 0};
-    int i;
 
     if (first)
     {
         first = false;
         s_ctrl->sensor_i2c_client->cci_client->sid = EEPROM_COMPONENT_I2C_ADDR_WRITE >> 1;
         s_ctrl->sensor_i2c_client->addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
-        for(index = 0; index < 11 ; index++)   // read first 11 fields
+        for(index = 0; index < 11 ; index++)   
         {
             read_data = 0;
             msleep(1);
@@ -206,46 +198,7 @@ static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
             otp[index] = read_data & 0xff;
             address++;
         }
-        //read defect pixels
-        for (address = EEPROM_DEFECT_PIXEL_ADDR; address <= EEPROM_DEFECT_PIXEL_ADDR + MAX_DEFECT_PIXELS*4; address += 4)
-        {
-            uint16_t x, y;
-            uint8_t dx, dy;
-            uint8_t read_data_seq[4] = {0};
-            msleep(1);
-            //            Data struct of defect pixel
-            //  contain 2 point (x,y) and (x+dx, y+dy)
-            //  End of points will be 0xFFFFFFFF
-            //  Notes: only dy is signed (leading bit 1 is negative),others are unsigned
-            // |------------------------------ 32 bit -----------------------------|
-            // |          Y 13bit         |         X 13bit          | dy 3 | dx 3 |
-            // |-------------------------------------------------------------------|
-            // |     seq[0]     |     seq[1]     |     seq[2]     |     seq[3]     |
-            // |-------------------------------------------------------------------|
-            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read_seq(s_ctrl->sensor_i2c_client, address, read_data_seq, 4);
-            if (rc < 0) {
-                pr_err("[OTP]%s: read defect pixel failed", __func__);
-                break;
-            }
-            // check if end of points
-            if (read_data_seq[0] == 0xff && read_data_seq[1] == 0xff && read_data_seq[2] == 0xff && read_data_seq[3] == 0xff)
-                break;
-
-            y = (read_data_seq[0] << 5) | (read_data_seq[1] >> 3);
-            x = ((read_data_seq[1] & 0x07) << 10) | (read_data_seq[2] << 2) | (read_data_seq[3] >> 6);
-            dy = (read_data_seq[3] & 0x38) >> 3;
-            dx = read_data_seq[3] & 0x07;
-
-            defect_pixels.px[defect_pixels.count].x = x + EEPROM_DEFECT_PIXEL_SHIFT_X;
-            defect_pixels.px[defect_pixels.count++].y = y + EEPROM_DEFECT_PIXEL_SHIFT_Y;
-            if (dx != 0 || dy != 0)
-            {
-                defect_pixels.px[defect_pixels.count].x = x + EEPROM_DEFECT_PIXEL_SHIFT_X + dx;
-                defect_pixels.px[defect_pixels.count++].y = y + EEPROM_DEFECT_PIXEL_SHIFT_Y + ((dy & 0x04) ? -(dy & 0x3) : (dy & 0x3) ); // deal with leading signed bit
-            }
-        }
-
-        //read fuse id
+        
         s_ctrl->sensor_i2c_client->cci_client->sid = 0x56;
         msleep(1);
         read_data = 0;
@@ -283,10 +236,8 @@ static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
         s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup >> 1;
     }
 
-//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
-//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = otp[11];
     cdata->cfg.fuse.fuse_id_word2 = otp[12];
     cdata->cfg.fuse.fuse_id_word3 = otp[13];
@@ -315,18 +266,8 @@ static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
     pr_info("%s: OTP Macro position code (MSByte) = 0x%x\n",    __func__,  cdata->af_value.AF_MACRO_MSB);
     pr_info("%s: OTP Macro position code (LSByte) = 0x%x\n",    __func__,  cdata->af_value.AF_MACRO_LSB);
 
-    pr_info("%s: OTP Defect pixels count = %d\n",  __func__, defect_pixels.count);
-    cdata->defect_pixels.count = defect_pixels.count;
-    for(i = 0 ; i < cdata->defect_pixels.count ; i++)
-    {
-        cdata->defect_pixels.px[i].x = defect_pixels.px[i].x;
-        cdata->defect_pixels.px[i].y = defect_pixels.px[i].y;
-        pr_info("%s: OTP Defect pixel (%d, %d)\n", __func__, defect_pixels.px[i].x, defect_pixels.px[i].y);
-    }
-
     strlcpy(cdata->af_value.ACT_NAME, "lc898214_act", sizeof("lc898214_act"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
-//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -336,7 +277,6 @@ static int imx377_htc_read_fuseid(struct sensorb_cfg_data *cdata,
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[3]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[4]);
 	}
-//HTC_END
     return rc;
 }
 
@@ -350,15 +290,13 @@ static int imx377_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     uint16_t read_data = 0;
     static int first = true;
     uint16_t cci_client_sid_backup = s_ctrl->sensordata->slave_info->sensor_slave_addr;
-    static defect_pixels_t defect_pixels = {.count = 0};
-    int i;
 
     if (first)
     {
         first = false;
         s_ctrl->sensor_i2c_client->cci_client->sid = EEPROM_COMPONENT_I2C_ADDR_WRITE >> 1;
         s_ctrl->sensor_i2c_client->addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
-        for(index = 0; index < 11 ; index++)   // read first 11 fields
+        for(index = 0; index < 11 ; index++)   
         {
             read_data = 0;
             msleep(1);
@@ -368,45 +306,7 @@ static int imx377_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
             otp[index] = read_data & 0xff;
             address++;
         }
-        //read defect pixels
-        for (address = EEPROM_DEFECT_PIXEL_ADDR; address <= EEPROM_DEFECT_PIXEL_ADDR + MAX_DEFECT_PIXELS*4; address += 4)
-        {
-            uint16_t x, y;
-            uint8_t dx, dy;
-            uint8_t read_data_seq[4] = {0};
-            msleep(1);
-            //            Data struct of defect pixel
-            //  contain 2 point (x,y) and (x+dx, y+dy)
-            //  End of points will be 0xFFFFFFFF
-            //  Notes: only dy is signed (leading bit 1 is negative),others are unsigned
-            // |------------------------------ 32 bit -----------------------------|
-            // |          Y 13bit         |         X 13bit          | dy 3 | dx 3 |
-            // |-------------------------------------------------------------------|
-            // |     seq[0]     |     seq[1]     |     seq[2]     |     seq[3]     |
-            // |-------------------------------------------------------------------|
-            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read_seq(s_ctrl->sensor_i2c_client, address, read_data_seq, 4);
-            if (rc < 0) {
-                pr_err("[OTP]%s: read defect pixel failed", __func__);
-                break;
-            }
-            // check if end of points
-            if (read_data_seq[0] == 0xff && read_data_seq[1] == 0xff && read_data_seq[2] == 0xff && read_data_seq[3] == 0xff)
-                break;
-
-            y = (read_data_seq[0] << 5) | (read_data_seq[1] >> 3);
-            x = ((read_data_seq[1] & 0x07) << 10) | (read_data_seq[2] << 2) | (read_data_seq[3] >> 6);
-            dy = (read_data_seq[3] & 0x38) >> 3;
-            dx = read_data_seq[3] & 0x07;
-
-            defect_pixels.px[defect_pixels.count].x = x + EEPROM_DEFECT_PIXEL_SHIFT_X;
-            defect_pixels.px[defect_pixels.count++].y = y + EEPROM_DEFECT_PIXEL_SHIFT_Y;
-            if (dx != 0 || dy != 0)
-            {
-                defect_pixels.px[defect_pixels.count].x = x + EEPROM_DEFECT_PIXEL_SHIFT_X + dx;
-                defect_pixels.px[defect_pixels.count++].y = y + EEPROM_DEFECT_PIXEL_SHIFT_Y + ((dy & 0x04) ? -(dy & 0x3) : (dy & 0x3) ); // deal with leading signed bit
-            }
-        }
-        //read fuse id
+        
         s_ctrl->sensor_i2c_client->cci_client->sid = 0x56;
         msleep(1);
         read_data = 0;
@@ -444,10 +344,8 @@ static int imx377_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
         s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup >> 1;
     }
 
-//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
-//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = otp[11];
     cdata->cfg.fuse.fuse_id_word2 = otp[12];
     cdata->cfg.fuse.fuse_id_word3 = otp[13];
@@ -476,18 +374,8 @@ static int imx377_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     pr_info("%s: OTP Macro position code (MSByte) = 0x%x\n",    __func__,  cdata->af_value.AF_MACRO_MSB);
     pr_info("%s: OTP Macro position code (LSByte) = 0x%x\n",    __func__,  cdata->af_value.AF_MACRO_LSB);
 
-    pr_info("%s: OTP Defect pixels count = %d\n",  __func__, defect_pixels.count);
-    cdata->defect_pixels.count = defect_pixels.count;
-    for(i = 0 ; i < cdata->defect_pixels.count ; i++)
-    {
-        cdata->defect_pixels.px[i].x = defect_pixels.px[i].x;
-        cdata->defect_pixels.px[i].y = defect_pixels.px[i].y;
-        pr_info("%s: OTP Defect pixel (%d, %d)\n", __func__, defect_pixels.px[i].x, defect_pixels.px[i].y);
-    }
-
     strlcpy(cdata->af_value.ACT_NAME, "lc898214_act", sizeof("lc898214_act"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
-//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -497,7 +385,6 @@ static int imx377_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[3]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[4]);
 	}
-//HTC_END
     return rc;
 }
 #endif
@@ -524,7 +411,6 @@ static int imx377_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
     {
         first = false;
 
-/* Read otp NVR0 */
         for(j = 5; j >=3; j--)
         {
             do {
@@ -579,8 +465,7 @@ static int imx377_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
         }
 
 
-/* Read otp NVR1 */
-        /* otp NVR1 - part 1 */
+        
         valid_layer = -1;
         for(j = 8; j >=6; j--)
         {
@@ -635,7 +520,7 @@ static int imx377_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
             }
         }
 
-        /* otp NVR1 - part 2 */
+        
         valid_layer = -1;
         for(j = 11; j >=9; j--)
         {
@@ -691,7 +576,7 @@ static int imx377_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
             }
         }
 
-        /* otp NVR1 - part 3 */
+        
         valid_layer = -1;
         for(j = 14; j >=12; j--)
         {
@@ -766,7 +651,7 @@ static int imx377_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
     }
 
 
-    /* Check and dump OTP OIS data */
+    
     valid_otp_ois = 0;
     for(i=0; i < OTP_NVR0_DATA_SIZE; i++) {
         if (otp_NVR0_data[i])
@@ -795,16 +680,16 @@ int htc_check_ois_component(struct msm_sensor_ctrl_t *s_ctrl)
 	int rc = 0;
 	uint16_t cci_client_sid_backup;
 
-	/* Bcakup the I2C slave address */
+	
 	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
 
-	/* Replace the I2C slave address with OIS component */
+	
 	s_ctrl->sensor_i2c_client->cci_client->sid = OIS_COMPONENT_I2C_ADDR_WRITE >> 1;
 
-	/* OIS HW workaround */
+	
 	lc898123_check_ois_component(s_ctrl, valid_otp_ois, otp_NVR0_data, otp_NVR1_data);
 
-	/* Restore the I2C slave address */
+	
 	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
 
 	return rc;
@@ -832,7 +717,7 @@ int32_t imx377_htc_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 #endif
 	        first = 1;
 
-		/* HTC_START , For OIS component check */
+		
 #if 0
 #ifdef HTC_OIS_HW_WORKAROUND
 	        pr_info("%s : read otp ois data\n", __func__);
@@ -842,12 +727,11 @@ int32_t imx377_htc_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	        htc_check_ois_component(s_ctrl);
 #endif
 #endif
-		/* HTC_END */
+		
 	    }
 	}
 	return rc;
 }
-/* HTC_END */
 
 
 
@@ -907,14 +791,11 @@ static struct msm_sensor_fn_t imx377_htc_sensor_func_tbl = {
 #endif
 	.sensor_power_up = msm_sensor_power_up,
 	.sensor_power_down = msm_sensor_power_down,
-/* HTC_START , move read OTP to sensor probe */
-//	.sensor_match_id = msm_sensor_match_id,
 	.sensor_match_id = imx377_htc_sensor_match_id,
 	.sensor_i2c_read_fuseid = imx377_htc_read_fuseid,
 #ifdef CONFIG_COMPAT
 	.sensor_i2c_read_fuseid32 = imx377_htc_read_fuseid32,
 #endif
-/* HTC_END */
 };
 
 static struct msm_sensor_ctrl_t imx377_htc_s_ctrl = {

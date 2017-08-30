@@ -27,13 +27,13 @@
 
 void msm_camera_io_w(u32 data, void __iomem *addr)
 {
-	CDBG("%s: 0x%pK %08x\n", __func__,  (addr), (data));
+	CDBG("%s: 0x%p %08x\n", __func__,  (addr), (data));
 	writel_relaxed((data), (addr));
 }
 
 void msm_camera_io_w_mb(u32 data, void __iomem *addr)
 {
-	CDBG("%s: 0x%pK %08x\n", __func__,  (addr), (data));
+	CDBG("%s: 0x%p %08x\n", __func__,  (addr), (data));
 	wmb();
 	writel_relaxed((data), (addr));
 	wmb();
@@ -42,7 +42,7 @@ void msm_camera_io_w_mb(u32 data, void __iomem *addr)
 u32 msm_camera_io_r(void __iomem *addr)
 {
 	uint32_t data = readl_relaxed(addr);
-	CDBG("%s: 0x%pK %08x\n", __func__,  (addr), (data));
+	CDBG("%s: 0x%p %08x\n", __func__,  (addr), (data));
 	return data;
 }
 
@@ -52,7 +52,7 @@ u32 msm_camera_io_r_mb(void __iomem *addr)
 	rmb();
 	data = readl_relaxed(addr);
 	rmb();
-	CDBG("%s: 0x%pK %08x\n", __func__,  (addr), (data));
+	CDBG("%s: 0x%p %08x\n", __func__,  (addr), (data));
 	return data;
 }
 
@@ -73,12 +73,12 @@ void msm_camera_io_dump(void __iomem *addr, int size)
 	int i;
 	u32 *p = (u32 *) addr;
 	u32 data;
-	CDBG("%s: %pK %d\n", __func__, addr, size);
+	CDBG("%s: %p %d\n", __func__, addr, size);
 	line_str[0] = '\0';
 	p_str = line_str;
 	for (i = 0; i < size/4; i++) {
 		if (i % 4 == 0) {
-			snprintf(p_str, 12, "0x%pK: ",  p);
+			snprintf(p_str, 12, "0x%p: ",  p);
 			p_str += 10;
 		}
 		data = readl_relaxed(p++);
@@ -97,7 +97,7 @@ void msm_camera_io_dump(void __iomem *addr, int size)
 void msm_camera_io_memcpy(void __iomem *dest_addr,
 	void __iomem *src_addr, u32 len)
 {
-	CDBG("%s: %pK %pK %d\n", __func__, dest_addr, src_addr, len);
+	CDBG("%s: %p %p %d\n", __func__, dest_addr, src_addr, len);
 	msm_camera_io_memcpy_toio(dest_addr, src_addr, len / 4);
 	msm_camera_io_dump(dest_addr, len);
 }
@@ -108,12 +108,10 @@ void msm_camera_io_memcpy_mb(void __iomem *dest_addr,
 	int i;
 	u32 *d = (u32 *) dest_addr;
 	u32 *s = (u32 *) src_addr;
-	/* This is generic function called who needs to register
-	writes with memory barrier */
 	wmb();
 	for (i = 0; i < (len / 4); i++) {
 		msm_camera_io_w(*s++, d++);
-		/* ensure write is done after every iteration */
+		
 		wmb();
 	}
 }
@@ -591,7 +589,7 @@ int msm_camera_request_gpio_table(struct gpio *gpio_tbl, uint8_t size,
 	int rc = 0, i = 0, err = 0;
 
 	if (!gpio_tbl || !size) {
-		pr_err("%s:%d invalid gpio_tbl %pK / size %d\n", __func__,
+		pr_err("%s:%d invalid gpio_tbl %p / size %d\n", __func__,
 			__LINE__, gpio_tbl, size);
 		return -EINVAL;
 	}
@@ -604,11 +602,6 @@ int msm_camera_request_gpio_table(struct gpio *gpio_tbl, uint8_t size,
 			err = gpio_request_one(gpio_tbl[i].gpio,
 				gpio_tbl[i].flags, gpio_tbl[i].label);
 			if (err) {
-				/*
-				* After GPIO request fails, contine to
-				* apply new gpios, outout a error message
-				* for driver bringup debug
-				*/
 				pr_err("%s:%d gpio %d:%s request fails\n",
 					__func__, __LINE__,
 					gpio_tbl[i].gpio, gpio_tbl[i].label);

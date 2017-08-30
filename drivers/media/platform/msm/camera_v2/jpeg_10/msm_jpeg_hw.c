@@ -36,12 +36,12 @@ int msm_jpeg_hw_pingpong_update(struct msm_jpeg_hw_pingpong *pingpong_hw,
 	pingpong_hw->buf_status[buf_free_index] = 1;
 
 	if (pingpong_hw->is_fe) {
-		/* it is fe */
+		
 		msm_jpeg_hw_fe_buffer_update(
 			&pingpong_hw->buf[buf_free_index], buf_free_index,
 			base);
 	} else {
-		/* it is we */
+		
 		msm_jpeg_hw_we_buffer_update(
 			&pingpong_hw->buf[buf_free_index], buf_free_index,
 			base);
@@ -68,12 +68,12 @@ int msm_jpegdma_hw_pingpong_update(struct msm_jpeg_hw_pingpong *pingpong_hw,
 	pingpong_hw->buf_status[buf_free_index] = 1;
 
 	if (pingpong_hw->is_fe) {
-		/* it is fe */
+		
 		msm_jpegdma_hw_fe_buffer_update(
 			&pingpong_hw->buf[buf_free_index], buf_free_index,
 			base);
 	} else {
-		/* it is we */
+		
 		msm_jpegdma_hw_we_buffer_update(
 			&pingpong_hw->buf[buf_free_index], buf_free_index,
 			base);
@@ -106,7 +106,7 @@ void *msm_jpeg_hw_pingpong_active_buffer(
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_irq_get_status[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_READ, 1, JPEG_IRQ_STATUS_ADDR,
 		JPEG_IRQ_STATUS_BMSK, {0} },
 };
@@ -119,7 +119,7 @@ int msm_jpeg_hw_irq_get_status(void *base)
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_irq_get_dmastatus[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_READ, 1, JPEGDMA_IRQ_STATUS_ADDR,
 		JPEGDMA_IRQ_STATUS_BMSK, {0} },
 };
@@ -132,7 +132,7 @@ int msm_jpegdma_hw_irq_get_status(void *base)
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_encode_output_size[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_READ, 1,
 	JPEG_ENCODE_OUTPUT_SIZE_STATUS_ADDR,
 	JPEG_ENCODE_OUTPUT_SIZE_STATUS_BMSK, {0} } ,
@@ -175,7 +175,7 @@ void msm_jpegdma_hw_irq_clear(uint32_t mask, uint32_t data, void *base)
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_fe_ping_update[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_IRQ_MASK_ADDR,
 		JPEG_IRQ_MASK_BMSK, {JPEG_IRQ_ALLSOURCES_ENABLE} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_CMD_ADDR,
@@ -230,7 +230,7 @@ void msm_jpeg_hw_fe_buffer_update(struct msm_jpeg_hw_buf *p_input,
 }
 
 struct msm_jpeg_hw_cmd hw_dma_cmd_fe_ping_update[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEGDMA_IRQ_MASK_ADDR,
 		JPEGDMA_IRQ_MASK_BMSK, {JPEG_IRQ_ALLSOURCES_ENABLE} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEGDMA_CMD_ADDR,
@@ -267,7 +267,7 @@ void msm_jpegdma_hw_fe_buffer_update(struct msm_jpeg_hw_buf *p_input,
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_fe_start[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_CMD_ADDR,
 		JPEG_CMD_BMSK, {JPEG_OFFLINE_CMD_START} },
 };
@@ -280,7 +280,7 @@ void msm_jpeg_hw_fe_start(void *base)
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_we_ping_update[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_PLN0_WR_PNTR_ADDR,
 		JPEG_PLN0_WR_PNTR_BMSK, {0} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_PLN1_WR_PNTR_ADDR,
@@ -335,7 +335,7 @@ void msm_jpeg_hw_we_buffer_update(struct msm_jpeg_hw_buf *p_input,
 }
 
 struct msm_jpeg_hw_cmd hw_dma_cmd_we_ping_update[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEGDMA_CMD_ADDR,
 		JPEGDMA_CMD_BMSK, {JPEGDMA_CMD_CLEAR_WRITE_PLN_QUEUES} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, MSM_JPEGDMA_WE_0_WR_PNTR,
@@ -372,7 +372,7 @@ void msm_jpegdma_hw_we_buffer_update(struct msm_jpeg_hw_buf *p_input,
 }
 
 struct msm_jpeg_hw_cmd hw_cmd_reset[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_IRQ_MASK_ADDR,
 		JPEG_IRQ_MASK_BMSK, {JPEG_IRQ_DISABLE_ALL} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEG_IRQ_CLEAR_ADDR,
@@ -401,7 +401,7 @@ void msm_jpeg_hw_reset(void *base, int size)
 	return;
 }
 struct msm_jpeg_hw_cmd hw_cmd_reset_dma[] = {
-	/* type, repeat n times, offset, mask, data or pdata */
+	
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEGDMA_IRQ_MASK_ADDR,
 		JPEGDMA_IRQ_MASK_BMSK, {JPEGDMA_IRQ_DISABLE_ALL} },
 	{MSM_JPEG_HW_CMD_TYPE_WRITE, 1, JPEGDMA_IRQ_CLEAR_ADDR,
@@ -501,7 +501,7 @@ int msm_jpeg_hw_exec_cmds(struct msm_jpeg_hw_cmd *hw_cmd_p, uint32_t m_cmds,
 	uint32_t data;
 
 	while (m_cmds--) {
-		if (hw_cmd_p->offset >= max_size) {
+		if (hw_cmd_p->offset > max_size) {
 			JPEG_PR_ERR("%s:%d] %d exceed hw region %d\n", __func__,
 				__LINE__, hw_cmd_p->offset, max_size);
 			return -EFAULT;
@@ -562,7 +562,7 @@ void msm_jpeg_io_dump(void *base, int size)
 	int i;
 	u32 *p = (u32 *) addr;
 	u32 data;
-	JPEG_DBG_HIGH("%s:%d] %pK %d", __func__, __LINE__, addr, size);
+	JPEG_DBG_HIGH("%s:%d] %p %d", __func__, __LINE__, addr, size);
 	line_str[0] = '\0';
 	p_str = line_str;
 	for (i = 0; i < size/4; i++) {

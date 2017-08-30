@@ -21,7 +21,7 @@ int msm_jpeg_core_reset(struct msm_jpeg_device *pgmn_dev, uint8_t op_mode,
 	void *base, int size) {
 	unsigned long flags;
 	int rc = 0;
-	int tm = 500; /*500ms*/
+	int tm = 500; 
 	JPEG_DBG("%s:%d] reset", __func__, __LINE__);
 	memset(&pgmn_dev->fe_pingpong_buf, 0,
 		sizeof(pgmn_dev->fe_pingpong_buf));
@@ -79,7 +79,6 @@ int msm_jpeg_core_fe_start(struct msm_jpeg_device *pgmn_dev)
 	return 0;
 }
 
-/* fetch engine */
 int msm_jpeg_core_fe_buf_update(struct msm_jpeg_device *pgmn_dev,
 	struct msm_jpeg_core_buf *buf)
 {
@@ -102,7 +101,6 @@ void *msm_jpeg_core_fe_pingpong_irq(int jpeg_irq_status,
 	return msm_jpeg_hw_pingpong_irq(&pgmn_dev->fe_pingpong_buf);
 }
 
-/* write engine */
 int msm_jpeg_core_we_buf_update(struct msm_jpeg_device *pgmn_dev,
 	struct msm_jpeg_core_buf *buf) {
 	JPEG_DBG("%s:%d] 0x%08x 0x%08x %d\n", __func__, __LINE__,
@@ -162,7 +160,7 @@ void *msm_jpeg_core_framedone_irq(int jpeg_irq_status,
 void *msm_jpeg_core_reset_ack_irq(int jpeg_irq_status,
 	struct msm_jpeg_device *pgmn_dev)
 {
-	/* @todo return the status back to msm_jpeg_core_reset */
+	
 	JPEG_DBG("%s:%d]\n", __func__, __LINE__);
 	return NULL;
 }
@@ -206,7 +204,7 @@ irqreturn_t msm_jpeg_core_irq(int irq_num, void *context)
 	JPEG_DBG("%s:%d] jpeg_irq_status = %0x\n", __func__, __LINE__,
 		jpeg_irq_status);
 
-	/*For reset and framedone IRQs, clear all bits*/
+	
 	if (pgmn_dev->state == MSM_JPEG_IDLE) {
 		JPEG_DBG_HIGH("%s %d ] Error IRQ received state %d",
 		__func__, __LINE__, pgmn_dev->state);
@@ -229,7 +227,7 @@ irqreturn_t msm_jpeg_core_irq(int irq_num, void *context)
 	}
 
 	if (msm_jpeg_hw_irq_is_frame_done(jpeg_irq_status)) {
-		/* send fe ping pong irq */
+		
 		JPEG_DBG_HIGH("%s:%d] Session done\n", __func__, __LINE__);
 		data = msm_jpeg_core_fe_pingpong_irq(jpeg_irq_status,
 			pgmn_dev);
@@ -257,10 +255,10 @@ irqreturn_t msm_jpeg_core_irq(int irq_num, void *context)
 				context, data);
 	}
 
-	/* Unexpected/unintended HW interrupt */
+	
 	if (msm_jpeg_hw_irq_is_err(jpeg_irq_status)) {
 		if (pgmn_dev->state != MSM_JPEG_EXECUTING) {
-			/*Clear all the bits and ignore the IRQ*/
+			
 			JPEG_DBG_HIGH("%s %d ] Error IRQ received state %d",
 			__func__, __LINE__, pgmn_dev->state);
 			JPEG_DBG_HIGH("%s %d ] Ignoring the Error", __func__,
@@ -297,7 +295,7 @@ irqreturn_t msm_jpegdma_core_irq(int irq_num, void *context)
 	JPEG_DBG("%s:%d] jpeg_irq_status = %0x\n", __func__, __LINE__,
 		jpeg_irq_status);
 
-	/*For reset and framedone IRQs, clear all bits*/
+	
 	if (pgmn_dev->state == MSM_JPEG_IDLE) {
 		JPEG_DBG_HIGH("%s %d ] Error IRQ received state %d",
 		__func__, __LINE__, pgmn_dev->state);
@@ -318,7 +316,7 @@ irqreturn_t msm_jpegdma_core_irq(int irq_num, void *context)
 	}
 
 	if (msm_jpegdma_hw_irq_is_frame_done(jpeg_irq_status)) {
-		/* send fe ping pong irq */
+		
 		JPEG_DBG_HIGH("%s:%d] Session done\n", __func__, __LINE__);
 		data = msm_jpeg_core_fe_pingpong_irq(jpeg_irq_status,
 			pgmn_dev);

@@ -16,7 +16,7 @@
 #include <sensor/csid/msm_csid.h>
 
 struct csid_reg_parms_t csid_v2_2 = {
-	/* MIPI	CSID registers */
+	
 	0x0,
 	0x4,
 	0x4,

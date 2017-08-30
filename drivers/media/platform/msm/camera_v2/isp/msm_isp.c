@@ -493,7 +493,7 @@ end:
 int vfe_hw_probe(struct platform_device *pdev)
 {
 	struct vfe_device *vfe_dev;
-	/*struct msm_cam_subdev_info sd_info;*/
+	
 	const struct of_device_id *match_dev;
 	int rc = 0;
 

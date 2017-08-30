@@ -361,16 +361,12 @@ static struct msm_camera_i2c_reg_conf
 	{0x581B, 0x0C},
 	{0x3A03, 0x4C},
 	{0x3A04, 0x40},
-	{0x3080, 0x02}, //change for 24fps
-	{0x3082, 0x48}, //change for 24fps
-	{0x3018, 0x44}, //change for 24fps
-	{0x3084, 0x0F}, //change for 24fps
-	{0x3085, 0x06}, //change for 24fps
-	{0x380d, 0xc8}, //change for 24fps
-	{0x380f, 0x10}, //change for 24fps
-	{0x4837, 0x12}, //change for 24fps
-
-	/* FSIN setup */
+	{0x3080, 0x00},
+	{0x3018, 0x44},
+	{0x3084, 0x0F},
+	{0x3085, 0x07},
+	{0x4837, 0x0F},
+	
 	{0x3002, 0x00},
 	{0x3823, 0x30},
 	{0x3824, 0x00},
@@ -645,7 +641,7 @@ static struct msm_camera_i2c_reg_conf ov2685_scv3b4035_720p60_settings[] = {
 	{0x581B, 0x0C},
 	{0x3A03, 0x4C},
 	{0x3A04, 0x40},
-	/* FSIN setup */
+	
 	{0x3002, 0x00},
 	{0x3823, 0x30},
 	{0x3824, 0x00},
@@ -657,10 +653,9 @@ static struct msm_camera_i2c_reg_conf ov2685_scv3b4035_720p60_settings[] = {
 struct ov2685_scv3b4035_resolution_table_t {
 	char *name;
 	struct msm_camera_i2c_reg_conf *settings;
-	unsigned int size; /* ARRAY_SIZE(settings) */
+	unsigned int size; 
 };
 
-/* This table has to be in the same order as they are in the sensor lib */
 static struct ov2685_scv3b4035_resolution_table_t
 	ov2685_scv3b4035_resolutions[] = {
 	{"2MP 30fps",  ov2685_scv3b4035_1600x1200p30_settings,
@@ -669,7 +664,6 @@ static struct ov2685_scv3b4035_resolution_table_t
 		ARRAY_SIZE(ov2685_scv3b4035_720p60_settings)},
 };
 
-/* FUNCTION IS NOT USED IN THE CODE */
 int32_t ov2685_scv3b4035_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc = -EINVAL;
@@ -686,10 +680,7 @@ int32_t ov2685_scv3b4035_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	return rc;
 }
 
-/* FIXME: Stop stream null for now, use VFE stop */
-/* static void ov2685_stop_stream(struct msm_sensor_ctrl_t *s_ctrl) {} */
 
-/* FUNCTION IS NOT USED IN THE CODE */
 int32_t ov2685_scv3b4035_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	CDBG("Power Down");
@@ -707,7 +698,7 @@ static struct v4l2_subdev_info ov2685_scv3b4035_subdev_info[] = {
 		.fmt        = 1,
 		.order      = 0,
 	},
-	/* more can be supported, to be added later */
+	
 };
 
 static const struct i2c_device_id ov2685_scv3b4035_i2c_id[] = {
@@ -947,8 +938,8 @@ int32_t ov2685_scv3b4035_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 		break;
 
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
 			s_ctrl->sensor_i2c_client,
@@ -1231,8 +1222,8 @@ int32_t ov2685_scv3b4035_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		break;
 
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
 			s_ctrl->sensor_i2c_client,

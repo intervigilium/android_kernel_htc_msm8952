@@ -96,21 +96,21 @@ struct msm_jpeg_hw_cmd32 {
 
 	uint32_t type:4;
 
-	/* n microseconds of timeout for WAIT */
-	/* n microseconds of time for DELAY */
-	/* repeat n times for READ/WRITE */
-	/* max is 0xFFF, 4095 */
+	
+	
+	
+	
 	uint32_t n:12;
 	uint32_t offset:16;
 	uint32_t mask;
 	union {
-		uint32_t data;   /* for single READ/WRITE/WAIT, n = 1 */
-		compat_uptr_t pdata;   /* for multiple READ/WRITE/WAIT, n > 1 */
+		uint32_t data;   
+		compat_uptr_t pdata;   
 	};
 };
 
 struct msm_jpeg_hw_cmds32 {
-	uint32_t m; /* number of elements in the hw_cmd array */
+	uint32_t m; 
 	struct msm_jpeg_hw_cmd32 hw_cmd[1];
 };
 #endif
@@ -194,7 +194,7 @@ inline int msm_jpeg_q_in_buf(struct msm_jpeg_q *q_p,
 
 inline int msm_jpeg_q_wait(struct msm_jpeg_q *q_p)
 {
-	long tm = MAX_SCHEDULE_TIMEOUT; /* 500ms */
+	long tm = MAX_SCHEDULE_TIMEOUT; 
 	int rc;
 
 	JPEG_DBG("%s:%d] %s wait\n", __func__, __LINE__, q_p->name);
@@ -263,7 +263,6 @@ inline void msm_jpeg_q_cleanup(struct msm_jpeg_q *q_p)
 	q_p->unblck = 0;
 }
 
-/*************** event queue ****************/
 
 int msm_jpeg_framedone_irq(struct msm_jpeg_device *pgmn_dev,
 	struct msm_jpeg_core_buf *buf_in)
@@ -361,7 +360,6 @@ void msm_jpeg_err_irq(struct msm_jpeg_device *pgmn_dev,
 	return;
 }
 
-/*************** output queue ****************/
 
 int msm_jpeg_we_pingpong_irq(struct msm_jpeg_device *pgmn_dev,
 	struct msm_jpeg_core_buf *buf_in)
@@ -528,7 +526,6 @@ int msm_jpeg_output_buf_enqueue(struct msm_jpeg_device *pgmn_dev,
 	return 0;
 }
 
-/*************** input queue ****************/
 
 int msm_jpeg_fe_pingpong_irq(struct msm_jpeg_device *pgmn_dev,
 	struct msm_jpeg_core_buf *buf_in)
@@ -721,7 +718,7 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 	irqreturn_t (*core_irq)(int, void *);
 	mutex_lock(&pgmn_dev->lock);
 	if (pgmn_dev->open_count) {
-		/* only open once */
+		
 		JPEG_PR_ERR("%s:%d] busy\n", __func__, __LINE__);
 		mutex_unlock(&pgmn_dev->lock);
 		return -EBUSY;
@@ -747,7 +744,7 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 		return rc;
 	}
 
-	JPEG_DBG("%s:%d] platform resources - mem %pK, base %pK, irq %d\n",
+	JPEG_DBG("%s:%d] platform resources - mem %p, base %p, irq %d\n",
 		__func__, __LINE__,
 		pgmn_dev->mem, pgmn_dev->base, pgmn_dev->irq);
 	pgmn_dev->res_size = resource_size(pgmn_dev->mem);
@@ -1526,7 +1523,7 @@ int __msm_jpeg_init(struct msm_jpeg_device *pgmn_dev)
 	msm_jpeg_q_init("input_buf_q", &pgmn_dev->input_buf_q);
 
 #ifdef CONFIG_MSM_IOMMU
-	/*get device context for IOMMU*/
+	
 	rc = cam_smmu_get_handle(iommu_name[idx], &pgmn_dev->iommu_hdl);
 	JPEG_DBG("%s:%d] hdl %d", __func__, __LINE__,
 			pgmn_dev->iommu_hdl);

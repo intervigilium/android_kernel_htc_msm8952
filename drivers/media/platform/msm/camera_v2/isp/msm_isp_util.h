@@ -15,7 +15,6 @@
 #include "msm_isp.h"
 #include <soc/qcom/camera2.h>
 
-/* #define CONFIG_MSM_ISP_DBG 1 */
 
 #ifdef CONFIG_MSM_ISP_DBG
 #define ISP_DBG(fmt, args...) printk(fmt, ##args)
@@ -80,4 +79,4 @@ void msm_camera_io_dump_2(void __iomem *addr, int size);
 void msm_isp_print_fourcc_error(const char *origin, uint32_t fourcc_format);
 void msm_isp_get_timestamp(struct msm_isp_timestamp *time_stamp);
 
-#endif /* __MSM_ISP_UTIL_H__ */
+#endif 

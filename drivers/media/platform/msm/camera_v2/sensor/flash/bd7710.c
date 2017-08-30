@@ -16,7 +16,6 @@
 
 #define FLASH_NAME "qcom,led-flash1"
 
-/*#define CONFIG_MSMB_CAMERA_DEBUG*/
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -202,7 +201,6 @@ static struct msm_led_flash_ctrl_t fctrl = {
 	.func_tbl = &bd7710_func_tbl,
 };
 
-/*subsys_initcall(msm_flash_i2c_add_driver);*/
 module_init(msm_flash_bd7710_init_module);
 module_exit(msm_flash_bd7710_exit_module);
 MODULE_DESCRIPTION("bd7710 FLASH");

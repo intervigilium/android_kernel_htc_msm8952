@@ -12,23 +12,19 @@
 
 #define pr_fmt(fmt) "MSM-SENSOR-INIT %s:%d " fmt "\n", __func__, __LINE__
 
-/* Header files */
 #include "msm_sensor_init.h"
 #include "msm_sensor_driver.h"
 #include "msm_sensor.h"
 #include "msm_sd.h"
 
-/* Logging macro */
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
 static struct msm_sensor_init_t *s_init;
 static struct v4l2_file_operations msm_sensor_init_v4l2_subdev_fops;
-/* Static function declaration */
 static long msm_sensor_init_subdev_ioctl(struct v4l2_subdev *sd,
 	unsigned int cmd, void *arg);
 
-/* Static structure declaration */
 static struct v4l2_subdev_core_ops msm_sensor_init_subdev_core_ops = {
 	.ioctl = msm_sensor_init_subdev_ioctl,
 };
@@ -55,16 +51,15 @@ static int msm_sensor_wait_for_probe_done(struct msm_sensor_init_t *s_init)
 	return rc;
 }
 
-/* Static function definition */
 static int32_t msm_sensor_driver_cmd(struct msm_sensor_init_t *s_init,
 	void *arg)
 {
 	int32_t                      rc = 0;
 	struct sensor_init_cfg_data *cfg = (struct sensor_init_cfg_data *)arg;
 
-	/* Validate input parameters */
+	
 	if (!s_init || !cfg) {
-		pr_err("failed: s_init %pK cfg %pK", s_init, cfg);
+		pr_err("failed: s_init %p cfg %p", s_init, cfg);
 		return -EINVAL;
 	}
 
@@ -104,9 +99,9 @@ static long msm_sensor_init_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_sensor_init_t *s_init = v4l2_get_subdevdata(sd);
 	CDBG("Enter");
 
-	/* Validate input parameters */
+	
 	if (!s_init) {
-		pr_err("failed: s_init %pK", s_init);
+		pr_err("failed: s_init %p", s_init);
 		return -EINVAL;
 	}
 
@@ -165,19 +160,19 @@ static long msm_sensor_init_subdev_fops_ioctl(
 static int __init msm_sensor_init_module(void)
 {
 	int ret = 0;
-	/* Allocate memory for msm_sensor_init control structure */
+	
 	s_init = kzalloc(sizeof(struct msm_sensor_init_t), GFP_KERNEL);
 	if (!s_init) {
-		pr_err("failed: no memory s_init %pK", NULL);
+		pr_err("failed: no memory s_init %p", NULL);
 		return -ENOMEM;
 	}
 
-	CDBG("MSM_SENSOR_INIT_MODULE %pK", NULL);
+	CDBG("MSM_SENSOR_INIT_MODULE %p", NULL);
 
-	/* Initialize mutex */
+	
 	mutex_init(&s_init->imutex);
 
-	/* Create /dev/v4l-subdevX for msm_sensor_init */
+	
 	v4l2_subdev_init(&s_init->msm_sd.sd, &msm_sensor_init_subdev_ops);
 	snprintf(s_init->msm_sd.sd.name, sizeof(s_init->msm_sd.sd.name), "%s",
 		"msm_sensor_init");

@@ -13,7 +13,6 @@
 #ifndef __MSM_FD_REGS_H__
 #define __MSM_FD_REGS_H__
 
-/* FD core registers */
 #define MSM_FD_CONTROL (0x00)
 #define MSM_FD_CONTROL_SRST   (1 << 0)
 #define MSM_FD_CONTROL_RUN    (1 << 1)
@@ -81,7 +80,6 @@
 #define MSM_FD_RESULT_POSE_LEFT_DIAGONAL   (0x4)
 #define MSM_FD_RESULT_POSE_LEFT            (0x5)
 
-/* FD misc registers */
 #define MSM_FD_MISC_HW_VERSION (0x00)
 #define MSM_FD_MISC_CGC_DISABLE (0x04)
 #define MSM_FD_HW_STOP          (0x08)
@@ -150,7 +148,6 @@
 
 #define MSM_FD_MISC_TEST_BUS (0x4C)
 
-/* FD vbif registers */
 #define MSM_FD_VBIF_CLKON                   (0x04)
 #define MSM_FD_VBIF_QOS_OVERRIDE_EN         (0x10)
 #define MSM_FD_VBIF_QOS_OVERRIDE_REQPRI     (0x18)
@@ -166,4 +163,4 @@
 #define MSM_FD_VBIF_OUT_AXI_AOOO            (0x17c)
 #define MSM_FD_VBIF_ROUND_ROBIN_QOS_ARB     (0x124)
 
-#endif /* __MSM_FD_REGS_H__ */
+#endif 

@@ -13,7 +13,6 @@
 #include "msm_sensor.h"
 #include <linux/async.h>
 
-/* HTC_START */
 #include "msm_cci.h"
 #include "lc898123_htc.h"
 
@@ -22,7 +21,6 @@
 #else
 #undef HTC_OIS_HW_WORKAROUND
 #endif
-/* HTC_END */
 
 #define IMX214_HTC_SENSOR_NAME "imx214_htc"
 #define imx214_htc_obj imx214_htc_##obj
@@ -34,7 +32,7 @@ static struct msm_sensor_ctrl_t imx214_htc_s_ctrl;
 static struct msm_sensor_power_setting imx214_htc_power_setting[] = {
 	{
 		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_V_CUSTOM1,//V_DRV_2V8
+		.seq_val = CAM_V_CUSTOM1,
 		.config_val = 1,
 		.delay = 1,
 	},
@@ -85,7 +83,7 @@ static struct msm_sensor_power_setting imx214_htc_power_setting[] = {
 static struct msm_sensor_power_setting imx214_htc_power_setting_xd[] = {
 	{
 		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_V_CUSTOM1,//V_DRV_2V8
+		.seq_val = CAM_V_CUSTOM1,
 		.config_val = 1,
 		.delay = 1,
 	},
@@ -97,7 +95,7 @@ static struct msm_sensor_power_setting imx214_htc_power_setting_xd[] = {
 	},
 	{
 		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_V_CUSTOM2,//TWL80125_BUCK1
+		.seq_val = CAM_V_CUSTOM2,
 		.config_val = 1,
 		.delay = 1,
 	},
@@ -229,7 +227,6 @@ static int imx214_htc_sysfs_init(void)
 
 
 
-/* HTC_START */
 static uint8_t otp[20];
 
 static int imx214_htc_read_fuseid(struct sensorb_cfg_data *cdata,
@@ -348,10 +345,8 @@ static int imx214_htc_read_fuseid(struct sensorb_cfg_data *cdata,
         }
     }
 
-//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
-//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = otp[4];
     cdata->cfg.fuse.fuse_id_word2 = otp[0];
     cdata->cfg.fuse.fuse_id_word3 = otp[1];
@@ -394,7 +389,6 @@ static int imx214_htc_read_fuseid(struct sensorb_cfg_data *cdata,
 
     strlcpy(cdata->af_value.ACT_NAME, "lc898123_act", sizeof("lc898123_act"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
-//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -404,7 +398,6 @@ static int imx214_htc_read_fuseid(struct sensorb_cfg_data *cdata,
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[8]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[9]);
 	}
-//HTC_END
     return rc;
 }
 
@@ -525,10 +518,8 @@ static int imx214_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
         }
     }
 
-//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
-//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = otp[4];
     cdata->cfg.fuse.fuse_id_word2 = otp[0];
     cdata->cfg.fuse.fuse_id_word3 = otp[1];
@@ -571,7 +562,6 @@ static int imx214_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 
     strlcpy(cdata->af_value.ACT_NAME, "lc898123_act", sizeof("lc898123_act"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
-//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -581,7 +571,6 @@ static int imx214_htc_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[8]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[9]);
 	}
-//HTC_END
     return rc;
 }
 #endif
@@ -607,7 +596,6 @@ static int imx214_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
     {
         first = false;
 
-/* Read otp NVR0 */
         for(j = 5; j >=3; j--)
         {
             do {
@@ -662,8 +650,7 @@ static int imx214_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
         }
 
 
-/* Read otp NVR1 */
-        /* otp NVR1 - part 1 */
+        
         valid_layer = -1;
         for(j = 8; j >=6; j--)
         {
@@ -718,7 +705,7 @@ static int imx214_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
             }
         }
 
-        /* otp NVR1 - part 2 */
+        
         valid_layer = -1;
         for(j = 11; j >=9; j--)
         {
@@ -774,7 +761,7 @@ static int imx214_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
             }
         }
 
-        /* otp NVR1 - part 3 */
+        
         valid_layer = -1;
         for(j = 14; j >=12; j--)
         {
@@ -849,7 +836,7 @@ static int imx214_htc_read_otp_ois_data(struct sensorb_cfg_data *cdata,
     }
 
 
-    /* Check and dump OTP OIS data */
+    
     valid_otp_ois = 0;
     for(i=0; i < OTP_NVR0_DATA_SIZE; i++) {
         if (otp_NVR0_data[i])
@@ -878,16 +865,16 @@ int htc_check_ois_component(struct msm_sensor_ctrl_t *s_ctrl)
 	int rc = 0;
 	uint16_t cci_client_sid_backup;
 
-	/* Bcakup the I2C slave address */
+	
 	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
 
-	/* Replace the I2C slave address with OIS component */
+	
 	s_ctrl->sensor_i2c_client->cci_client->sid = OIS_COMPONENT_I2C_ADDR_WRITE >> 1;
 
-	/* OIS HW workaround */
+	
 	lc898123_check_ois_component(s_ctrl, valid_otp_ois, otp_NVR0_data, otp_NVR1_data);
 
-	/* Restore the I2C slave address */
+	
 	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
 
 	return rc;
@@ -914,7 +901,7 @@ int32_t imx214_htc_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 #endif
 	        first = 1;
 
-		/* HTC_START , For OIS component check */
+		
 #ifdef HTC_OIS_HW_WORKAROUND
 	        pr_info("%s : read otp ois data\n", __func__);
 	        imx214_htc_read_otp_ois_data(NULL, s_ctrl);
@@ -922,12 +909,11 @@ int32_t imx214_htc_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	        pr_info("%s : check ois component\n", __func__);
 	        htc_check_ois_component(s_ctrl);
 #endif
-		/* HTC_END */
+		
 	    }
 	}
 	return rc;
 }
-/* HTC_END */
 
 
 
@@ -937,7 +923,7 @@ static int32_t imx214_htc_platform_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	match = of_match_device(imx214_htc_dt_match, &pdev->dev);
 	if (match)
-	//HTC_START , get board info from device tree
+	
 	{
 		if(msm_sensor_get_boardinfo(pdev->dev.of_node))
 		{
@@ -945,12 +931,12 @@ static int32_t imx214_htc_platform_probe(struct platform_device *pdev)
 			imx214_htc_s_ctrl.power_setting_array.power_setting = imx214_htc_power_setting_xd;
 			imx214_htc_s_ctrl.power_setting_array.size = ARRAY_SIZE(imx214_htc_power_setting_xd);
 		}
-	//HTC_END
+	
 	pr_err("%s:%d [charlie]probe\n", __func__, __LINE__);
 		rc = msm_sensor_platform_probe(pdev, match->data);
-	//HTC_START , get board info from device tree
+	
 	}
-	//HTC_END
+	
 	else {
 		pr_err("%s:%d [charlie]match is null\n", __func__, __LINE__);
 		rc = -EINVAL;
@@ -998,14 +984,11 @@ static struct msm_sensor_fn_t imx214_htc_sensor_func_tbl = {
 #endif
 	.sensor_power_up = msm_sensor_power_up,
 	.sensor_power_down = msm_sensor_power_down,
-/* HTC_START , move read OTP to sensor probe */
-//	.sensor_match_id = msm_sensor_match_id,
 	.sensor_match_id = imx214_htc_sensor_match_id,
 	.sensor_i2c_read_fuseid = imx214_htc_read_fuseid,
 #ifdef CONFIG_COMPAT
 	.sensor_i2c_read_fuseid32 = imx214_htc_read_fuseid32,
 #endif
-/* HTC_END */
 };
 
 static struct msm_sensor_ctrl_t imx214_htc_s_ctrl = {

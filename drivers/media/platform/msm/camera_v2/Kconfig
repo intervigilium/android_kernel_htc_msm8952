@@ -155,12 +155,6 @@ config OIS_CALIBRATION
         ---help---
 		OIS GYRO offset calibration
 
-config CAM_REG_LASER
-	    bool "Camera register Laser"
-	    depends on MSMB_CAMERA
-        ---help---
-		Camera register Laser
-
 config OV4688_HTC
 	bool "Sensor OV4688 (BAYER 4M)"
 	depends on MSMB_CAMERA

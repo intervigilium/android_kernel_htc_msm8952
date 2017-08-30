@@ -20,18 +20,12 @@
 #define MAX_SPI_SIZE 110
 #define SPI_DYNAMIC_ALLOC
 
-/**
-  * Common SPI communication scheme
-  * tx: <opcode>[addr][wait][write buffer]
-  * rx: [read buffer]
-  * Some inst require polling busy reg until it's done
-  */
 struct msm_camera_spi_inst {
-	uint8_t opcode;		/* one-byte opcode */
-	uint8_t addr_len;	/* addr len in bytes */
-	uint8_t dummy_len;	/* setup cycles */
-	uint8_t delay_intv;	/* delay intv for this inst (ms) */
-	uint8_t delay_count;	/* total delay count for this inst */
+	uint8_t opcode;		
+	uint8_t addr_len;	
+	uint8_t dummy_len;	
+	uint8_t delay_intv;	
+	uint8_t delay_count;	
 };
 
 struct msm_spi_write_burst_data {
@@ -70,11 +64,11 @@ struct msm_camera_spi_client {
 	uint8_t device_id1;
 	uint8_t mfr_id0;
 	uint8_t mfr_id1;
-	uint8_t retry_delay;	/* ms */
-	uint8_t retries;	/* retry times upon failure */
-	uint8_t busy_mask;	/* busy bit in status reg */
-	uint16_t page_size;	/* page size for page program */
-	uint32_t erase_size;	/* minimal erase size */
+	uint8_t retry_delay;	
+	uint8_t retries;	
+	uint8_t busy_mask;	
+	uint16_t page_size;	
+	uint32_t erase_size;	
 };
 
 static __always_inline
